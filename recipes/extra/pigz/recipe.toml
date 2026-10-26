@@ -1,0 +1,24 @@
+# extra recipe: pigz — parallel implementation of gzip
+[package]
+name = "pigz"
+version = "2.8"
+rel = 1
+arch = ["x86_64"]
+summary = "pigz — parallel implementation of gzip"
+license = ["Zlib"]
+source = "https://github.com/madler/pigz/archive/refs/tags/v%{version}.tar.gz"
+sha256 = "2f7f6a6986996d21cb8658535fff95f1c7107ddce22b5324f4b41890e2904706"
+
+[depends]
+build = ["zlib"]
+run = ["zlib"]
+
+[build]
+compile = "make -j%{jobs}"
+install = """
+
+install -Dm755 pigz %{pkgdir}/usr/bin/pigz
+ln -sf pigz %{pkgdir}/usr/bin/unpigz
+install -Dm644 pigz.1 %{pkgdir}/usr/share/man/man1/pigz.1
+
+"""

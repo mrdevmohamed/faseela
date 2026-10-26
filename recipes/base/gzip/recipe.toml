@@ -1,0 +1,19 @@
+# base recipe: GNU compression utility
+[package]
+name = "gzip"
+version = "1.15"
+rel = 1
+arch = ["x86_64"]
+summary = "GNU compression utility"
+license = ["GPL-3.0"]
+source = "https://mirrors.kernel.org/gnu/gzip/gzip-1.15.tar.xz"
+sha256 = "9aa0cc780dec156b8282844833b342ab7cb08c25d2cd9a1869cdd0df31deff48"
+
+[depends]
+build = []
+run = []
+
+[build]
+configure = "./configure --prefix=/usr"
+compile = "make -j%{jobs}"
+install = "make DESTDIR=%{pkgdir} install"

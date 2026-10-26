@@ -1,0 +1,20 @@
+# gui recipe: cairo — 2D vector graphics library
+# sha256 is an all-zero placeholder until `python3 scripts/fill-sha256.py` pins it.
+[package]
+name = "cairo"
+version = "1.18.2"
+rel = 1
+arch = ["x86_64"]
+summary = "2D vector graphics library"
+license = ["LGPL-2.1-only", "MPL-1.1"]
+source = "https://cairographics.org/releases/cairo-%{version}.tar.xz"
+sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+
+[depends]
+build = ["meson", "ninja", "pkgconf", "pixman", "freetype", "fontconfig", "libpng", "zlib"]
+run = ["pixman", "freetype", "fontconfig", "libpng", "zlib"]
+
+[build]
+configure = "meson setup build --prefix=/usr --libdir=lib --buildtype=release -D tests=disabled -D xcb=disabled -D xlib=disabled -D xlib-xcb=disabled -D glib=disabled -D spectre=disabled -D symbol-lookup=disabled -D gtk2-utils=disabled -D png=enabled -D zlib=enabled -D freetype=enabled -D fontconfig=enabled"
+compile = "ninja -C build"
+install = "DESTDIR=%{pkgdir} meson install -C build"

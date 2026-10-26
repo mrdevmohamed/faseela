@@ -1,0 +1,20 @@
+# # crypto/expat/xml2 disabled for determinism; zstd/lz4/xz/bz2/zlib from system
+# extra recipe: libarchive — multi-format archive and compression library
+[package]
+name = "libarchive"
+version = "3.7.7"
+rel = 1
+arch = ["x86_64"]
+summary = "libarchive — multi-format archive and compression library"
+license = ["BSD-2-Clause"]
+source = "https://github.com/libarchive/libarchive/releases/download/v%{version}/libarchive-%{version}.tar.gz"
+sha256 = "4cc540a3e9a1eebdefa1045d2e4184831100667e6d7d5b315bb1cbc951f8ddff"
+
+[depends]
+build = ["zlib", "bzip2", "xz", "zstd", "lz4"]
+run = ["zlib", "bzip2", "xz", "zstd", "lz4"]
+
+[build]
+configure = "./configure --prefix=/usr --disable-static --without-openssl --without-xml2 --without-expat"
+compile = "make -j%{jobs}"
+install = "make DESTDIR=%{pkgdir} install"

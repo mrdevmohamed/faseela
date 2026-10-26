@@ -1,0 +1,19 @@
+# extra recipe: tmux — terminal multiplexer
+[package]
+name = "tmux"
+version = "3.5a"
+rel = 1
+arch = ["x86_64"]
+summary = "tmux — terminal multiplexer"
+license = ["ISC"]
+source = "https://github.com/tmux/tmux/releases/download/%{version}/tmux-%{version}.tar.gz"
+sha256 = "16216bd0877170dfcc64157085ba9013610b12b082548c7c9542cc0103198951"
+
+[depends]
+build = ["libevent", "ncurses"]
+run = ["libevent", "ncurses"]
+
+[build]
+configure = "./configure --prefix=/usr --sysconfdir=/etc"
+compile = "make -j%{jobs}"
+install = "make DESTDIR=%{pkgdir} install"

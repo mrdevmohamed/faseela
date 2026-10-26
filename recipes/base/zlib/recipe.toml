@@ -1,0 +1,19 @@
+# base recipe: General-purpose lossless data-compression library
+[package]
+name = "zlib"
+version = "1.3.1"
+rel = 1
+arch = ["x86_64"]
+summary = "General-purpose lossless data-compression library"
+license = ["Zlib"]
+source = "https://github.com/madler/zlib/releases/download/v1.3.1/zlib-1.3.1.tar.gz"
+sha256 = "9a93b2b7dfdac77ceba5a558a580e74667dd6fede4585b91eefb60f03b72df23"
+
+[depends]
+build = []
+run = []
+
+[build]
+configure = "./configure --prefix=/usr"
+compile = "make -j%{jobs}"
+install = "make DESTDIR=%{pkgdir} install"

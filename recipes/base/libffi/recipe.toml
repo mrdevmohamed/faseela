@@ -1,0 +1,19 @@
+# base recipe: Portable foreign-function-interface library
+[package]
+name = "libffi"
+version = "3.5.2"
+rel = 1
+arch = ["x86_64"]
+summary = "Portable foreign-function-interface library"
+license = ["MIT"]
+source = "https://github.com/libffi/libffi/releases/download/v3.5.2/libffi-3.5.2.tar.gz"
+sha256 = "f3a3082a23b37c293a4fcd1053147b371f2ff91fa7ea1b2a52e335676bac82dc"
+
+[depends]
+build = []
+run = []
+
+[build]
+configure = "./configure --prefix=/usr --disable-static --with-gcc-arch=x86-64"
+compile = "make -j%{jobs}"
+install = "make DESTDIR=%{pkgdir} install"

@@ -1,0 +1,27 @@
+# boot recipe: Single-binary toolbox for initramfs and rescue
+[package]
+name = "busybox"
+version = "1.37.0"
+rel = 1
+arch = ["x86_64"]
+summary = "Single-binary toolbox for initramfs and rescue"
+license = ["GPL-2.0"]
+source = "https://busybox.net/downloads/busybox-1.37.0.tar.bz2"
+sha256 = "3311dff32e746499f4df0d5df04d7eb396382d7e108bb9250e7b519b837043a4"
+
+[depends]
+build = []
+run = []
+
+[build]
+# `tc` is disabled: busybox 1.37's tc.c still uses the CBQ structs that the
+# kernel removed from pkt_sched.h in 6.8 (headers here are 6.10), so it no
+# longer compiles. Same workaround bootstrap/initramfs.sh already applies.
+configure = """
+make defconfig && \
+sed -i -e 's/^CONFIG_TC=y$/# CONFIG_TC is not set/' \
+       -e 's/^CONFIG_FEATURE_TC_INGRESS=y$/# CONFIG_FEATURE_TC_INGRESS is not set/' .config && \
+make oldconfig < /dev/null > /dev/null
+"""
+compile = "make -j%{jobs}"
+install = "make CONFIG_PREFIX=%{pkgdir} install && rm -f %{pkgdir}/linuxrc"

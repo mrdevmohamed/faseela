@@ -1,0 +1,33 @@
+# Toolchain recipe: GNU Binutils (assembler, linker, ...).
+# Built after glibc. v0.1 note: --with-system-zlib is NOT used so the
+# first toolchain recipe set stays self-contained (bundled zlib).
+[package]
+name = "binutils"
+version = "2.43"
+rel = 1
+arch = ["x86_64"]
+summary = "GNU binary utilities: assembler, linker and related tools"
+license = ["GPL-3.0"]
+source = "https://mirrors.kernel.org/gnu/binutils/binutils-%{version}.tar.xz"
+# canonical: https://ftp.gnu.org/gnu/binutils/
+sha256 = "b53606f443ac8f01d1d5fc9c39497f2af322d99e14cea5c0b4b124d630379365"
+
+[depends]
+build = ["glibc"]
+run = []
+
+[build]
+prepare = "mkdir -v build"
+configure = """
+cd build && ../configure --prefix=/usr            \
+    --sysconfdir=/etc                             \
+    --enable-ld=default                           \
+    --enable-plugins                              \
+    --enable-shared                               \
+    --disable-werror                              \
+    --enable-64-bit-bfd                           \
+    --enable-new-dtags                            \
+    --enable-default-hash-style=gnu
+"""
+compile = "cd build && make tooldir=/usr -j%{jobs}"
+install = "cd build && make tooldir=/usr DESTDIR=%{pkgdir} install && rm -f %{pkgdir}/usr/lib/*.la"

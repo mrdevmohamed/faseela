@@ -1,0 +1,121 @@
+name: Build ISO (CD)
+
+# Builds the whole distribution from source and publishes the bootable ISO.
+#   * push a tag `v*`            -> build + GitHub Release with the ISO
+#   * Actions > Run workflow     -> build + downloadable artifact only
+#
+# A full source build is long. GitHub-hosted runners stop a job after 6 hours
+# and have limited disk, so for a complete build set the repository variable
+# ISO_RUNNER to the label of a self-hosted runner (Linux x86_64, root/sudo,
+# >= 30 GB free). The default is the hosted ubuntu-24.04 runner.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      isolation:
+        description: "Build isolation for stages 2 and 3"
+        type: choice
+        options: [env, sandbox, closure, none]
+        default: env
+      with_gui:
+        description: "Also build the sway/Wayland stack (recipes/gui)"
+        type: boolean
+        default: false
+      stage3_world:
+        description: "Rebuild every package in stage 3"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: iso-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  iso:
+    name: build the ISO
+    needs: ci
+    runs-on: ${{ vars.ISO_RUNNER || 'ubuntu-24.04' }}
+    timeout-minutes: 355
+    permissions:
+      contents: write # create the GitHub Release
+    env:
+      TARGET: /mnt/mydistro
+      ISOLATION: ${{ inputs.isolation || 'env' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Free disk space (hosted runners only)
+        if: ${{ vars.ISO_RUNNER == '' }}
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          sudo apt-get clean
+          df -h / /mnt
+
+      - name: Install host tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            squashfs-tools grub-pc-bin grub-efi-amd64-bin grub-common xorriso mtools \
+            gcc make curl zstd ca-certificates util-linux
+
+      - name: Allow unprivileged user namespaces
+        run: |
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+
+      - name: Build the distribution (seed -> stage1 -> stage2 -> stage3 -> ISO)
+        run: |
+          args=(--isolation "$ISOLATION" --out "$GITHUB_WORKSPACE/out/mydistro-x86_64.iso")
+          [[ "${{ inputs.with_gui }}" == "true" ]]     && args+=(--with-gui)
+          [[ "${{ inputs.stage3_world }}" == "true" ]] && args+=(--stage3-world)
+          sudo -E ./bootstrap/build-all.sh "${args[@]}" "$TARGET"
+
+      - name: Checksums
+        id: sum
+        run: |
+          cd out
+          sha256sum mydistro-x86_64.iso | tee mydistro-x86_64.iso.sha256
+          echo "size=$(stat -c %s mydistro-x86_64.iso)" >> "$GITHUB_OUTPUT"
+
+      - name: Upload the ISO as a workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mydistro-x86_64-iso
+          path: |
+            out/mydistro-x86_64.iso
+            out/mydistro-x86_64.iso.sha256
+          retention-days: 14
+          compression-level: 0
+
+      - name: Upload build logs (also on failure)
+        if: always()
+        run: |
+          mkdir -p ci-logs
+          sudo cp -r /mnt/.mydistro.build/logs ci-logs/ 2>/dev/null || true
+          sudo cp /mnt/.mydistro.build/meta ci-logs/ 2>/dev/null || true
+          sudo chown -R "$(id -u):$(id -g)" ci-logs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: build-logs
+          path: ci-logs
+          if-no-files-found: ignore
+          retention-days: 14
+
+      # A release asset is limited to 2 GiB. Bigger ISOs stay as the artifact
+      # above and the release carries only the checksum file.
+      - name: Publish the GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            out/mydistro-x86_64.iso.sha256
+            ${{ steps.sum.outputs.size < 2147483648 && 'out/mydistro-x86_64.iso' || '' }}

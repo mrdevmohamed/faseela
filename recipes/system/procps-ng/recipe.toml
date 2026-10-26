@@ -1,0 +1,19 @@
+# system recipe: System monitoring tools (ps, top, free, ...)
+[package]
+name = "procps-ng"
+version = "4.0.4"
+rel = 1
+arch = ["x86_64"]
+summary = "System monitoring tools (ps, top, free, ...)"
+license = ["GPL-2.0", "LGPL-2.1"]
+source = "https://deb.debian.org/debian/pool/main/p/procps/procps_4.0.4.orig.tar.xz"
+sha256 = "22870d6feb2478adb617ce4f09a787addaf2d260c5a8aa7b17d889a962c5e42e"
+
+[depends]
+build = ["ncurses"]
+run = ["ncurses"]
+
+[build]
+configure = "./configure --prefix=/usr --docdir=/usr/share/doc/procps-ng-%{version} --disable-static --disable-kill"
+compile = "make -j%{jobs}"
+install = "make DESTDIR=%{pkgdir} install"

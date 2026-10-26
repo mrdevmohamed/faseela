@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_call: # reused by release.yml as a gate before the ISO build
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  dpm:
+    name: dpm (build, clippy, tests)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: pkgmgr
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Allow unprivileged user namespaces (needed by the sandbox tests)
+        working-directory: .
+        run: |
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+          sudo sysctl -w kernel.unprivileged_userns_clone=1 || true
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: pkgmgr
+
+      - name: Build
+        run: cargo build --release --locked
+      - name: Clippy (warnings are errors)
+        run: cargo clippy --release --all-targets --locked -- -D warnings
+      - name: Test
+        run: cargo test --release --locked --no-fail-fast
+
+  scripts:
+    name: scripts and recipes
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Syntax check every shell script
+        run: |
+          for f in bootstrap/*.sh bootstrap/seed/*.sh scripts/*.sh; do
+            bash -n "$f" || { echo "syntax error in $f"; exit 1; }
+          done
+      - name: ShellCheck (errors only)
+        run: shellcheck --severity=error bootstrap/*.sh bootstrap/seed/*.sh scripts/*.sh
+      - name: Validate recipes
+        run: python3 -I scripts/check-recipes.py
+      - name: build-all.sh mock pipeline tests
+        run: bash scripts/test-build-all-mock.sh
+      - name: build-all.sh dry run
+        run: bash bootstrap/build-all.sh --dry-run --isolation closure /tmp/mydistro-dry

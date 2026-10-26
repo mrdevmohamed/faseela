@@ -1,0 +1,19 @@
+# extra recipe: dosfstools — utilities for FAT filesystems (mkfs.vfat, fsck.vfat)
+[package]
+name = "dosfstools"
+version = "4.2"
+rel = 1
+arch = ["x86_64"]
+summary = "dosfstools — utilities for FAT filesystems (mkfs.vfat, fsck.vfat)"
+license = ["GPL-3.0-or-later"]
+source = "https://github.com/dosfstools/dosfstools/releases/download/v%{version}/dosfstools-%{version}.tar.gz"
+sha256 = "64926eebf90092dca21b14259a5301b7b98e7b1943e8a201c7d726084809b527"
+
+[depends]
+build = []
+run = []
+
+[build]
+configure = "./configure --prefix=/usr"
+compile = "make -j%{jobs}"
+install = "make DESTDIR=%{pkgdir} install"

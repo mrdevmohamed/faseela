@@ -1,0 +1,18 @@
+# extra recipe: Ninja — small build system with a focus on speed
+[package]
+name = "ninja"
+version = "1.12.1"
+rel = 1
+arch = ["x86_64"]
+summary = "Ninja — small build system with a focus on speed"
+license = ["Apache-2.0"]
+source = "https://github.com/ninja-build/ninja/archive/refs/tags/v%{version}.tar.gz"
+sha256 = "821bdff48a3f683bc4bb3b6f0b5fe7b2d647cf65d52aeb63328c91a6c6df285a"
+
+[depends]
+build = ["python"]
+run = []
+
+[build]
+configure = "python3 configure.py --bootstrap"
+install = "install -Dm755 ninja %{pkgdir}/usr/bin/ninja"

@@ -1,0 +1,19 @@
+# system recipe: GNU typesetting system for roff documents (man pages)
+[package]
+name = "groff"
+version = "1.24.2"
+rel = 1
+arch = ["x86_64"]
+summary = "GNU typesetting system for roff documents (man pages)"
+license = ["GPL-3.0"]
+source = "https://mirrors.kernel.org/gnu/groff/groff-1.24.2.tar.gz"
+sha256 = "f9c1efd5bebbe37fc6e1063db7473ce8df1e3e0be4ff0f43ce04fce57e9c5dd9"
+
+[depends]
+build = []
+run = []
+
+[build]
+configure = "PAGE=A4 ./configure --prefix=/usr"
+compile = "make -j%{jobs}"
+install = "make DESTDIR=%{pkgdir} install"

@@ -1,0 +1,31 @@
+# # pure-python install: no setup.py in modern meson, stage manually
+# extra recipe: Meson — fast and user friendly build system
+[package]
+name = "meson"
+version = "1.6.1"
+rel = 1
+arch = ["x86_64"]
+summary = "Meson — fast and user friendly build system"
+license = ["Apache-2.0"]
+source = "https://github.com/mesonbuild/meson/releases/download/%{version}/meson-%{version}.tar.gz"
+sha256 = "1eca49eb6c26d58bbee67fd3337d8ef557c0804e30a6d16bfdf269db997464de"
+
+[depends]
+build = ["python"]
+run = ["python", "ninja"]
+
+[build]
+install = """
+
+site=$(python3 -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')
+install -d "%{pkgdir}$site" "%{pkgdir}/usr/bin"
+cp -r mesonbuild "%{pkgdir}$site/"
+cat > "%{pkgdir}/usr/bin/meson" <<'EOF'
+#!/usr/bin/python3
+import sys
+from mesonbuild.mesonmain import main
+sys.exit(main())
+EOF
+chmod 755 "%{pkgdir}/usr/bin/meson"
+
+"""

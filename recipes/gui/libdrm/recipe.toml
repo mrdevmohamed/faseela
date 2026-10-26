@@ -1,0 +1,20 @@
+# gui recipe: libdrm — Userspace interface to the kernel DRM subsystem
+# sha256 is an all-zero placeholder until `python3 scripts/fill-sha256.py` pins it.
+[package]
+name = "libdrm"
+version = "2.4.124"
+rel = 1
+arch = ["x86_64"]
+summary = "Userspace interface to the kernel DRM subsystem"
+license = ["MIT"]
+source = "https://dri.freedesktop.org/libdrm/libdrm-%{version}.tar.xz"
+sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+
+[depends]
+build = ["meson", "ninja", "pkgconf"]
+run = []
+
+[build]
+configure = "meson setup build --prefix=/usr --libdir=lib --buildtype=release -D udev=false -D intel=disabled -D radeon=enabled -D amdgpu=enabled -D nouveau=enabled -D vmwgfx=enabled -D freedreno=disabled -D etnaviv=disabled -D exynos=disabled -D vc4=disabled -D tests=false -D man-pages=disabled -D valgrind=disabled -D cairo-tests=disabled"
+compile = "ninja -C build"
+install = "DESTDIR=%{pkgdir} meson install -C build"

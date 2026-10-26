@@ -1,0 +1,19 @@
+# base recipe: Terminal pager similar to more
+[package]
+name = "less"
+version = "668"
+rel = 1
+arch = ["x86_64"]
+summary = "Terminal pager similar to more"
+license = ["GPL-3.0", "BSD-2-Clause"]
+source = "https://www.greenwoodsoftware.com/less/less-668.tar.gz"
+sha256 = "2819f55564d86d542abbecafd82ff61e819a3eec967faa36cd3e68f1596a44b8"
+
+[depends]
+build = ["ncurses"]
+run = ["ncurses"]
+
+[build]
+configure = "./configure --prefix=/usr --sysconfdir=/etc"
+compile = "make -j%{jobs}"
+install = "make DESTDIR=%{pkgdir} install"

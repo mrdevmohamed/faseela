@@ -1,0 +1,24 @@
+# gui recipe: python-packaging — Core utilities for python packages (pure python)
+# sha256 is an all-zero placeholder until `python3 scripts/fill-sha256.py` pins it.
+[package]
+name = "python-packaging"
+version = "24.2"
+rel = 1
+arch = ["x86_64"]
+summary = "Core utilities for python packages (pure python)"
+license = ["Apache-2.0", "BSD-2-Clause"]
+source = "https://github.com/pypa/packaging/archive/refs/tags/%{version}.tar.gz"
+sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+source_dir = "packaging-%{version}"
+
+[depends]
+build = ["python"]
+run = ["python"]
+
+[build]
+install = '''
+site=$(python3 -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')
+install -d "%{pkgdir}$site"
+cp -r src/packaging "%{pkgdir}$site/"
+find "%{pkgdir}$site/packaging" -name __pycache__ -prune -exec rm -rf {} +
+'''

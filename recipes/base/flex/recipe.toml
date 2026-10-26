@@ -1,0 +1,19 @@
+# base recipe: Fast lexical analyzer generator
+[package]
+name = "flex"
+version = "2.6.4"
+rel = 1
+arch = ["x86_64"]
+summary = "Fast lexical analyzer generator"
+license = ["BSD-2-Clause"]
+source = "https://github.com/westes/flex/releases/download/v2.6.4/flex-2.6.4.tar.gz"
+sha256 = "e87aae032bf07c26f85ac0ed3250998c37621d95f8bd748b31f15b33c45ee995"
+
+[depends]
+build = ["m4", "texinfo"]
+run = []
+
+[build]
+configure = "./configure --prefix=/usr --disable-static --docdir=/usr/share/doc/flex-%{version}"
+compile = "make -j%{jobs}"
+install = "make DESTDIR=%{pkgdir} install"

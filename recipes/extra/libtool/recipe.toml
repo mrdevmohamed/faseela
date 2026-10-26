@@ -1,0 +1,19 @@
+# extra recipe: GNU libtool — generic library support script
+[package]
+name = "libtool"
+version = "2.5.4"
+rel = 1
+arch = ["x86_64"]
+summary = "GNU libtool — generic library support script"
+license = ["GPL-2.0-or-later", "LGPL-2.1-or-later"]
+source = "https://mirrors.kernel.org/gnu/libtool/libtool-%{version}.tar.xz"
+sha256 = "f81f5860666b0bc7d84baddefa60d1cb9fa6fceb2398cc3baca6afaa60266675"
+
+[depends]
+build = []
+run = ["autoconf", "automake", "m4"]
+
+[build]
+configure = "./configure --prefix=/usr"
+compile = "make -j%{jobs}"
+install = "make DESTDIR=%{pkgdir} install"

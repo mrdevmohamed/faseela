@@ -1,0 +1,19 @@
+# # Debian .orig tarball — upstream host unreachable
+# extra recipe: tree — recursive directory listing in a tree view
+[package]
+name = "tree"
+version = "2.2.1"
+rel = 1
+arch = ["x86_64"]
+summary = "tree — recursive directory listing in a tree view"
+license = ["GPL-2.0-or-later"]
+source = "https://deb.debian.org/debian/pool/main/t/tree/tree_%{version}.orig.tar.gz"
+sha256 = "68ac45dc78c0c311ada06200ffc3c285e74223ba208061f8d15ffac25e44b2ec"
+
+[depends]
+build = []
+run = []
+
+[build]
+compile = "make -j%{jobs}"
+install = "make prefix=%{pkgdir}/usr MANDIR=%{pkgdir}/usr/share/man install"

@@ -1,0 +1,20 @@
+# gui recipe: wayland — Wayland protocol library and scanner
+# sha256 is an all-zero placeholder until `python3 scripts/fill-sha256.py` pins it.
+[package]
+name = "wayland"
+version = "1.23.1"
+rel = 1
+arch = ["x86_64"]
+summary = "Wayland protocol library and scanner"
+license = ["MIT"]
+source = "https://gitlab.freedesktop.org/wayland/wayland/-/archive/%{version}/wayland-%{version}.tar.gz"
+sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+
+[depends]
+build = ["meson", "ninja", "pkgconf", "libffi", "expat", "libxml2"]
+run = ["libffi", "expat", "libxml2"]
+
+[build]
+configure = "meson setup build --prefix=/usr --libdir=lib --buildtype=release -D documentation=false -D tests=false -D dtd_validation=false"
+compile = "ninja -C build"
+install = "DESTDIR=%{pkgdir} meson install -C build"

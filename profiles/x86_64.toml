@@ -1,0 +1,29 @@
+# Build profile: x86_64
+# Used by the bootstrap stages and (later) by DPM's build engine to
+# set compiler flags consistently across the whole distribution.
+
+[profile]
+arch = "x86_64"
+cflags = "-O2 -pipe"
+cxxflags = "-O2 -pipe"
+ldflags = ""
+# default parallel jobs; overridden by `dpm --jobs N`
+jobs = 4
+
+[profile.toolchain]
+compiler = "gcc"
+libc = "glibc"
+init = "runit"
+kernel = "linux-6.10"
+
+[profile.bootstrap]
+# minimum kernel the toolchain targets (--enable-kernel for glibc)
+min_kernel = "5.4"
+
+# Build isolation (docs/design/build-isolation.md §8). The default stays
+# `none` until the whole tree has been rebuilt cleanly at each level; then
+# flip it. `dpm build --isolation <level>` overrides per build, and the
+# bootstrap stages accept STAGE2_ISOLATION / STAGE3_ISOLATION.
+[build]
+# isolation = "closure"     # none | env | sandbox | closure
+# timeout = 14400          # per-section wall clock (sandbox levels)

@@ -1,0 +1,20 @@
+# gui recipe: glib — Low-level core library of GNOME
+# sha256 is an all-zero placeholder until `python3 scripts/fill-sha256.py` pins it.
+[package]
+name = "glib"
+version = "2.82.2"
+rel = 1
+arch = ["x86_64"]
+summary = "Low-level core library of GNOME"
+license = ["LGPL-2.1-or-later"]
+source = "https://download.gnome.org/sources/glib/2.82/glib-%{version}.tar.xz"
+sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+
+[depends]
+build = ["meson", "ninja", "pkgconf", "libffi", "pcre2", "zlib", "util-linux", "gettext", "python-packaging"]
+run = ["libffi", "pcre2", "zlib", "util-linux"]
+
+[build]
+configure = "meson setup build --prefix=/usr --libdir=lib --buildtype=release -D tests=false -D introspection=disabled -D man-pages=disabled -D documentation=false -D selinux=disabled -D sysprof=disabled -D libmount=enabled -D glib_debug=disabled"
+compile = "ninja -C build"
+install = "DESTDIR=%{pkgdir} meson install -C build"

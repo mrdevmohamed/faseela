@@ -1,0 +1,19 @@
+# extra recipe: ethtool — display or change Ethernet card settings
+[package]
+name = "ethtool"
+version = "6.11"
+rel = 1
+arch = ["x86_64"]
+summary = "ethtool — display or change Ethernet card settings"
+license = ["GPL-2.0-or-later"]
+source = "https://kernel.org/pub/software/network/ethtool/ethtool-%{version}.tar.xz"
+sha256 = "8d91f5c72ae3f25b7e88d4781279dcb320f71e30058914370b1c574c96b31202"
+
+[depends]
+build = ["libmnl"]
+run = ["libmnl"]
+
+[build]
+configure = "./configure --prefix=/usr"
+compile = "make -j%{jobs}"
+install = "make DESTDIR=%{pkgdir} install"

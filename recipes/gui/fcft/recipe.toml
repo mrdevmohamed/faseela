@@ -1,0 +1,21 @@
+# gui recipe: fcft — Simple font loading and glyph rasterization library
+# sha256 is an all-zero placeholder until `python3 scripts/fill-sha256.py` pins it.
+[package]
+name = "fcft"
+version = "3.1.9"
+rel = 1
+arch = ["x86_64"]
+summary = "Simple font loading and glyph rasterization library"
+license = ["MIT"]
+source = "https://codeberg.org/dnkl/fcft/archive/%{version}.tar.gz"
+sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+source_dir = "fcft"
+
+[depends]
+build = ["meson", "ninja", "pkgconf", "tllist", "freetype", "fontconfig", "pixman"]
+run = ["freetype", "fontconfig", "pixman"]
+
+[build]
+configure = "meson setup build --prefix=/usr --libdir=lib --buildtype=release -D svg-backends=none -D grapheme-shaping=disabled -D run-shaping=disabled -D test-text-shaping=false -D docs=disabled"
+compile = "ninja -C build"
+install = "DESTDIR=%{pkgdir} meson install -C build"

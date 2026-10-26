@@ -1,0 +1,24 @@
+# gui recipe: python-mako — Python template library (pure python)
+# sha256 is an all-zero placeholder until `python3 scripts/fill-sha256.py` pins it.
+[package]
+name = "python-mako"
+version = "1.3.6"
+rel = 1
+arch = ["x86_64"]
+summary = "Python template library (pure python)"
+license = ["MIT"]
+source = "https://github.com/sqlalchemy/mako/archive/refs/tags/rel_1_3_6.tar.gz"
+sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+source_dir = "mako-rel_1_3_6"
+
+[depends]
+build = ["python"]
+run = ["python", "python-markupsafe"]
+
+[build]
+install = '''
+site=$(python3 -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')
+install -d "%{pkgdir}$site"
+cp -r ./mako "%{pkgdir}$site/"
+find "%{pkgdir}$site/mako" -name __pycache__ -prune -exec rm -rf {} +
+'''

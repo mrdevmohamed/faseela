@@ -1,0 +1,22 @@
+# Toolchain recipe: pkg-config replacement (pkgconf).
+[package]
+name = "pkgconf"
+version = "2.3.0"
+rel = 1
+arch = ["x86_64"]
+summary = "Package compiler and linker metadata toolkit"
+license = ["ISC"]
+source = "https://distfiles.ariadne.space/pkgconf/pkgconf-%{version}.tar.xz"
+sha256 = "3a9080ac51d03615e7c1910a0a2a8df08424892b5f13b0628a204d3fcce0ea8b"
+
+[depends]
+build = []
+run = []
+
+[build]
+configure = "./configure --prefix=/usr --disable-static"
+compile = "make -j%{jobs}"
+install = """
+make DESTDIR=%{pkgdir} install && \
+ln -sf pkgconf %{pkgdir}/usr/bin/pkg-config
+"""

@@ -1,0 +1,19 @@
+# boot recipe: GRand Unified Bootloader
+[package]
+name = "grub"
+version = "2.14"
+rel = 1
+arch = ["x86_64"]
+summary = "GRand Unified Bootloader"
+license = ["GPL-3.0"]
+source = "https://mirrors.kernel.org/gnu/grub/grub-2.14.tar.xz"
+sha256 = "bc8d3c73535b8838d8c8e2654d73edc4e6ae8c8acdb45d5df5dc9a1547446d43"
+
+[depends]
+build = ["bison", "flex"]
+run = []
+
+[build]
+configure = "./configure --prefix=/usr --sysconfdir=/etc --disable-werror --disable-efiemu --disable-nls"
+compile = "make -j%{jobs}"
+install = "make DESTDIR=%{pkgdir} install"

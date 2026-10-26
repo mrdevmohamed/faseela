@@ -1,0 +1,34 @@
+# base recipe: base-devel — the meta package defining the base build toolchain
+# (docs/design/build-isolation.md §5.1).
+#
+# After this exists, `depends.build` in every recipe means "libraries, headers
+# and tools BEYOND this set" — the "seed tools are implicit" era ends. The
+# `closure` isolation level installs exactly base-devel + the declared build
+# dependencies into the build root, so a missing declaration fails the build
+# as `command not found` / `cannot find -lfoo` instead of silently linking
+# against whatever happens to be installed.
+[package]
+name = "base-devel"
+version = "1"
+rel = 1
+arch = ["x86_64"]
+summary = "Meta package: the base toolchain every build may use"
+
+[depends]
+# installing base-devel pulls the whole base toolchain
+run = [
+    "binutils", "gcc", "glibc", "linux-headers",
+    "make", "bash", "coreutils", "sed", "grep", "gawk", "findutils",
+    "diffutils", "tar", "gzip", "xz", "zstd",
+    "patch", "pkgconf", "file", "perl", "python",
+]
+
+[build]
+# meta package: no sources, ships the manifest so the set is introspectable
+install = """
+mkdir -p %{pkgdir}/usr/share/dpm
+for p in binutils gcc glibc linux-headers make bash coreutils sed grep \\
+         gawk findutils diffutils tar gzip xz zstd patch pkgconf file perl python; do
+    echo "$p"
+done > %{pkgdir}/usr/share/dpm/base-devel.list
+"""

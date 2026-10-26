@@ -1,0 +1,19 @@
+# base recipe: GNU archiver (tar)
+[package]
+name = "tar"
+version = "1.35"
+rel = 1
+arch = ["x86_64"]
+summary = "GNU archiver (tar)"
+license = ["GPL-3.0"]
+source = "https://mirrors.kernel.org/gnu/tar/tar-1.35.tar.xz"
+sha256 = "4d62ff37342ec7aed748535323930c7cf94acf71c3591882b26a7ea50f3edc16"
+
+[depends]
+build = []
+run = []
+
+[build]
+configure = "./configure --prefix=/usr"
+compile = "make -j%{jobs}"
+install = "make DESTDIR=%{pkgdir} install"

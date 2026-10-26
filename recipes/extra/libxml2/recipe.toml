@@ -1,0 +1,20 @@
+# # Debian .orig tarball (gitlab.gnome.org unreachable); dir inside is libxml2-2.9.14
+# extra recipe: libxml2 — XML parsing library
+[package]
+name = "libxml2"
+version = "2.9.14"
+rel = 1
+arch = ["x86_64"]
+summary = "libxml2 — XML parsing library"
+license = ["MIT"]
+source = "https://deb.debian.org/debian/pool/main/libx/libxml2/libxml2_2.9.14+dfsg.orig.tar.xz"
+sha256 = "4fe913dec8b1ab89d13b489b419a8203176ea39e931eaa0d25b17eafb9c279e9"
+
+[depends]
+build = ["zlib"]
+run = ["zlib"]
+
+[build]
+configure = "./configure --prefix=/usr --disable-static --without-python"
+compile = "make -j%{jobs}"
+install = "make DESTDIR=%{pkgdir} install"

@@ -1,0 +1,19 @@
+# system recipe: Distributed version-control system
+[package]
+name = "git"
+version = "2.56.0"
+rel = 1
+arch = ["x86_64"]
+summary = "Distributed version-control system"
+license = ["GPL-2.0"]
+source = "https://cdn.kernel.org/pub/software/scm/git/git-2.56.0.tar.xz"
+sha256 = "26c56c296b38c0695b26fa95f475f1d01704d2d38e73465ca30b0b2f5dc789d3"
+
+[depends]
+build = ["curl", "expat", "gettext", "openssl", "pcre2", "perl", "zlib"]
+run = ["curl", "expat", "gettext", "openssl", "pcre2", "perl", "zlib"]
+
+[build]
+configure = "./configure --prefix=/usr --with-gitconfig=/etc/gitconfig"
+compile = "make -j%{jobs}"
+install = "make DESTDIR=%{pkgdir} install"

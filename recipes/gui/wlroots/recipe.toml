@@ -1,0 +1,20 @@
+# gui recipe: wlroots — Modular Wayland compositor library
+# sha256 is an all-zero placeholder until `python3 scripts/fill-sha256.py` pins it.
+[package]
+name = "wlroots"
+version = "0.18.2"
+rel = 1
+arch = ["x86_64"]
+summary = "Modular Wayland compositor library"
+license = ["MIT"]
+source = "https://gitlab.freedesktop.org/wlroots/wlroots/-/archive/%{version}/wlroots-%{version}.tar.gz"
+sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+
+[depends]
+build = ["meson", "ninja", "pkgconf", "wayland", "wayland-protocols", "libdrm", "libxkbcommon", "libinput", "pixman", "seatd", "libdisplay-info", "mesa", "eudev"]
+run = ["wayland", "libdrm", "libxkbcommon", "libinput", "pixman", "seatd", "libdisplay-info", "mesa", "eudev"]
+
+[build]
+configure = "meson setup build --prefix=/usr --libdir=lib --buildtype=release -D xwayland=disabled -D examples=false -D backends=drm,libinput -D renderers=gles2 -D allocators=gbm -D session=enabled -D xcb-errors=disabled"
+compile = "ninja -C build"
+install = "DESTDIR=%{pkgdir} meson install -C build"

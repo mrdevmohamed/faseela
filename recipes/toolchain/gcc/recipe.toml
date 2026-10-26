@@ -1,0 +1,37 @@
+# Toolchain recipe: the GNU Compiler Collection (C and C++).
+# Final (pass-2-equivalent) build: --disable-bootstrap because we are
+# already compiling with a gcc built inside the distro bootstrap.
+[package]
+name = "gcc"
+version = "14.2.0"
+rel = 1
+arch = ["x86_64"]
+summary = "GNU Compiler Collection (C, C++)"
+license = ["GPL-3.0", "LGPL-3.0"]
+source = "https://mirrors.kernel.org/gnu/gcc/gcc-%{version}/gcc-%{version}.tar.xz"
+# canonical: https://ftp.gnu.org/gnu/gcc/
+sha256 = "a7b39bc69cbf9e25826c5a60ab26477001f7c08d85cec04bc0e29cabed6f3cc9"
+
+[depends]
+build = ["binutils", "glibc", "gmp", "mpfr", "mpc"]
+run = ["glibc", "gmp", "mpfr", "mpc"]
+
+[build]
+prepare = "mkdir -v build"
+configure = """
+cd build && ../configure --prefix=/usr          \
+    LD=ld                                       \
+    --enable-languages=c,c++                    \
+    --disable-multilib                          \
+    --disable-bootstrap                         \
+    --disable-fixincludes                       \
+    --disable-nls                               \
+    --enable-default-pie                        \
+    --enable-default-ssp                        \
+    --without-zstd
+"""
+compile = "cd build && make -j%{jobs}"
+install = """
+cd build && make DESTDIR=%{pkgdir} install && \
+ln -sf gcc %{pkgdir}/usr/bin/cc
+"""

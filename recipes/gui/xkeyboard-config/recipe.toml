@@ -1,0 +1,20 @@
+# gui recipe: xkeyboard-config — X keyboard layout data
+# sha256 is an all-zero placeholder until `python3 scripts/fill-sha256.py` pins it.
+[package]
+name = "xkeyboard-config"
+version = "2.42"
+rel = 1
+arch = ["x86_64"]
+summary = "X keyboard layout data"
+license = ["MIT"]
+source = "https://www.x.org/releases/individual/data/xkeyboard-config/xkeyboard-config-%{version}.tar.xz"
+sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+
+[depends]
+build = ["meson", "ninja", "pkgconf", "gettext"]
+run = []
+
+[build]
+configure = "meson setup build --prefix=/usr --libdir=lib --buildtype=release -D xkb-base=/usr/share/X11/xkb -D compat-rules=false -D nls=false"
+compile = "ninja -C build"
+install = "DESTDIR=%{pkgdir} meson install -C build"

@@ -1,0 +1,25 @@
+# # all2 = 7zr + 7za (static, no external codecs needed)
+# extra recipe: p7zip — command line version of 7-Zip for POSIX
+[package]
+name = "p7zip"
+version = "17.05"
+rel = 1
+arch = ["x86_64"]
+summary = "p7zip — command line version of 7-Zip for POSIX"
+license = ["LGPL-2.1-or-later", "BSD-3-Clause"]
+source = "https://github.com/p7zip-project/p7zip/archive/refs/tags/v%{version}.tar.gz"
+sha256 = "d2788f892571058c08d27095c22154579dfefb807ebe357d145ab2ddddefb1a6"
+
+[depends]
+build = []
+run = []
+
+[build]
+compile = "make -j%{jobs} all2"
+install = """
+
+install -d %{pkgdir}/usr/bin %{pkgdir}/usr/share/man/man1
+install -m755 bin/7za bin/7zr %{pkgdir}/usr/bin/
+install -m644 man1/7z.1 man1/7za.1 man1/7zr.1 %{pkgdir}/usr/share/man/man1/
+
+"""

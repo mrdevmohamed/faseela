@@ -1,0 +1,20 @@
+# gui recipe: json-c — JSON implementation in C
+# sha256 is an all-zero placeholder until `python3 scripts/fill-sha256.py` pins it.
+[package]
+name = "json-c"
+version = "0.18"
+rel = 1
+arch = ["x86_64"]
+summary = "JSON implementation in C"
+license = ["MIT"]
+source = "https://s3.amazonaws.com/json-c_releases/releases/json-c-%{version}.tar.gz"
+sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+
+[depends]
+build = ["cmake", "pkgconf"]
+run = []
+
+[build]
+configure = "cmake -S . -B build -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_INSTALL_LIBDIR=lib -DCMAKE_BUILD_TYPE=Release -DBUILD_STATIC_LIBS=OFF -DBUILD_TESTING=OFF"
+compile = "cmake --build build -j%{jobs}"
+install = "DESTDIR=%{pkgdir} cmake --install build"

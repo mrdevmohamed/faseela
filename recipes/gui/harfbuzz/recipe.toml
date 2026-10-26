@@ -1,0 +1,20 @@
+# gui recipe: harfbuzz — OpenType text shaping engine
+# sha256 is an all-zero placeholder until `python3 scripts/fill-sha256.py` pins it.
+[package]
+name = "harfbuzz"
+version = "10.0.1"
+rel = 1
+arch = ["x86_64"]
+summary = "OpenType text shaping engine"
+license = ["MIT"]
+source = "https://github.com/harfbuzz/harfbuzz/releases/download/%{version}/harfbuzz-%{version}.tar.xz"
+sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+
+[depends]
+build = ["meson", "ninja", "pkgconf", "freetype"]
+run = ["freetype"]
+
+[build]
+configure = "meson setup build --prefix=/usr --libdir=lib --buildtype=release -D glib=disabled -D gobject=disabled -D icu=disabled -D cairo=disabled -D freetype=enabled -D tests=disabled -D docs=disabled -D introspection=disabled -D benchmark=disabled"
+compile = "ninja -C build"
+install = "DESTDIR=%{pkgdir} meson install -C build"

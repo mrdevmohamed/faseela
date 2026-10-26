@@ -1,0 +1,21 @@
+# gui recipe: tllist — Typed linked list header library (C)
+# sha256 is an all-zero placeholder until `python3 scripts/fill-sha256.py` pins it.
+[package]
+name = "tllist"
+version = "1.1.0"
+rel = 1
+arch = ["x86_64"]
+summary = "Typed linked list header library (C)"
+license = ["MIT"]
+source = "https://codeberg.org/dnkl/tllist/archive/%{version}.tar.gz"
+sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+source_dir = "tllist"
+
+[depends]
+build = ["meson", "ninja", "pkgconf"]
+run = []
+
+[build]
+configure = "meson setup build --prefix=/usr --libdir=lib --buildtype=release"
+compile = "ninja -C build"
+install = "DESTDIR=%{pkgdir} meson install -C build"

@@ -1,0 +1,19 @@
+# extra recipe: GNU time — run programs and summarize system resource usage
+[package]
+name = "time"
+version = "1.9"
+rel = 1
+arch = ["x86_64"]
+summary = "GNU time — run programs and summarize system resource usage"
+license = ["GPL-3.0-or-later"]
+source = "https://mirrors.kernel.org/gnu/time/time-%{version}.tar.gz"
+sha256 = "fbacf0c81e62429df3e33bda4cee38756604f18e01d977338e23306a3e3b521e"
+
+[depends]
+build = []
+run = []
+
+[build]
+configure = "./configure --prefix=/usr"
+compile = "make -j%{jobs}"
+install = "make DESTDIR=%{pkgdir} install"

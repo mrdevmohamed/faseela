@@ -1,0 +1,25 @@
+# Toolchain recipe: GNU multiple-precision arithmetic library.
+[package]
+name = "gmp"
+version = "6.3.0"
+rel = 1
+arch = ["x86_64"]
+summary = "GNU multiple-precision arithmetic library"
+license = ["LGPL-3.0", "GPL-2.0"]
+source = "https://mirrors.kernel.org/gnu/gmp/gmp-%{version}.tar.xz"
+# canonical: https://ftp.gnu.org/gnu/gmp/
+sha256 = "a3c2b80201b89e68616f4ad30bc66aee4927c3ce50e33929ca819d5c43538898"
+
+[depends]
+build = ["m4"]
+run = []
+
+[build]
+configure = """
+./configure --prefix=/usr      \
+    --enable-cxx               \
+    --disable-static           \
+    --docdir=/usr/share/doc/gmp-%{version}
+"""
+compile = "make -j%{jobs}"
+install = "make DESTDIR=%{pkgdir} install"

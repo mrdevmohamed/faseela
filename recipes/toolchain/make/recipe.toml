@@ -1,0 +1,20 @@
+# Toolchain recipe: GNU Make.
+[package]
+name = "make"
+version = "4.4.1"
+rel = 1
+arch = ["x86_64"]
+summary = "GNU Make utility to maintain groups of programs"
+license = ["GPL-3.0"]
+source = "https://mirrors.kernel.org/gnu/make/make-%{version}.tar.gz"
+# canonical: https://ftp.gnu.org/gnu/make/
+sha256 = "dd16fb1d67bfab79a72f5e8390735c49e3e8e70b4945a15ab1f81ddb78658fb3"
+
+[depends]
+build = []
+run = []
+
+[build]
+configure = "./configure --prefix=/usr --without-guile"
+compile = "make -j%{jobs}"
+install = "make DESTDIR=%{pkgdir} install"

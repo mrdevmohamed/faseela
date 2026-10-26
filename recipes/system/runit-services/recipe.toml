@@ -1,0 +1,111 @@
+# system recipe: runit-services — boot the system with runit.
+# Provides the /etc/runit stage scripts (1/2/3/ctrlaltdel), the supervised
+# service tree under /etc/sv/ (getty, udevd, dhcpcd, sysklogd, crond, sshd)
+# and the default runsvdir. /sbin/init points at runit for direct disk boots.
+[package]
+name = "runit-services"
+version = "0.4"
+rel = 2
+arch = ["x86_64"]
+summary = "runit stage scripts and supervised service tree"
+license = ["MIT"]
+
+[depends]
+build = ["runit"]
+run = ["runit", "eudev", "util-linux", "dhcpcd", "sysklogd", "cronie"]
+
+[build]
+install = '''
+install -d -m755 %{pkgdir}/etc/runit %{pkgdir}/etc/sv %{pkgdir}/etc/runit/runsvdir/default
+
+# --- runit stages -----------------------------------------------------------
+cat > %{pkgdir}/etc/runit/1 <<'EOF'
+#!/bin/sh
+# runit stage 1 — one-shot system bootstrap
+PATH=/usr/bin:/usr/sbin:/bin:/sbin
+
+mount -o remount,rw / 2>/dev/null || true
+mount -a 2>/dev/null || true
+
+hostname -F /etc/hostname 2>/dev/null || true
+
+# udev coldplug (udevd itself runs supervised under /etc/sv/udevd)
+mkdir -p /run/udev
+udevadm trigger --action=add --type=subsystems 2>/dev/null || true
+udevadm trigger --action=add --type=devices 2>/dev/null || true
+udevadm settle 2>/dev/null || true
+
+# fresh /tmp (we own it at boot)
+find /tmp -xdev -mindepth 1 -delete 2>/dev/null || true
+chmod 1777 /tmp
+
+dmesg > /var/log/boot.dmesg 2>/dev/null || true
+EOF
+cat > %{pkgdir}/etc/runit/2 <<'EOF'
+#!/bin/sh
+# runit stage 2 — supervise services forever
+exec runsvdir -P /etc/runit/runsvdir/default
+EOF
+cat > %{pkgdir}/etc/runit/3 <<'EOF'
+#!/bin/sh
+# runit stage 3 — tear services down (runit then halts/reboots the machine)
+PATH=/usr/bin:/usr/sbin:/bin:/sbin
+
+echo "mydistro is going down..."
+for s in /etc/runit/runsvdir/default/*; do
+    [ -d "$s" ] && sv down "$(basename "$s")" 2>/dev/null
+done
+sleep 1
+swapoff -a 2>/dev/null || true
+umount -a -r 2>/dev/null || true
+EOF
+cat > %{pkgdir}/etc/runit/ctrlaltdel <<'EOF'
+#!/bin/sh
+PATH=/usr/bin:/usr/sbin:/bin:/sbin
+exec runit-init 6
+EOF
+chmod 755 %{pkgdir}/etc/runit/1 %{pkgdir}/etc/runit/2 %{pkgdir}/etc/runit/3 %{pkgdir}/etc/runit/ctrlaltdel
+
+# --- supervised services ----------------------------------------------------
+for tty in 1 2 3 4; do
+    install -d -m755 %{pkgdir}/etc/sv/getty-tty$tty
+    printf '#!/bin/sh\nexec agetty --noclear tty%s 38400 linux\n' "$tty" > %{pkgdir}/etc/sv/getty-tty$tty/run
+    chmod 755 %{pkgdir}/etc/sv/getty-tty$tty/run
+done
+
+install -d -m755 %{pkgdir}/etc/sv/udevd
+cat > %{pkgdir}/etc/sv/udevd/run <<'EOF'
+#!/bin/sh
+[ -d /run/udev ] || mkdir -p /run/udev
+exec udevd
+EOF
+
+install -d -m755 %{pkgdir}/etc/sv/dhcpcd
+printf '#!/bin/sh\nexec dhcpcd -B\n' > %{pkgdir}/etc/sv/dhcpcd/run
+
+install -d -m755 %{pkgdir}/etc/sv/sysklogd
+printf '#!/bin/sh\nexec sysklogd -n\n' > %{pkgdir}/etc/sv/sysklogd/run
+
+install -d -m755 %{pkgdir}/etc/sv/crond
+printf '#!/bin/sh\nexec crond -n\n' > %{pkgdir}/etc/sv/crond/run
+
+install -d -m755 %{pkgdir}/etc/sv/sshd
+cat > %{pkgdir}/etc/sv/sshd/run <<'EOF'
+#!/bin/sh
+# available but not enabled by default: dpm service enable sshd
+ssh-keygen -A >/dev/null 2>&1
+exec sshd -D
+EOF
+chmod 755 %{pkgdir}/etc/sv/*/run
+
+# --- default runsvdir -------------------------------------------------------
+for svc in getty-tty1 getty-tty2 getty-tty3 getty-tty4 udevd dhcpcd sysklogd crond; do
+    ln -s /etc/sv/$svc %{pkgdir}/etc/runit/runsvdir/default/$svc
+done
+
+# kernel fallback init for direct disk boots (no initramfs exec path).
+# lives at /usr/bin/init: with merged-usr, the kernel's /sbin/init lookup
+# resolves to it through /sbin -> usr/bin (created by base-files).
+install -d -m755 %{pkgdir}/usr/bin
+ln -s /usr/bin/runit %{pkgdir}/usr/bin/init
+'''

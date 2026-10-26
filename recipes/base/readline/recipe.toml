@@ -1,0 +1,25 @@
+# base recipe: GNU line-editing library
+[package]
+name = "readline"
+version = "8.3"
+rel = 1
+arch = ["x86_64"]
+summary = "GNU line-editing library"
+license = ["GPL-3.0"]
+source = "https://mirrors.kernel.org/gnu/readline/readline-8.3.tar.gz"
+sha256 = "fe5383204467828cd495ee8d1d3c037a7eba1389c22bc6a041f627976f9061cc"
+
+[depends]
+build = ["ncurses"]
+run = ["ncurses"]
+
+[build]
+# --with-shared-termcap-library: upstream links the *shared* readline without
+# its curses runtime (SHLIB_LIBS stays empty unless this sets SHARED_TERMCAP),
+# leaving tgetent/tputs undefined in libreadline.so. Every consumer link test
+# — `checking for readline in -lreadline` (bc, bash, ...) — then fails
+# silently and ships a no-readline binary. With it the .so acquires a NEEDED
+# libncurses and consumers may link `-lreadline` alone.
+configure = "./configure --prefix=/usr --disable-static --with-curses --with-shared-termcap-library"
+compile = "make -j%{jobs}"
+install = "make DESTDIR=%{pkgdir} install"

@@ -1,0 +1,19 @@
+# system recipe: Syslog daemon and logger
+[package]
+name = "sysklogd"
+version = "2.7.2"
+rel = 1
+arch = ["x86_64"]
+summary = "Syslog daemon and logger"
+license = ["BSD-3-Clause", "GPL-2.0"]
+source = "https://github.com/troglobit/sysklogd/releases/download/v2.7.2/sysklogd-2.7.2.tar.gz"
+sha256 = "bc410ca64551a11fac6518b418fb6b8afbd888a70af2c5eb353334a706727bca"
+
+[depends]
+build = []
+run = []
+
+[build]
+configure = "./configure --prefix=/usr --sysconfdir=/etc"
+compile = "make -j%{jobs}"
+install = "make DESTDIR=%{pkgdir} install"

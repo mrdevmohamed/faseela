@@ -1,0 +1,19 @@
+# extra recipe: GNU cpio — copy file archives in and out
+[package]
+name = "cpio"
+version = "2.15"
+rel = 1
+arch = ["x86_64"]
+summary = "GNU cpio — copy file archives in and out"
+license = ["GPL-3.0-or-later"]
+source = "https://mirrors.kernel.org/gnu/cpio/cpio-%{version}.tar.gz"
+sha256 = "efa50ef983137eefc0a02fdb51509d624b5e3295c980aa127ceee4183455499e"
+
+[depends]
+build = []
+run = []
+
+[build]
+configure = "./configure --prefix=/usr"
+compile = "make -j%{jobs}"
+install = "make DESTDIR=%{pkgdir} install"

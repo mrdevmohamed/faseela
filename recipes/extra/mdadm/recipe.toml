@@ -1,0 +1,18 @@
+# extra recipe: mdadm — manage MD (software RAID) devices
+[package]
+name = "mdadm"
+version = "4.3"
+rel = 1
+arch = ["x86_64"]
+summary = "mdadm — manage MD (software RAID) devices"
+license = ["GPL-2.0-or-later"]
+source = "https://kernel.org/pub/linux/utils/raid/mdadm/mdadm-%{version}.tar.xz"
+sha256 = "416727ae1f1080ea6e3090cea36dd076826fc369151e36ab736557ba92196f9f"
+
+[depends]
+build = []
+run = []
+
+[build]
+compile = "make -j%{jobs}"
+install = "make DESTDIR=%{pkgdir} BINDIR=/usr/sbin MANDIR=/usr/share/man UDEVDIR=/usr/lib/udev/rules.d install"

@@ -1,0 +1,25 @@
+# base recipe: GNU arbitrary-precision calculator language
+[package]
+name = "bc"
+version = "1.08.2"
+rel = 1
+arch = ["x86_64"]
+summary = "GNU arbitrary-precision calculator language"
+license = ["GPL-3.0"]
+source = "https://mirrors.kernel.org/gnu/bc/bc-1.08.2.tar.gz"
+sha256 = "ae470fec429775653e042015edc928d07c8c3b2fc59765172a330d3d87785f86"
+
+[depends]
+build = ["readline"]
+run = ["readline"]
+
+[build]
+configure = "./configure --prefix=/usr --with-readline"
+# The tarball ships current bc.info/dc.info (May 2025, newer than the .texi
+# sources), but configure regenerates texi-ver.incl — a prerequisite of the
+# info targets — with a fresh mtime, so make insists on running `makeinfo`,
+# which does not exist yet (real texinfo is built later). Touch the shipped
+# pages so make accepts them as-is. The seed makeinfo stand-in (stage2-inner)
+# remains the fallback for tarballs that ship no info files at all.
+compile = "touch -c doc/bc.info doc/dc.info && make -j%{jobs}"
+install = "make DESTDIR=%{pkgdir} install"

@@ -1,0 +1,19 @@
+# extra recipe: GNU wget — network utility to retrieve files over HTTP(S)/FTP
+[package]
+name = "wget"
+version = "1.25.0"
+rel = 1
+arch = ["x86_64"]
+summary = "GNU wget — network utility to retrieve files over HTTP(S)/FTP"
+license = ["GPL-3.0-or-later"]
+source = "https://mirrors.kernel.org/gnu/wget/wget-%{version}.tar.gz"
+sha256 = "766e48423e79359ea31e41db9e5c289675947a7fcf2efdcedb726ac9d0da3784"
+
+[depends]
+build = ["openssl", "zlib", "libidn2", "libunistring", "pcre2", "libpsl"]
+run = ["openssl", "zlib", "libidn2", "libunistring", "pcre2", "libpsl"]
+
+[build]
+configure = "./configure --prefix=/usr --sysconfdir=/etc --with-ssl=openssl"
+compile = "make -j%{jobs}"
+install = "make DESTDIR=%{pkgdir} install"

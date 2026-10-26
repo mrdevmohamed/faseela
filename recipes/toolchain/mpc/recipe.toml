@@ -1,0 +1,20 @@
+# Toolchain recipe: GNU C library for multiple-precision complex arithmetic.
+[package]
+name = "mpc"
+version = "1.3.1"
+rel = 1
+arch = ["x86_64"]
+summary = "C library for arbitrary precision complex number arithmetic"
+license = ["LGPL-3.0"]
+source = "https://mirrors.kernel.org/gnu/mpc/mpc-%{version}.tar.gz"
+# canonical: https://ftp.gnu.org/gnu/mpc/
+sha256 = "ab642492f5cf882b74aa0cb730cd410a81edcdbec895183ce930e706c1c759b8"
+
+[depends]
+build = ["gmp", "mpfr"]
+run = ["gmp", "mpfr"]
+
+[build]
+configure = "./configure --prefix=/usr --disable-static"
+compile = "make -j%{jobs}"
+install = "make DESTDIR=%{pkgdir} install"

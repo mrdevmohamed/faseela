@@ -1,0 +1,19 @@
+# base recipe: GNU file-search utilities (find, xargs)
+[package]
+name = "findutils"
+version = "4.11.0"
+rel = 1
+arch = ["x86_64"]
+summary = "GNU file-search utilities (find, xargs)"
+license = ["GPL-3.0"]
+source = "https://mirrors.kernel.org/gnu/findutils/findutils-4.11.0.tar.xz"
+sha256 = "bfd19cb06cc71f3352d567e90284d8cdac02ac89774bbeadf0b533b0c11432fd"
+
+[depends]
+build = []
+run = []
+
+[build]
+configure = "./configure --prefix=/usr"
+compile = "make -j%{jobs}"
+install = "make DESTDIR=%{pkgdir} install"

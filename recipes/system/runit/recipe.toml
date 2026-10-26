@@ -1,0 +1,22 @@
+# system recipe: UNIX init scheme with service supervision (runit suite)
+[package]
+name = "runit"
+version = "2.2.0"
+rel = 1
+arch = ["x86_64"]
+summary = "UNIX init scheme with service supervision (runit suite)"
+license = ["BSD-3-Clause"]
+source = "https://smarden.org/runit/runit-2.2.0.tar.gz"
+sha256 = "95ef4d2868b978c7179fe47901e5c578e11cf273d292bd6208bd3a7ccb029290"
+source_dir = "admin/runit-%{version}"
+
+[depends]
+build = []
+run = []
+
+[build]
+compile = "package/compile"
+install = """
+mkdir -p %{pkgdir}/usr/bin
+cp -v command/* %{pkgdir}/usr/bin/
+"""

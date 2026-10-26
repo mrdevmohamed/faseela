@@ -1,0 +1,24 @@
+# extra recipe: GNU screen — full-screen window manager multiplexing a terminal
+[package]
+name = "screen"
+version = "5.0.0"
+rel = 1
+arch = ["x86_64"]
+summary = "GNU screen — full-screen window manager multiplexing a terminal"
+license = ["GPL-3.0-or-later"]
+source = "https://mirrors.kernel.org/gnu/screen/screen-%{version}.tar.gz"
+sha256 = "f04a39d00a0e5c7c86a55338808903082ad5df4d73df1a2fd3425976aed94971"
+
+[depends]
+build = ["ncurses"]
+run = ["ncurses"]
+
+[build]
+configure = "./configure --prefix=/usr --sysconfdir=/etc --with-pty-mode=0620 --with-pty-group=5 --with-sys-screenrc=/etc/screenrc"
+compile = "make -j%{jobs}"
+install = """
+
+make DESTDIR=%{pkgdir} install
+install -Dm644 etc/screenrc %{pkgdir}/etc/screenrc
+
+"""

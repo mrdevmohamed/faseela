@@ -1,0 +1,20 @@
+# Toolchain recipe: GNU M4 (required by GMP's configure).
+[package]
+name = "m4"
+version = "1.4.19"
+rel = 1
+arch = ["x86_64"]
+summary = "GNU macro processor"
+license = ["GPL-3.0"]
+source = "https://mirrors.kernel.org/gnu/m4/m4-%{version}.tar.xz"
+# canonical: https://ftp.gnu.org/gnu/m4/
+sha256 = "63aede5c6d33b6d9b13511cd0be2cac046f2e70fd0a07aa9573a04a82783af96"
+
+[depends]
+build = []
+run = []
+
+[build]
+configure = "./configure --prefix=/usr"
+compile = "make -j%{jobs}"
+install = "make DESTDIR=%{pkgdir} install"

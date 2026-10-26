@@ -1,0 +1,19 @@
+# base recipe: Utility to determine file types via magic numbers
+[package]
+name = "file"
+version = "5.46"
+rel = 1
+arch = ["x86_64"]
+summary = "Utility to determine file types via magic numbers"
+license = ["BSD-2-Clause"]
+source = "https://deb.debian.org/debian/pool/main/f/file/file_5.46.orig.tar.gz"
+sha256 = "c9cc77c7c560c543135edc555af609d5619dbef011997e988ce40a3d75d86088"
+
+[depends]
+build = ["zlib"]
+run = ["zlib"]
+
+[build]
+configure = "./configure --prefix=/usr"
+compile = "make -j%{jobs}"
+install = "make DESTDIR=%{pkgdir} install"

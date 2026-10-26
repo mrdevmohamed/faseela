@@ -1,0 +1,20 @@
+# gui recipe: sway — i3-compatible Wayland compositor
+# sha256 is an all-zero placeholder until `python3 scripts/fill-sha256.py` pins it.
+[package]
+name = "sway"
+version = "1.10.1"
+rel = 1
+arch = ["x86_64"]
+summary = "i3-compatible Wayland compositor"
+license = ["MIT"]
+source = "https://github.com/swaywm/sway/releases/download/%{version}/sway-%{version}.tar.gz"
+sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+
+[depends]
+build = ["meson", "ninja", "pkgconf", "wlroots", "wayland", "wayland-protocols", "libxkbcommon", "pcre2", "json-c", "pango", "cairo", "libevdev", "libinput", "xkeyboard-config"]
+run = ["wlroots", "json-c", "pango", "cairo", "pcre2", "libxkbcommon", "libinput", "libevdev", "wayland"]
+
+[build]
+configure = "meson setup build --prefix=/usr --libdir=lib --buildtype=release -D man-pages=disabled -D tray=disabled -D gdk-pixbuf=disabled -D default-wallpaper=false -D zsh-completions=false -D bash-completions=false -D fish-completions=false"
+compile = "ninja -C build"
+install = "DESTDIR=%{pkgdir} meson install -C build"

@@ -1,0 +1,24 @@
+# gui recipe: python-pyyaml — YAML parser for python (pure python, no libyaml)
+# sha256 is an all-zero placeholder until `python3 scripts/fill-sha256.py` pins it.
+[package]
+name = "python-pyyaml"
+version = "6.0.2"
+rel = 1
+arch = ["x86_64"]
+summary = "YAML parser for python (pure python, no libyaml)"
+license = ["MIT"]
+source = "https://github.com/yaml/pyyaml/archive/refs/tags/%{version}.tar.gz"
+sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+source_dir = "pyyaml-%{version}"
+
+[depends]
+build = ["python"]
+run = ["python"]
+
+[build]
+install = '''
+site=$(python3 -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')
+install -d "%{pkgdir}$site"
+cp -r lib/yaml "%{pkgdir}$site/"
+find "%{pkgdir}$site/yaml" -name __pycache__ -prune -exec rm -rf {} +
+'''

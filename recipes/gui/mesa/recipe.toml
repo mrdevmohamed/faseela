@@ -1,0 +1,20 @@
+# gui recipe: mesa — OpenGL/GLES/EGL/GBM implementation (software + virgl only)
+# sha256 is an all-zero placeholder until `python3 scripts/fill-sha256.py` pins it.
+[package]
+name = "mesa"
+version = "24.3.0"
+rel = 1
+arch = ["x86_64"]
+summary = "OpenGL/GLES/EGL/GBM implementation (software + virgl only)"
+license = ["MIT"]
+source = "https://archive.mesa3d.org/mesa-%{version}.tar.xz"
+sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+
+[depends]
+build = ["meson", "ninja", "pkgconf", "python-mako", "python-markupsafe", "python-pyyaml", "python-packaging", "libdrm", "wayland", "wayland-protocols", "expat", "zlib", "zstd", "bison", "flex"]
+run = ["libdrm", "wayland", "expat", "zlib", "zstd"]
+
+[build]
+configure = "meson setup build --prefix=/usr --libdir=lib --buildtype=release -D platforms=wayland -D gallium-drivers=softpipe,virgl -D vulkan-drivers= -D llvm=disabled -D glx=disabled -D egl=enabled -D gbm=enabled -D gles1=disabled -D gles2=enabled -D glvnd=disabled -D valgrind=disabled -D libunwind=disabled -D lmsensors=disabled -D build-tests=false"
+compile = "ninja -C build"
+install = "DESTDIR=%{pkgdir} meson install -C build"

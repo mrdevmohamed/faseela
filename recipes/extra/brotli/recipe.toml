@@ -1,0 +1,20 @@
+# extra recipe: Brotli — generic-purpose lossless compression library
+[package]
+name = "brotli"
+version = "1.1.0"
+rel = 1
+arch = ["x86_64"]
+summary = "Brotli — generic-purpose lossless compression library"
+license = ["MIT"]
+source = "https://github.com/google/brotli/archive/refs/tags/v%{version}.tar.gz"
+sha256 = "e720a6ca29428b803f4ad165371771f5398faba397edf6778837a18599ea13ff"
+
+[depends]
+build = ["cmake"]
+run = []
+
+# v1.1.0 release tarballs have no ./configure (CMake only).
+[build]
+configure = "cmake -S . -B build -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_INSTALL_LIBDIR=lib -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON -DBROTLI_BUILD_TOOLS=ON"
+compile = "cmake --build build -j%{jobs}"
+install = "DESTDIR=%{pkgdir} cmake --install build"

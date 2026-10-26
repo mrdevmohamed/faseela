@@ -1,0 +1,18 @@
+# extra recipe: pciutils — PCI bus utilities (lspci, setpci)
+[package]
+name = "pciutils"
+version = "3.13.0"
+rel = 1
+arch = ["x86_64"]
+summary = "pciutils — PCI bus utilities (lspci, setpci)"
+license = ["GPL-2.0-or-later"]
+source = "https://kernel.org/pub/software/utils/pciutils/pciutils-%{version}.tar.xz"
+sha256 = "77f11f78298502634d1af50308f15a5788629f6cf45cba376f5009aea4cb4926"
+
+[depends]
+build = ["zlib", "kmod"]
+run = ["zlib", "kmod"]
+
+[build]
+compile = "make -j%{jobs} SHARED=yes PREFIX=/usr"
+install = "make SHARED=yes PREFIX=/usr DESTDIR=%{pkgdir} MANDIR=/usr/share/man install"

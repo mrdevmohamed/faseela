@@ -1,0 +1,24 @@
+# gui recipe: python-markupsafe — Safely add untrusted strings to HTML/XML (pure python)
+# sha256 is an all-zero placeholder until `python3 scripts/fill-sha256.py` pins it.
+[package]
+name = "python-markupsafe"
+version = "3.0.2"
+rel = 1
+arch = ["x86_64"]
+summary = "Safely add untrusted strings to HTML/XML (pure python)"
+license = ["BSD-3-Clause"]
+source = "https://github.com/pallets/markupsafe/archive/refs/tags/%{version}.tar.gz"
+sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+source_dir = "markupsafe-%{version}"
+
+[depends]
+build = ["python"]
+run = ["python"]
+
+[build]
+install = '''
+site=$(python3 -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')
+install -d "%{pkgdir}$site"
+cp -r src/markupsafe "%{pkgdir}$site/"
+find "%{pkgdir}$site/markupsafe" -name __pycache__ -prune -exec rm -rf {} +
+'''

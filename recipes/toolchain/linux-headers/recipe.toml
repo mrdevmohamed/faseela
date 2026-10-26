@@ -1,0 +1,28 @@
+# Toolchain recipe: sanitized Linux kernel headers for userspace.
+# (LFS 12.2 chapter 6 equivalent)
+[package]
+name = "linux-headers"
+version = "6.10"
+rel = 1
+arch = ["x86_64"]
+summary = "Sanitized Linux kernel headers for userspace"
+license = ["GPL-2.0"]
+source = "https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-%{version}.tar.xz"
+sha256 = "774698422ee54c5f1e704456f37c65c06b51b4e9a8b0866f34580d86fef8e226"
+source_dir = "linux-%{version}"
+
+[depends]
+build = []
+run = []
+
+[build]
+configure = "make mrproper"
+# `make headers_install` needs rsync, which the seed does not have (and rsync
+# is only built much later). LFS's rsync-free method: build the headers in the
+# source tree, drop the non-header files, copy the tree into the package.
+install = """
+make headers && \
+find usr/include -type f ! -name '*.h' -delete && \
+install -d %{pkgdir}/usr && \
+cp -r usr/include %{pkgdir}/usr/
+"""

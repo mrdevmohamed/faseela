@@ -1,0 +1,19 @@
+# gui recipe: hwdata — Hardware identification and configuration data
+# sha256 is an all-zero placeholder until `python3 scripts/fill-sha256.py` pins it.
+[package]
+name = "hwdata"
+version = "0.390"
+rel = 1
+arch = ["x86_64"]
+summary = "Hardware identification and configuration data"
+license = ["GPL-2.0-or-later"]
+source = "https://github.com/vcrhonek/hwdata/archive/refs/tags/v%{version}.tar.gz"
+sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+
+[depends]
+build = []
+run = []
+
+[build]
+configure = "./configure --prefix=/usr --disable-blacklist"
+install = "make DESTDIR=%{pkgdir} install"

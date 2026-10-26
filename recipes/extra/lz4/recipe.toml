@@ -1,0 +1,18 @@
+# extra recipe: LZ4 — extremely fast compression algorithm
+[package]
+name = "lz4"
+version = "1.10.0"
+rel = 1
+arch = ["x86_64"]
+summary = "LZ4 — extremely fast compression algorithm"
+license = ["BSD-2-Clause", "GPL-2.0-or-later"]
+source = "https://github.com/lz4/lz4/archive/refs/tags/v%{version}.tar.gz"
+sha256 = "537512904744b35e232912055ccf8ec66d768639ff3abe5788d90d792ec5f48b"
+
+[depends]
+build = []
+run = []
+
+[build]
+configure = "make -j%{jobs} PREFIX=/usr"
+install = "make PREFIX=/usr DESTDIR=%{pkgdir} install"

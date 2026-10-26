@@ -1,0 +1,19 @@
+# extra recipe: GNU autoconf — produce configure scripts
+[package]
+name = "autoconf"
+version = "2.72"
+rel = 1
+arch = ["x86_64"]
+summary = "GNU autoconf — produce configure scripts"
+license = ["GPL-3.0-or-later"]
+source = "https://mirrors.kernel.org/gnu/autoconf/autoconf-%{version}.tar.xz"
+sha256 = "ba885c1319578d6c94d46e9b0dceb4014caafe2490e437a0dbca3f270a223f5a"
+
+[depends]
+build = ["m4", "perl"]
+run = ["m4", "perl"]
+
+[build]
+configure = "./configure --prefix=/usr"
+compile = "make -j%{jobs}"
+install = "make DESTDIR=%{pkgdir} install"

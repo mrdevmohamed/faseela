@@ -1,0 +1,27 @@
+# base recipe: Terminal handling library (wide-character ABI)
+[package]
+name = "ncurses"
+version = "6.6"
+rel = 1
+arch = ["x86_64"]
+summary = "Terminal handling library (wide-character ABI)"
+license = ["MIT", "X11"]
+source = "https://invisible-island.net/archives/ncurses/ncurses-6.6.tar.gz"
+sha256 = "355b4cbbed880b0381a04c46617b7656e362585d52e9cf84a67e2009b749ff11"
+
+[depends]
+build = []
+run = []
+
+[build]
+configure = "./configure --prefix=/usr --mandir=/usr/share/man --with-shared --without-debug --without-normal --with-cxx-shared --enable-pc-files --with-pkg-config-libdir=/usr/lib/pkgconfig --enable-widec --disable-stripping"
+compile = "make -j%{jobs}"
+install = """
+make DESTDIR=%{pkgdir} install
+for lib in ncurses form panel menu
+do
+  ln -sfv lib${lib}w.so %{pkgdir}/usr/lib/lib${lib}.so
+  ln -sfv ${lib}w.pc %{pkgdir}/usr/lib/pkgconfig/${lib}.pc
+done
+ln -sfv libncursesw.so %{pkgdir}/usr/lib/libcurses.so
+"""

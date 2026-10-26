@@ -1,0 +1,19 @@
+# extra recipe: nftables — packet filtering and classification (nft)
+[package]
+name = "nftables"
+version = "1.1.1"
+rel = 1
+arch = ["x86_64"]
+summary = "nftables — packet filtering and classification (nft)"
+license = ["GPL-2.0-or-later"]
+source = "https://netfilter.org/projects/nftables/files/nftables-%{version}.tar.xz"
+sha256 = "6358830f3a64f31e39b0ad421d7dadcd240b72343ded48d8ef13b8faf204865a"
+
+[depends]
+build = ["libmnl", "libnftnl", "gmp", "readline"]
+run = ["libmnl", "libnftnl", "gmp", "readline"]
+
+[build]
+configure = "./configure --prefix=/usr --sysconfdir=/etc --disable-python"
+compile = "make -j%{jobs}"
+install = "make DESTDIR=%{pkgdir} install"

@@ -1,0 +1,41 @@
+# boot recipe: Linux kernel (x86_64 defconfig base image)
+# rel 2: force the filesystem/devtmpfs options the live ISO depends on
+[package]
+name = "linux"
+version = "6.10"
+rel = 3
+arch = ["x86_64"]
+summary = "Linux kernel (x86_64 defconfig base image)"
+license = ["GPL-2.0"]
+source = "https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-%{version}.tar.xz"
+sha256 = "774698422ee54c5f1e704456f37c65c06b51b4e9a8b0866f34580d86fef8e226"
+
+[depends]
+build = ["bison", "flex", "perl"]
+run = []
+
+[build]
+configure = """
+make mrproper
+make defconfig
+# live-boot prerequisites: overlay root from squashfs on iso9660/usb
+scripts/config -e OVERLAY_FS -e ISO9660_FS -e SQUASHFS -e BLK_DEV_LOOP -e DEVTMPFS -e DEVTMPFS_MOUNT
+# build-isolation.md §9: the sandbox's user/pid/net/ipc/uts namespaces
+# (USER_NS defaults to n on x86_64 defconfig — without it dpm's `sandbox`
+# and `closure` isolation levels cannot work on this distro's own kernel)
+scripts/config -e USER_NS -e PID_NS -e NET_NS -e IPC_NS -e UTS_NS
+# fresh /proc and /dev/pts for sandboxed builds; loopback for test suites
+scripts/config -e TMPFS -e UNIX98_PTYS -e DEVTMPFS
+# graphical session prerequisites (recipes/gui): DRM/KMS for QEMU + virtio-gpu,
+# simple framebuffer DRM, and evdev/HID input for libinput
+scripts/config -e DRM -e DRM_FBDEV_EMULATION -e DRM_VIRTIO_GPU -e DRM_BOCHS -e DRM_SIMPLEDRM -e INPUT_EVDEV -e HID_GENERIC -e USB_HID
+make olddefconfig
+"""
+compile = "make -j%{jobs}"
+install = """
+make INSTALL_MOD_PATH=%{pkgdir} modules_install
+install -Dm644 arch/x86/boot/bzImage %{pkgdir}/boot/vmlinuz-%{version}
+install -Dm644 System.map %{pkgdir}/boot/System.map-%{version}
+install -Dm644 .config %{pkgdir}/boot/config-%{version}
+rm -f %{pkgdir}/lib/modules/%{version}/build %{pkgdir}/lib/modules/%{version}/source
+"""

@@ -1,0 +1,19 @@
+# extra recipe: usbutils — USB utilities (lsusb)
+[package]
+name = "usbutils"
+version = "017"
+rel = 1
+arch = ["x86_64"]
+summary = "usbutils — USB utilities (lsusb)"
+license = ["GPL-2.0-or-later"]
+source = "https://kernel.org/pub/linux/utils/usb/usbutils/usbutils-%{version}.tar.xz"
+sha256 = "a6a25ffdcf9103e38d7a44732aca17073f4e602b92e4ae55625231a82702e05b"
+
+[depends]
+build = ["libusb", "eudev"]
+run = ["libusb", "eudev"]
+
+[build]
+configure = "./configure --prefix=/usr"
+compile = "make -j%{jobs}"
+install = "make DESTDIR=%{pkgdir} install"

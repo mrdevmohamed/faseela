@@ -1,0 +1,362 @@
+# mydistro
+
+A from-scratch, source-based Linux distribution (Gentoo-style) built around its own
+package manager written in Rust.
+
+This repository is a single monorepo with three cooperating components:
+
+```
+mydistro/
+├── pkgmgr/      DPM — the package manager (Rust)
+├── recipes/     Source recipes for every package in the distribution
+├── bootstrap/   Stage 0-4 scripts that build the distribution from nothing
+└── profiles/    Per-architecture build profiles (CFLAGS, toolchain choices)
+```
+
+## Design decisions (locked in)
+
+| Decision        | Choice                                        |
+|-----------------|-----------------------------------------------|
+| Language (PM)   | Rust                                          |
+| Model           | Source-based (Gentoo-style), binary cache     |
+| libc            | glibc                                         |
+| Init system     | runit                                         |
+| Compiler        | gcc                                           |
+| Recipe format   | Declarative TOML with shell build sections    |
+| Package archive | `.dpm.tar.zst` (payload + .PKGINFO + file list) |
+| Local database  | Plain text files under `/var/lib/dpm/local/`  |
+
+## CI / CD (GitHub Actions)
+
+| Workflow | Trigger | What it does |
+|----------|---------|--------------|
+| `.github/workflows/ci.yml` | push, pull request | `cargo build`, `clippy -D warnings`, `cargo test`; shell syntax + ShellCheck, recipe validation, the `build-all.sh` mock tests and a dry run |
+| `.github/workflows/release.yml` | tag `v*`, or *Run workflow* | runs CI, then builds the whole distribution (`build-all.sh`) and uploads the ISO + sha256 as an artifact; on a tag it also creates a GitHub Release |
+
+A full source build takes hours. GitHub-hosted runners stop after 6 h, so for
+a complete ISO set the repository variable `ISO_RUNNER` (Settings > Variables)
+to the label of a self-hosted Linux runner with sudo and >= 30 GB free disk.
+Release assets are limited to 2 GiB; a bigger ISO stays as the workflow artifact.
+
+## DPM — the package manager
+
+```
+cd pkgmgr
+cargo build --release
+cargo test
+```
+
+Commands:
+
+```
+dpm --recipes recipes --builddir build build   <name>       # build package from recipe
+dpm --root /tmp/testroot install <archive.dpm.tar.zst>     # install archive into root
+dpm --recipes recipes deps <name>                          # show dependency order
+dpm --root /tmp/testroot query                             # list installed packages
+dpm --root /tmp/testroot files <name>                      # files owned by package
+dpm --root /tmp/testroot owner /usr/bin/foo                # which package owns file
+dpm --root /tmp/testroot remove <name>                     # remove package
+dpm repo-create <dir-of-archives> --out index.toml --sign  # signed repo index
+dpm --root /tmp/testroot upgrade --repo <dir-or-url>       # upgrade from a repo
+dpm --root /tmp/testroot rollback <name>                   # restore previous version
+dpm --root /tmp/testroot service list                      # runit services
+```
+
+Any command accepts `--root` so everything can be tested safely against a
+throwaway directory instead of `/`.
+
+### Database locking
+
+Every command that touches `<root>/var/lib/dpm` takes an `flock(2)` lock on
+`<root>/var/lib/dpm/lock`: `install`, `remove`, `rollback` and `upgrade`
+exclusively (held for the whole command, hooks included); `query`, `files`,
+`owner`, `deps`, `deps-all` and `upgrade --dry-run` shared, so readers never
+see a half-applied transaction and don't block each other. A second dpm waits
+and prints who holds the lock; `DPM_LOCK_TIMEOUT=<seconds>` makes it give up
+instead. The kernel releases the lock when the holder exits for any reason, so
+there are no stale lock files to clean up. Package hooks get `DPM_LOCK_HELD=1`
+so a hook that calls dpm does not wait on its own parent.
+
+### Build profiles
+
+`profiles/<arch>.toml` (selected by the recipe's first `arch`) sets the flags
+every package is compiled with. The build engine exports them to all build
+sections as `CFLAGS`, `CXXFLAGS` and `LDFLAGS` (empty values are not exported)
+and uses the profile's `jobs` as the default job count:
+
+```
+--jobs N                  # highest priority
+profile `jobs`            # next
+number of CPUs            # fallback
+```
+
+A missing profile is fine (toolchain defaults); flags already present in dpm's
+own environment win over the profile (`CFLAGS=-O3 dpm build foo`). `--profiles
+<dir>` selects another directory (default `profiles`; the bootstrap stages pass
+it explicitly).
+
+Build output is streamed to the console as it is produced and also saved to
+`<builddir>/<pkg>-<ver>-<rel>/build-<section>.log` (stdout and stderr merged,
+in real order).
+
+### Build isolation
+
+`dpm build --isolation <level>` (or the profile's `[build] isolation`; default
+`none`) controls what a build can see and do — see
+`docs/design/build-isolation.md` for the full rationale:
+
+| level | the build gets |
+|-------|----------------|
+| `none` | today's behaviour (dpm's environment, live filesystem) |
+| `env` | only the whitelisted environment (LC_ALL=C, TZ=UTC, umask 022, ...), `SOURCE_DATE_EPOCH`, byte-reproducible archives; `--rebuild-check` verifies exactly that |
+| `sandbox` | + user/mount/pid/net/ipc/uts namespaces: read-only root, private `/tmp` `/dev` `/proc`, no network, fake-root identity, per-section timeout |
+| `closure` | + a build root assembled from built archives only (`base-devel` + the declared `depends.build`), so a missing declaration fails the build |
+
+A post-build lint runs from `env` up: it warns about `DT_NEEDED` libraries
+missing from `depends.run` and errors on leaked build paths or bad layout.
+`dpm sandbox-probe` (hidden) tells you what this kernel allows; restricted
+environments need `--allow-degraded` (loudly, never silently weaker).
+
+On top of that:
+
+- **Layer cache**: closure archives are extracted once into a content-addressed
+  layer cache (`DPM_LAYER_CACHE`, default `<root>/var/cache/dpm/layers`) and
+  the build root is an overlayfs over them (kernel ≥ 5.11; older kernels
+  automatically fall back to extract-per-build).
+- **`--use-cache`**: skip a build whose `build_id` (recipe + source sha256 +
+  closure + profile flags) matches the recorded one.
+- **Rootless**: `dpm build` up to `closure` works as a normal user — no root
+  required at build time.
+
+### Signing & trust (dpm-sig-v1)
+
+Packages and repo indexes are signed with ed25519. The signed message is
+`dpm-v1:sha256:<hash>`, so one verification covers both integrity and
+authenticity. Signatures live in detached `<file>.sig` sidecars.
+
+```
+dpm keygen --out /etc/dpm/keys              # dpm.sec (0600) + dpm.pub
+dpm sign <archive-or-index> --key dpm.sec   # writes <file>.sig
+dpm --root / trust /etc/dpm/keys/dpm.pub    # copy key into the trust store
+dpm verify <file>                           # trust store, else embedded key
+```
+
+Verification policy (`dpm install` / `dpm upgrade`):
+
+| Trust store | Signature      | Result                                             |
+|-------------|----------------|----------------------------------------------------|
+| configured  | valid          | install                                            |
+| configured  | missing        | refuse (`--allow-unsigned` overrides)              |
+| configured  | bad / rogue    | refuse — always                                    |
+| empty       | present        | verify against embedded key + loud warning         |
+| empty       | missing        | pass (bootstrap mode)                              |
+
+Remote repositories (`upgrade --repo http(s)://…`) are stricter: with an empty
+trust store dpm refuses them outright (before any network access) unless
+`--allow-unsigned` is passed, because bootstrap mode and embedded-key checks
+cannot authenticate a mirror. Add the distribution key first:
+`dpm --root / trust /path/to/dpm.pub`.
+
+### Atomic upgrades & rollback
+
+* every install stages into a hidden dir, conflict-checks against the db,
+  then renames into place through an undo journal: files it replaces are
+  first moved to `.dpm/bak-*`, and if any move fails everything is restored
+  (all-or-nothing file placement); db writes are temp-file + rename
+* replaced versions leave an undo record (`/var/lib/dpm/undo/<name>`) and
+  their archive in the package cache (`/var/cache/dpm`) — `dpm rollback <name>`
+  walks one step back, and keeps ping-ponging as long as there is history
+* `dpm upgrade --repo <dir>`: verifies the index signature, checks sha256,
+  resolves order through the recipe graph, then applies
+* pacman-style config protection: `/etc` files are hashed at install time
+  (`<pkg>/hashes` in the db). Untouched configs upgrade in place; locally
+  modified ones are preserved and the new version lands next to them as
+  `<path>.dpm-new`
+* files dropped between versions are removed; obsolete-file deletion only
+  touches paths the package still owns
+
+### Remote repositories (http/https)
+
+`dpm upgrade --repo` accepts a local directory **or** an http(s) URL:
+
+```
+dpm --root / upgrade --repo https://mirror.example.com/mydistro/stable
+```
+
+* the index (`index.toml` + optional `index.toml.sig`) is fetched fresh on
+  every run; if the mirror is unreachable, the cached copy is used with a
+  warning (so upgrades still run offline once a mirror was seen)
+* the index signature goes through the same trust policy as local repos
+* archives are downloaded on demand into a stable per-URL cache under
+  `/var/cache/dpm/remote/<key>/`, sha256-checked against the index on every
+  reuse (a corrupted cache entry is transparently re-downloaded)
+* archive paths recorded in the index are validated — no `/`, no `..`, no
+  dotfiles — so a compromised index cannot write outside the cache
+* packages without a recipe in the local tree (third-party repo content)
+  are applied in alphabetical order after the graph-ordered ones
+
+### Service management (runit)
+
+```
+dpm service list                 # /etc/sv tree + enabled state
+dpm service enable sshd          # link into /etc/runit/runsvdir/default
+dpm service disable dhcpcd       # remove the link (runsvdir stops it live)
+dpm service status [name]        # static state + live `sv status` when supervised
+```
+
+A service is *available* when `/etc/sv/<name>/run` exists and *enabled* when
+`/etc/runit/runsvdir/default/<name>` links to it — runsvdir rescans that
+directory every few seconds, so enable/disable take effect without a
+supervisor restart. `disable` refuses to remove anything that is not a
+symlink, and `enable` refuses services without a run script.
+
+## Recipe format (example)
+
+```toml
+[package]
+name    = "gzip"
+version = "1.13"
+rel     = 1
+arch    = ["x86_64"]
+summary = "GNU compression utility"
+license = ["GPL-3.0"]
+source  = "https://ftp.gnu.org/gnu/gzip/gzip-%{version}.tar.xz"
+sha256  = "..."
+
+[depends]
+build = ["zstd"]     # recipe-level build deps (seed tools are implicit)
+run   = []
+
+[build]
+configure = "./configure --prefix=/usr"
+compile   = "make -j%{jobs}"
+install   = "make DESTDIR=%{pkgdir} install"
+
+[hooks]
+post_install = ""    # runs after install (also used after upgrade)
+pre_remove   = ""    # runs before `dpm remove`
+post_remove  = ""    # runs after `dpm remove`
+# hooks are stored in the archive (.HOOKS); they run on the live system, or in a
+# chroot of --root when dpm runs as root and the target has /bin/sh; else skipped
+```
+
+Placeholders available in build sections: `%{name} %{version} %{rel} %{arch}
+%{jobs} %{pkgdir} %{srcdir}`.
+
+## Bootstrap pipeline (build the whole distro from nothing)
+
+`bootstrap/build-all.sh` is the one-command driver for the pipeline below:
+
+```bash
+sudo bootstrap/build-all.sh /mnt/mydistro      # seed + stages 1-3 + ISO
+sudo bootstrap/build-all.sh --isolation closure --stage3-world /mnt/mydistro
+bootstrap/build-all.sh --list-stages /mnt/mydistro   # progress + resume
+```
+
+It stamps each finished stage (state kept outside the target), logs every
+run, runs pre-flight checks (root, disk space, host tools) before starting,
+and after a failure re-running the same command resumes from the broken
+stage. See `bootstrap/README.md` for the full option list.
+
+| Stage      | Script                      | What it does                                        |
+|------------|-----------------------------|-----------------------------------------------------|
+| 0 — Seed   | `bootstrap/seed/build-seed.sh` | Assemble a prebuilt toolchain tarball (gcc, glibc, rustc...) |
+| 1 — Chroot | `bootstrap/stage1.sh`       | chroot + verify the seed toolchain (it IS the temporary toolchain) |
+| 2 — Core   | `bootstrap/stage2.sh`       | Build & install core system with DPM from recipes   |
+| 3 — Self   | `bootstrap/stage3.sh`       | Rebuild the world with the distro's own toolchain   |
+| 4 — ISO    | `bootstrap/mkiso.sh`        | squashfs + initramfs + grub → bootable live ISO     |
+| 5 — Disk   | `bootstrap/install.sh`      | run in the live system: partition, copy, grub → installed disk |
+
+See `bootstrap/README.md` for details and host requirements.
+
+## Status / roadmap
+
+- [x] Project skeleton
+- [x] DPM v0.1: recipe parser, version compare, local DB, dependency resolver,
+      build engine, archive (tar.zst), install/remove/query, repo index
+- [x] Build isolation (docs/design/build-isolation.md — **all phases**): env
+      whitelist + reproducible archives (`--rebuild-check`), the dpm-owned
+      namespace sandbox (`--isolation sandbox`), archive-assembled build roots
+      (`--isolation closure`, `base-devel` meta package), post-build ELF lint,
+      the overlayfs layer cache with extract-per-build fallback (Phase 5) and
+      rootless builds as a normal user (Phase 7)
+- [x] Toolchain recipes (linux-headers, glibc, binutils, m4, gmp,
+      mpfr, mpc, gcc, make, pkgconf)
+- [x] Bootstrap scripts (seed / stage1 / stage2 / stage3 / mkiso)
+- [x] One-command pipeline driver (`bootstrap/build-all.sh`): stamp-based
+      resume, per-run logs, pre-flight checks, `--dry-run`/`--from-stage`/
+      `--fresh`/`--wipe`/`--no-iso`
+- [x] Base recipes (35): zlib, bzip2, file, ncurses, readline, pcre2, libffi,
+      expat, gdbm, gperf, coreutils, bash, tar, gzip, xz, zstd, grep, gawk,
+      sed, flex, bison, bc, diffutils, findutils, gettext, texinfo,
+      util-linux, perl, python, openssl, sqlite, libunistring, libidn2, less,
+      dpm (self-hosting build)
+- [x] System recipes (17): libpsl, curl, git, shadow, procps-ng, psmisc,
+      eudev, kmod, e2fsprogs, libpipeline, groff, man-db, libmnl, iproute2,
+      dhcpcd, sysklogd, runit
+- [x] Boot recipes (3): linux (6.10 defconfig), grub, busybox
+- [x] Extra recipes (47): dev/build (autoconf, automake, libtool, patch,
+      ninja, meson, cmake, lz4, libarchive, zip, unzip, pigz, brotli,
+      p7zip), net/editors (openssh, wget, rsync, libpcap, tcpdump,
+      libnftnl, iptables, nftables, ethtool, libevent, vim, nano, tmux,
+      htop, screen), misc/libs/hw (jq, which, time, cpio, tree, popt,
+      logrotate, cronie, ca-certificates, libxml2, libyaml, dosfstools,
+      parted, mdadm, pciutils, usbutils, libusb, kbd)
+- [x] `dpm deps-all` — full-graph topological order (stage2 consumes it;
+      `--include-installed` also lists packages the db already records, for
+      stage3 world rebuilds)
+- [x] Single-file source support (pinned Mozilla CA bundle via curl.se)
+- [x] base-files recipe — FHS skeleton, merged-usr symlinks, /etc population
+- [x] runit-services recipe — /etc/runit stages + supervised services
+- [x] Live-boot initramfs (static busybox, squashfs + overlayfs, runit)
+- [x] Stage 4 — real hybrid ISO: squashfs + grub (BIOS+UEFI)
+- [x] Package signing (ed25519): keygen / sign / verify / trust store,
+      signed repo indexes, progressive trust policy
+- [x] Atomic upgrades (`dpm upgrade`), rollback (`dpm rollback`),
+      `.dpm-new` config protection with hash baselines
+- [x] Disk installer (`bootstrap/install.sh`): UEFI + BIOS paths,
+      UUID fstab, static grub.cfg, root=UUID disk boot in the initramfs
+- [x] Remote repos: `dpm upgrade --repo https://…` with signature checks,
+      per-URL archive cache and offline fallback
+- [x] `dpm service` — runit enable/disable/list/status UX
+- [x] initramfs: USB3/HID (USB keyboards), virtio, and filesystem modules
+      staged for live boot
+- [ ] initramfs: LVM/LUKS (needs cryptsetup/lvm2 recipes — stretch)
+- [ ] Remote repo mirrors list / repo priority
+
+Every recipe carries a sha256 computed from the actual upstream tarball
+(no copied-and-pasted hashes). Full graph sanity check:
+`dpm --recipes recipes deps-all` — all 114 packages resolve in
+topological order (base-files #5, runit-services right after runit).
+
+## Booting the ISO
+
+```
+grub (BIOS+UEFI)
+  └─ kernel + initramfs (static busybox)
+       └─ /init: root=UUID=<disk> ?  ── yes → mount disk → switch_root
+                 │                        → /usr/bin/runit (installed system)
+                 └─ no: load storage modules → find MYDISTRO media
+                         → mount /live/rootfs.squashfs
+                         → overlayfs with tmpfs upper
+                         → switch_root → /usr/bin/runit (live system,
+                           boot media stays at /cdrom)
+                              └─ /etc/runit/1 → runsvdir (getty, udevd,
+                                 dhcpcd, sysklogd, crond) → login on tty1-4
+
+live session → sudo install.sh /dev/vda → reboots into the installed disk
+```
+
+## Installing to disk (from the live system)
+
+```
+# boot the ISO, log in as root, then:
+install.sh /dev/vda --hostname mybox
+# review the plan, type the disk name to confirm, set the root password,
+# reboot without the media
+```
+
+The installer supports both UEFI (GPT + ESP, removable grub) and BIOS
+(MBR), copies the live system with rsync, generates fstab from real
+UUIDs, and writes a static grub.cfg whose `root=UUID=` cmdline makes the
+initramfs boot straight off the disk.

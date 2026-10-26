@@ -1,0 +1,19 @@
+# extra recipe: jq — lightweight and flexible command-line JSON processor
+[package]
+name = "jq"
+version = "1.7.1"
+rel = 1
+arch = ["x86_64"]
+summary = "jq — lightweight and flexible command-line JSON processor"
+license = ["MIT"]
+source = "https://github.com/jqlang/jq/releases/download/jq-%{version}/jq-%{version}.tar.gz"
+sha256 = "478c9ca129fd2e3443fe27314b455e211e0d8c60bc8ff7df703873deeee580c2"
+
+[depends]
+build = []
+run = []
+
+[build]
+configure = "./configure --prefix=/usr"
+compile = "make -j%{jobs}"
+install = "make DESTDIR=%{pkgdir} install"

@@ -1,0 +1,19 @@
+# base recipe: Miscellaneous system utilities for Linux
+[package]
+name = "util-linux"
+version = "2.41.6"
+rel = 1
+arch = ["x86_64"]
+summary = "Miscellaneous system utilities for Linux"
+license = ["GPL-2.0", "LGPL-2.1", "BSD-3-Clause"]
+source = "https://cdn.kernel.org/pub/linux/utils/util-linux/v2.41/util-linux-2.41.6.tar.xz"
+sha256 = "e596083744e746be7d2823b62b43f4418dd7bf56303b4dc09e6fe8112fe3d7ed"
+
+[depends]
+build = ["ncurses"]
+run = ["ncurses"]
+
+[build]
+configure = "./configure --bindir=/usr/bin --libdir=/usr/lib --runstatedir=/run --sbindir=/usr/sbin --disable-chfn-chsh --disable-login --disable-nologin --disable-su --disable-setpriv --disable-runuser --disable-pylibmount --disable-static --without-python --without-systemd --disable-liblastlog2"
+compile = "make -j%{jobs}"
+install = "make DESTDIR=%{pkgdir} install"

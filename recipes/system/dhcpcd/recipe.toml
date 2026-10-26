@@ -1,0 +1,24 @@
+# system recipe: DHCP/RA client for IPv4 and IPv6
+[package]
+name = "dhcpcd"
+version = "10.2.4"
+rel = 1
+arch = ["x86_64"]
+summary = "DHCP/RA client for IPv4 and IPv6"
+license = ["BSD-2-Clause"]
+source = "https://github.com/NetworkConfiguration/dhcpcd/releases/download/v10.2.4/dhcpcd-10.2.4.tar.xz"
+sha256 = "6721e606609226dbf4d864a78802a9e96beec0ee034a1bd84138b3e037bba7d9"
+
+[depends]
+build = []
+run = []
+
+[build]
+configure = "./configure --prefix=/usr --sysconfdir=/etc --libexecdir=/usr/lib/dhcpcd --dbdir=/var/lib/dhcpcd --runstatedir=/run --privsepuser=dhcpcd"
+compile = "make -j%{jobs}"
+install = "make DESTDIR=%{pkgdir} install"
+
+[hooks]
+post_install = """
+getent passwd dhcpcd >/dev/null || useradd -r -s /sbin/nologin dhcpcd
+"""

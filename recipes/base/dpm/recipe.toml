@@ -1,0 +1,20 @@
+# rustc/cargo are seed tools. stage1 installs a vendored offline cargo config so --offline builds work without network.
+# base recipe: DPM — this distribution's source-based package manager (self-hosting build)
+[package]
+name = "dpm"
+version = "0.6.1"
+rel = 1
+arch = ["x86_64"]
+summary = "DPM — this distribution's source-based package manager (self-hosting build)"
+license = ["GPL-3.0"]
+source = "local:pkgmgr"
+
+[depends]
+build = []
+run = []
+
+[build]
+# local: sources are copied verbatim — drop any host-built target/ so we never package stale artifacts
+prepare = "rm -rf target"
+compile = "cargo build --release --offline"
+install = "install -Dm755 target/release/dpm %{pkgdir}/usr/bin/dpm"

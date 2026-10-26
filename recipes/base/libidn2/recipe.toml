@@ -1,0 +1,19 @@
+# base recipe: GNU IDNA2008/punycode library
+[package]
+name = "libidn2"
+version = "2.3.8"
+rel = 1
+arch = ["x86_64"]
+summary = "GNU IDNA2008/punycode library"
+license = ["GPL-3.0", "LGPL-3.0"]
+source = "https://mirrors.kernel.org/gnu/libidn/libidn2-2.3.8.tar.gz"
+sha256 = "f557911bf6171621e1f72ff35f5b1825bb35b52ed45325dcdee931e5d3c0787a"
+
+[depends]
+build = ["libunistring"]
+run = ["libunistring"]
+
+[build]
+configure = "./configure --prefix=/usr --disable-static"
+compile = "make -j%{jobs}"
+install = "make DESTDIR=%{pkgdir} install"

@@ -1,0 +1,20 @@
+# gui recipe: libinput — Input device handling library
+# sha256 is an all-zero placeholder until `python3 scripts/fill-sha256.py` pins it.
+[package]
+name = "libinput"
+version = "1.26.2"
+rel = 1
+arch = ["x86_64"]
+summary = "Input device handling library"
+license = ["MIT"]
+source = "https://gitlab.freedesktop.org/libinput/libinput/-/archive/%{version}/libinput-%{version}.tar.gz"
+sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+
+[depends]
+build = ["meson", "ninja", "pkgconf", "libevdev", "mtdev", "eudev"]
+run = ["libevdev", "mtdev", "eudev"]
+
+[build]
+configure = "meson setup build --prefix=/usr --libdir=lib --buildtype=release -D libwacom=false -D debug-gui=false -D tests=false -D documentation=false -D udev-dir=/usr/lib/udev"
+compile = "ninja -C build"
+install = "DESTDIR=%{pkgdir} meson install -C build"

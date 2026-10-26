@@ -1,0 +1,20 @@
+# system recipe: ext2/3/4 filesystem utilities
+[package]
+name = "e2fsprogs"
+version = "1.47.3"
+rel = 1
+arch = ["x86_64"]
+summary = "ext2/3/4 filesystem utilities"
+license = ["GPL-2.0", "LGPL-2.0", "MIT", "BSD-3-Clause"]
+source = "https://cdn.kernel.org/pub/linux/kernel/people/tytso/e2fsprogs/v1.47.3/e2fsprogs-1.47.3.tar.xz"
+sha256 = "857e6ef800feaa2bb4578fbc810214be5d3c88b072ea53c5384733a965737329"
+
+[depends]
+build = ["util-linux"]
+run = ["util-linux"]
+
+[build]
+prepare = "mkdir -v build"
+configure = "cd build && ../configure --prefix=/usr --sysconfdir=/etc --enable-elf-shlibs --disable-libblkid --disable-libuuid --disable-uuidd --disable-fsck"
+compile = "cd build && make -j%{jobs}"
+install = "cd build && make DESTDIR=%{pkgdir} install"

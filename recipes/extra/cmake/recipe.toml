@@ -1,0 +1,23 @@
+# # bundled libs (curl/libuv/...) for a self-contained bootstrap-independent build
+# extra recipe: CMake — cross-platform build system generator
+[package]
+name = "cmake"
+version = "3.31.4"
+rel = 1
+arch = ["x86_64"]
+summary = "CMake — cross-platform build system generator"
+license = ["BSD-3-Clause"]
+source = "https://github.com/Kitware/CMake/releases/download/v%{version}/cmake-%{version}.tar.gz"
+sha256 = "a6130bfe75f5ba5c73e672e34359f7c0a1931521957e8393a5c2922c8b0f7f25"
+
+[depends]
+build = []
+run = []
+
+[build]
+# CMAKE_USE_OPENSSL=OFF: openssl is built long after cmake in the bootstrap
+# order; without it cmake only loses https:// in file(DOWNLOAD) (not needed
+# to build packages). BUILD_TESTING=OFF skips the test targets.
+configure = "./configure --prefix=/usr --parallel=%{jobs} -- -DCMAKE_USE_OPENSSL=OFF -DBUILD_TESTING=OFF"
+compile = "make -j%{jobs}"
+install = "make DESTDIR=%{pkgdir} install && find %{pkgdir}/usr/share -name FindBoost.cmake -exec sed -i 's#/build/src/#/#g' {} +"

@@ -1,0 +1,22 @@
+# Rust
+pkgmgr/target/
+**/*.rs.bk
+
+# Build scratch & outputs
+build/
+out/
+*.dpm.tar.zst
+*.dpm.tar
+
+# Bootstrap artifacts
+bootstrap/seed/seed-root/
+bootstrap/seed/seed.tar*
+/mnt/
+/lfs/
+
+# Misc
+*.log
+.DS_Store
+
+__pycache__/
+*.pyc

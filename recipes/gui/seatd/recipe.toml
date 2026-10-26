@@ -1,0 +1,20 @@
+# gui recipe: seatd — Minimal seat management daemon and library
+# sha256 is an all-zero placeholder until `python3 scripts/fill-sha256.py` pins it.
+[package]
+name = "seatd"
+version = "0.9.1"
+rel = 1
+arch = ["x86_64"]
+summary = "Minimal seat management daemon and library"
+license = ["MIT"]
+source = "https://git.sr.ht/~kennylevinsen/seatd/archive/%{version}.tar.gz"
+sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+
+[depends]
+build = ["meson", "ninja", "pkgconf"]
+run = []
+
+[build]
+configure = "meson setup build --prefix=/usr --libdir=lib --buildtype=release -D server=enabled -D libseat-seatd=enabled -D libseat-logind=disabled -D libseat-builtin=disabled -D man-pages=disabled -D examples=disabled"
+compile = "ninja -C build"
+install = "DESTDIR=%{pkgdir} meson install -C build"

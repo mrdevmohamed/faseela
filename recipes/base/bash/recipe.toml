@@ -1,0 +1,25 @@
+# base recipe: GNU Bourne-Again SHell
+[package]
+name = "bash"
+version = "5.3"
+rel = 1
+arch = ["x86_64"]
+summary = "GNU Bourne-Again SHell"
+license = ["GPL-3.0"]
+source = "https://mirrors.kernel.org/gnu/bash/bash-5.3.tar.gz"
+sha256 = "0d5cd86965f869a26cf64f4b71be7b96f90a3ba8b3d74e27e8e9d9d5550f31ba"
+
+[depends]
+build = []
+run = []
+
+[build]
+configure = "./configure --prefix=/usr --without-bash-malloc"
+compile = "make -j%{jobs}"
+install = '''
+make DESTDIR=%{pkgdir} install
+# Makefile.inc is the shipped template for *developing* bash loadable
+# builtins, and it embeds the sandbox's build-tree path (BUILD_DIR = <srcdir>);
+# it is useless at runtime and fails the §7.2 leak check at packaging.
+rm -f %{pkgdir}/usr/lib/bash/Makefile.inc
+'''

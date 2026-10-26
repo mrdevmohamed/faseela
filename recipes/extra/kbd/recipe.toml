@@ -1,0 +1,20 @@
+# # kbd >= 2.7 uses the meson build system
+# extra recipe: kbd — Linux console keymaps, fonts and utilities
+[package]
+name = "kbd"
+version = "2.7.1"
+rel = 1
+arch = ["x86_64"]
+summary = "kbd — Linux console keymaps, fonts and utilities"
+license = ["GPL-2.0-or-later"]
+source = "https://kernel.org/pub/linux/utils/kbd/kbd-%{version}.tar.xz"
+sha256 = "f167d899d92b56ccf12f6f49355173f93870a95f15d8aeebf5fdcd28a621aca8"
+
+[depends]
+build = ["meson", "ninja"]
+run = []
+
+[build]
+configure = "meson setup build --prefix=/usr -D vlock=disabled -D tests=false"
+compile = "ninja -C build"
+install = "DESTDIR=%{pkgdir} meson install -C build"

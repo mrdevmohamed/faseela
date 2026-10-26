@@ -1,0 +1,19 @@
+# base recipe: Perl programming language
+[package]
+name = "perl"
+version = "5.44.0"
+rel = 1
+arch = ["x86_64"]
+summary = "Perl programming language"
+license = ["Artistic-1.0", "GPL-1.0"]
+source = "https://www.cpan.org/src/5.0/perl-5.44.0.tar.xz"
+sha256 = "505cf43912e9480495c344c70260452e32aa2a73c546a026b3f100053b23ce91"
+
+[depends]
+build = []
+run = []
+
+[build]
+configure = "sh Configure -des -Dprefix=/usr -Dvendorprefix=/usr -Dprivlib=/usr/share/perl5/core_perl -Darchlib=/usr/lib/perl5/core_perl -Dsitelib=/usr/share/perl5/site_perl -Dsitearch=/usr/lib/perl5/site_perl -Dvendorlib=/usr/share/perl5/vendor_perl -Dvendorarch=/usr/lib/perl5/vendor_perl -Dman1dir=/usr/share/man/man1 -Dman3dir=/usr/share/man/man3 -Duseshrplib -Dusethreads"
+compile = "make -j%{jobs}"
+install = "make DESTDIR=%{pkgdir} install"

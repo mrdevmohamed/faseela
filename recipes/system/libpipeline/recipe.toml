@@ -1,0 +1,19 @@
+# system recipe: Pipeline manipulation library (used by man-db)
+[package]
+name = "libpipeline"
+version = "1.5.8"
+rel = 1
+arch = ["x86_64"]
+summary = "Pipeline manipulation library (used by man-db)"
+license = ["GPL-3.0"]
+source = "https://deb.debian.org/debian/pool/main/libp/libpipeline/libpipeline_1.5.8.orig.tar.gz"
+sha256 = "1b1203ca152ccd63983c3f2112f7fe6fa5afd453218ede5153d1b31e11bb8405"
+
+[depends]
+build = []
+run = []
+
+[build]
+configure = "./configure --prefix=/usr --disable-static"
+compile = "make -j%{jobs}"
+install = "make DESTDIR=%{pkgdir} install"

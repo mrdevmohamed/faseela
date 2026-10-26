@@ -1,0 +1,21 @@
+# gui recipe: foot — Fast, lightweight Wayland terminal emulator
+# sha256 is an all-zero placeholder until `python3 scripts/fill-sha256.py` pins it.
+[package]
+name = "foot"
+version = "1.19.0"
+rel = 1
+arch = ["x86_64"]
+summary = "Fast, lightweight Wayland terminal emulator"
+license = ["MIT"]
+source = "https://codeberg.org/dnkl/foot/archive/%{version}.tar.gz"
+sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+source_dir = "foot"
+
+[depends]
+build = ["meson", "ninja", "pkgconf", "wayland", "wayland-protocols", "libxkbcommon", "pixman", "fontconfig", "fcft", "tllist", "ncurses"]
+run = ["fcft", "fontconfig", "pixman", "libxkbcommon", "wayland"]
+
+[build]
+configure = "meson setup build --prefix=/usr --libdir=lib --buildtype=release -D docs=disabled -D grapheme-clustering=disabled -D utmp-backend=none -D terminfo=enabled -D b_lto=false"
+compile = "ninja -C build"
+install = "DESTDIR=%{pkgdir} meson install -C build"

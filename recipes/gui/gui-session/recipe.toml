@@ -1,0 +1,57 @@
+# gui recipe: gui-session — Wayland desktop session: seatd service, start-sway, default fonts/terminal
+# sha256 is an all-zero placeholder until `python3 scripts/fill-sha256.py` pins it.
+[package]
+name = "gui-session"
+version = "0.1"
+rel = 1
+arch = ["x86_64"]
+summary = "Wayland desktop session: seatd service, start-sway, default fonts/terminal"
+license = ["MIT"]
+
+[depends]
+build = []
+run = ["sway", "foot", "seatd", "mesa", "dejavu-fonts", "eudev", "runit", "shadow"]
+
+[build]
+install = '''
+# --- seatd supervised by runit (enabled by default) -------------------------
+install -d -m755 %{pkgdir}/etc/sv/seatd %{pkgdir}/etc/runit/runsvdir/default
+printf '#!/bin/sh\nexec seatd -g seat\n' > %{pkgdir}/etc/sv/seatd/run
+chmod 755 %{pkgdir}/etc/sv/seatd/run
+ln -s /etc/sv/seatd %{pkgdir}/etc/runit/runsvdir/default/seatd
+
+# --- start-sway: launch a Sway session from a text console ------------------
+install -d -m755 %{pkgdir}/usr/bin
+cat > %{pkgdir}/usr/bin/start-sway <<'EOF'
+#!/bin/sh
+# start-sway — start a Sway session from a tty.
+# Needs: the seatd service running and your user in groups seat,video,input.
+uid=$(id -u)
+if [ -z "$XDG_RUNTIME_DIR" ]; then
+    if [ -d "/run/user/$uid" ] && [ -O "/run/user/$uid" ]; then
+        XDG_RUNTIME_DIR=/run/user/$uid
+    else
+        XDG_RUNTIME_DIR=/tmp/runtime-$uid
+        mkdir -p "$XDG_RUNTIME_DIR" && chmod 700 "$XDG_RUNTIME_DIR"
+    fi
+    [ -O "$XDG_RUNTIME_DIR" ] || { echo "start-sway: $XDG_RUNTIME_DIR is not yours" >&2; exit 1; }
+    export XDG_RUNTIME_DIR
+fi
+export XDG_SESSION_TYPE=wayland
+export XDG_CURRENT_DESKTOP=sway
+export LIBSEAT_BACKEND=seatd
+# mesa here only ships software (softpipe) and virgl drivers
+: "${WLR_RENDERER_ALLOW_SOFTWARE:=1}"
+export WLR_RENDERER_ALLOW_SOFTWARE
+exec sway "$@"
+EOF
+chmod 755 %{pkgdir}/usr/bin/start-sway
+'''
+
+[hooks]
+post_install = '''for g in seat video input; do
+    getent group "$g" >/dev/null 2>&1 || groupadd -r "$g"
+done
+echo "gui-session: add your user:  usermod -aG seat,video,input <user>"
+echo "gui-session: then log in on a tty and run:  start-sway"
+'''

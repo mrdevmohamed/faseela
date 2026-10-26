@@ -1,0 +1,19 @@
+# extra recipe: libevent — event notification library
+[package]
+name = "libevent"
+version = "2.1.12-stable"
+rel = 1
+arch = ["x86_64"]
+summary = "libevent — event notification library"
+license = ["BSD-3-Clause"]
+source = "https://github.com/libevent/libevent/releases/download/release-%{version}/libevent-%{version}.tar.gz"
+sha256 = "92e6de1be9ec176428fd2367677e61ceffc2ee1cb119035037a27d346b0403bb"
+
+[depends]
+build = ["openssl"]
+run = ["openssl"]
+
+[build]
+configure = "./configure --prefix=/usr --disable-static"
+compile = "make -j%{jobs}"
+install = "make DESTDIR=%{pkgdir} install"

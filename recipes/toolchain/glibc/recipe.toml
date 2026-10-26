@@ -1,0 +1,35 @@
+# Toolchain recipe: the GNU C Library.
+# Built right after linux-headers; everything else links against it.
+# (LFS 12.2 chapter 6 equivalent, out-of-tree build)
+[package]
+name = "glibc"
+version = "2.40"
+rel = 1
+arch = ["x86_64"]
+summary = "The GNU C Library (glibc)"
+license = ["LGPL-2.1"]
+source = "https://mirrors.kernel.org/gnu/glibc/glibc-%{version}.tar.xz"
+# canonical: https://ftp.gnu.org/gnu/glibc/
+sha256 = "19a890175e9263d748f627993de6f4b1af9cd21e03f080e4bfb3a1fac10205a2"
+
+[depends]
+build = ["linux-headers"]
+run = []
+
+[build]
+prepare = "mkdir -v build"
+configure = """
+cd build && ../configure --prefix=/usr       \
+    --disable-werror                         \
+    --enable-kernel=5.4                      \
+    --enable-stack-protector=strong          \
+    --disable-nscd                           \
+    libc_cv_slibdir=/usr/lib
+"""
+compile = "cd build && make -j%{jobs}"
+check = "cd build && make check"
+install = "cd build && make DESTDIR=%{pkgdir} install"
+
+[hooks]
+# runs on the target system after install
+post_install = "ldconfig"

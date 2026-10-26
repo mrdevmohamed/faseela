@@ -1,0 +1,151 @@
+# base recipe: base-files — the distribution skeleton.
+# FHS directory tree, merged-usr symlinks and the core /etc population:
+# passwd/group/shadow, nsswitch, ld.so.conf, fstab, profile, os-release.
+# Installs first (no dependencies) so later packages can create users.
+[package]
+name = "base-files"
+version = "0.4"
+rel = 1
+arch = ["x86_64"]
+summary = "FHS skeleton, merged-usr symlinks and core /etc files"
+license = ["MIT"]
+
+[depends]
+build = []
+run = []
+
+[build]
+install = '''
+install -d -m755 %{pkgdir}/boot %{pkgdir}/dev %{pkgdir}/home %{pkgdir}/media %{pkgdir}/mnt %{pkgdir}/opt %{pkgdir}/proc %{pkgdir}/run %{pkgdir}/srv %{pkgdir}/sys
+install -d -m750 %{pkgdir}/root
+install -d -m1777 %{pkgdir}/tmp %{pkgdir}/var/tmp
+install -d -m755 %{pkgdir}/usr/bin %{pkgdir}/usr/include %{pkgdir}/usr/lib %{pkgdir}/usr/sbin %{pkgdir}/usr/share %{pkgdir}/usr/src
+install -d -m755 %{pkgdir}/usr/local/bin %{pkgdir}/usr/local/etc %{pkgdir}/usr/local/include %{pkgdir}/usr/local/lib %{pkgdir}/usr/local/sbin %{pkgdir}/usr/local/share %{pkgdir}/usr/local/src
+install -d -m755 %{pkgdir}/var/cache %{pkgdir}/var/lib %{pkgdir}/var/local %{pkgdir}/var/lock %{pkgdir}/var/log %{pkgdir}/var/mail %{pkgdir}/var/opt %{pkgdir}/var/run %{pkgdir}/var/spool
+install -d -m755 %{pkgdir}/etc/opt %{pkgdir}/etc/profile.d %{pkgdir}/etc/skel %{pkgdir}/etc/ld.so.conf.d
+
+# merged-usr layout (LFS 12 style): everything lives in /usr
+ln -s usr/bin %{pkgdir}/bin
+ln -s usr/bin %{pkgdir}/sbin
+ln -s usr/lib %{pkgdir}/lib
+ln -s /proc/mounts %{pkgdir}/etc/mtab
+
+# users and groups (LFS 12.2 chapter 6 equivalent)
+cat > %{pkgdir}/etc/passwd <<'EOF'
+root:x:0:0:root:/root:/bin/bash
+bin:x:1:1:bin:/dev/null:/usr/bin/false
+daemon:x:2:6:daemon:/dev/null:/usr/bin/false
+nobody:x:65534:65534:nobody:/dev/null:/usr/bin/false
+EOF
+cat > %{pkgdir}/etc/group <<'EOF'
+root:x:0:
+bin:x:1:daemon
+sys:x:2:
+kmem:x:3:
+tape:x:4:
+tty:x:5:
+daemon:x:6:
+floppy:x:7:
+disk:x:8:
+lp:x:9:
+dialout:x:10:
+audio:x:11:
+video:x:12:
+utmp:x:13:
+cdrom:x:14:
+adm:x:15:
+input:x:24:
+kvm:x:61:
+wheel:x:97:
+users:x:100:
+nogroup:x:65534:
+EOF
+cat > %{pkgdir}/etc/shadow <<'EOF'
+root:*:19980:0:::::
+nobody:*:19980:0:::::
+EOF
+cat > %{pkgdir}/etc/gshadow <<'EOF'
+root:*::
+nogroup:*::
+EOF
+
+cat > %{pkgdir}/etc/nsswitch.conf <<'EOF'
+# /etc/nsswitch.conf — name service switch
+passwd: files
+group: files
+shadow: files
+hosts: files dns
+networks: files
+protocols: files
+services: files
+ethers: files
+rpc: files
+EOF
+
+cat > %{pkgdir}/etc/ld.so.conf <<'EOF'
+# /etc/ld.so.conf — search path for the dynamic linker
+include /etc/ld.so.conf.d/*.conf
+EOF
+
+cat > %{pkgdir}/etc/fstab <<'EOF'
+# /etc/fstab — static filesystem information (adapt at install time)
+#
+# Example for a disk installation:
+# /dev/sda2  /      ext4  defaults             1 1
+# /dev/sda1  /boot  ext4  defaults             1 2
+# /dev/sda3  swap   swap  defaults             0 0
+# tmpfs      /run   tmpfs defaults,mode=0755  0 0
+EOF
+
+printf 'mydistro\n' > %{pkgdir}/etc/hostname
+
+cat > %{pkgdir}/etc/hosts <<'EOF'
+127.0.0.1  localhost mydistro
+::1        localhost
+EOF
+
+cat > %{pkgdir}/etc/resolv.conf <<'EOF'
+# Managed automatically by dhcpcd at boot.
+EOF
+
+cat > %{pkgdir}/etc/shells <<'EOF'
+/bin/sh
+/bin/bash
+/usr/bin/bash
+EOF
+
+cat > %{pkgdir}/etc/profile <<'EOF'
+# /etc/profile — system-wide environment for login shells
+export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+export PS1='\u@\h:\w\$ '
+export LESS="-R"
+
+if [ -d /etc/profile.d ]; then
+    for _sh in /etc/profile.d/*.sh; do
+        [ -r "$_sh" ] && . "$_sh"
+    done
+    unset _sh
+fi
+EOF
+
+cat > %{pkgdir}/etc/skel/.bashrc <<'EOF'
+# ~/.bashrc — interactive shell defaults
+export PS1='\u@\h:\w\$ '
+alias ls='ls --color=auto'
+alias ll='ls -l'
+EOF
+cp %{pkgdir}/etc/skel/.bashrc %{pkgdir}/root/.bashrc
+
+cat > %{pkgdir}/etc/os-release <<'EOF'
+NAME="mydistro"
+PRETTY_NAME="mydistro 0.4"
+ID=mydistro
+VERSION_ID="0.4"
+ANSI_COLOR="0;36"
+EOF
+
+# permissions that must not be inherited from the build umask
+chmod 1777 %{pkgdir}/tmp %{pkgdir}/var/tmp
+chmod 0750 %{pkgdir}/root
+chmod 0600 %{pkgdir}/etc/shadow %{pkgdir}/etc/gshadow
+'''

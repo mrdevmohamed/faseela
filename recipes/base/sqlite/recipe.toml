@@ -1,0 +1,19 @@
+# base recipe: Self-contained SQL database engine
+[package]
+name = "sqlite"
+version = "3.54.1"
+rel = 1
+arch = ["x86_64"]
+summary = "Self-contained SQL database engine"
+license = ["Unicode-3.0", "blessing"]
+source = "https://sqlite.org/2026/sqlite-autoconf-3540100.tar.gz"
+sha256 = "926ef8d3eab93fbf6e06011901273eec076b25594a4e1cdadd50c987f4f6d64e"
+
+[depends]
+build = ["readline"]
+run = ["readline"]
+
+[build]
+configure = "cd %{srcdir}/sqlite-autoconf-* && ./configure --prefix=/usr --disable-static --enable-fts5"
+compile = "cd %{srcdir}/sqlite-autoconf-* && make -j%{jobs}"
+install = "cd %{srcdir}/sqlite-autoconf-* && make DESTDIR=%{pkgdir} install"

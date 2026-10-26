@@ -1,0 +1,20 @@
+# gui recipe: libxkbcommon — Keyboard handling library (xkb)
+# sha256 is an all-zero placeholder until `python3 scripts/fill-sha256.py` pins it.
+[package]
+name = "libxkbcommon"
+version = "1.7.0"
+rel = 1
+arch = ["x86_64"]
+summary = "Keyboard handling library (xkb)"
+license = ["MIT"]
+source = "https://xkbcommon.org/download/libxkbcommon-%{version}.tar.xz"
+sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+
+[depends]
+build = ["meson", "ninja", "pkgconf", "wayland", "wayland-protocols", "xkeyboard-config", "bison"]
+run = ["xkeyboard-config"]
+
+[build]
+configure = "meson setup build --prefix=/usr --libdir=lib --buildtype=release -D enable-x11=false -D enable-wayland=true -D enable-docs=false -D enable-xkbregistry=false -D enable-tools=false"
+compile = "ninja -C build"
+install = "DESTDIR=%{pkgdir} meson install -C build"

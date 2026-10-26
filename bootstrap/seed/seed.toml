@@ -1,0 +1,21 @@
+# Seed manifest (stage 0)
+#
+# The seed is a small prebuilt toolchain tarball used ONLY to start the
+# bootstrap. It is deleted after stage 3. Every tool listed here is
+# assembled from the host distribution by build-seed.sh.
+#
+# rustc/cargo are mandatory: DPM itself is written in Rust, so the
+# package manager is the FIRST package compiled from the seed.
+
+[seed]
+version = "0.1"
+
+[seed.tools]
+compiler     = ["binutils", "gcc", "g++"]
+libc         = ["glibc-dev", "kernel-headers"]
+build_tools  = ["make", "bash", "coreutils", "tar", "gzip", "xz", "zstd",
+                "bzip2", "patch", "sed", "gawk", "m4", "bison", "flex",
+                "findutils", "diffutils", "file", "pkg-config"]
+rust         = ["rustc", "cargo"]
+network      = ["curl", "ca-certificates"]
+scripting    = ["python3", "perl"]

@@ -1,0 +1,34 @@
+# extra recipe: OpenSSH — Secure Shell client and server
+[package]
+name = "openssh"
+version = "9.9p1"
+rel = 1
+arch = ["x86_64"]
+summary = "OpenSSH — Secure Shell client and server"
+license = ["BSD-2-Clause", "BSD-3-Clause", "ISC"]
+source = "https://cdn.openbsd.org/pub/OpenBSD/OpenSSH/portable/openssh-%{version}.tar.gz"
+sha256 = "b343fbcdbff87f15b1986e6e15d6d4fc9a7d36066be6b7fb507087ba8f966c02"
+
+[depends]
+build = ["openssl", "zlib"]
+run = ["openssl", "zlib"]
+
+[build]
+prepare = "install -m700 -d %{pkgdir}/var/lib/sshd"
+configure = "./configure --prefix=/usr --sysconfdir=/etc/ssh --with-privsep-path=/var/lib/sshd"
+compile = "make -j%{jobs}"
+install = """
+
+make DESTDIR=%{pkgdir} install
+install -m755 contrib/ssh-copy-id %{pkgdir}/usr/bin/
+
+"""
+
+[hooks]
+post_install = """
+
+getent group sshd >/dev/null || groupadd -g 50 sshd
+id sshd >/dev/null 2>&1 || useradd -c 'sshd PrivSep' -d /var/lib/sshd -g sshd -s /bin/false -u 50 sshd
+install -d -m700 /var/lib/sshd
+
+"""

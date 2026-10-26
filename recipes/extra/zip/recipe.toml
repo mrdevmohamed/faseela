@@ -1,0 +1,20 @@
+# # Info-ZIP zip — Debian .orig tarball (sourceforge unreachable); unix/Makefile build
+# extra recipe: Info-ZIP zip — compressor/archiver for PKZIP archives
+[package]
+name = "zip"
+version = "3.0"
+rel = 1
+arch = ["x86_64"]
+summary = "Info-ZIP zip — compressor/archiver for PKZIP archives"
+license = ["Info-ZIP"]
+source = "https://deb.debian.org/debian/pool/main/z/zip/zip_3.0.orig.tar.gz"
+sha256 = "f0e8bb1f9b7eb0b01285495a2699df3a4b766784c1765a8f1aeedf63c0806369"
+source_dir = "zip30"
+
+[depends]
+build = ["bzip2"]
+run = []
+
+[build]
+compile = "make -f unix/Makefile -j%{jobs} generic"
+install = "make -f unix/Makefile prefix=%{pkgdir}/usr MANDIR=%{pkgdir}/usr/share/man/man1 install"

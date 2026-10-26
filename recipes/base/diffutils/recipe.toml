@@ -1,0 +1,19 @@
+# base recipe: GNU diff/patch utilities (diff, cmp, ...)
+[package]
+name = "diffutils"
+version = "3.12"
+rel = 1
+arch = ["x86_64"]
+summary = "GNU diff/patch utilities (diff, cmp, ...)"
+license = ["GPL-3.0"]
+source = "https://mirrors.kernel.org/gnu/diffutils/diffutils-3.12.tar.xz"
+sha256 = "7c8b7f9fc8609141fdea9cece85249d308624391ff61dedaf528fcb337727dfd"
+
+[depends]
+build = []
+run = []
+
+[build]
+configure = "./configure --prefix=/usr"
+compile = "make -j%{jobs}"
+install = "make DESTDIR=%{pkgdir} install"
