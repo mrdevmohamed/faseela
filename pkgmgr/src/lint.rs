@@ -474,6 +474,16 @@ pub fn build_id(
 mod tests {
     use super::*;
     use std::path::PathBuf;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    fn unique_temp_dir(prefix: &str) -> PathBuf {
+        static NEXT_ID: AtomicU64 = AtomicU64::new(0);
+        std::env::temp_dir().join(format!(
+            "{prefix}-{}-{}",
+            std::process::id(),
+            NEXT_ID.fetch_add(1, Ordering::Relaxed)
+        ))
+    }
 
     #[test]
     fn build_id_is_stable_and_input_sensitive() {
@@ -560,7 +570,7 @@ mod tests {
 
     fn fake_md(mode: u32) -> std::fs::Metadata {
         use std::os::unix::fs::PermissionsExt;
-        let dir = std::env::temp_dir().join(format!("dpm-lint-md-{}", std::process::id()));
+        let dir = unique_temp_dir("dpm-lint-md");
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("x"), b"x").unwrap();
         std::fs::set_permissions(dir.join("x"), std::fs::Permissions::from_mode(mode)).unwrap();
@@ -571,7 +581,7 @@ mod tests {
 
     fn fake_dir_md(mode: u32) -> std::fs::Metadata {
         use std::os::unix::fs::PermissionsExt;
-        let dir = std::env::temp_dir().join(format!("dpm-lint-dmd-{}", std::process::id()));
+        let dir = unique_temp_dir("dpm-lint-dmd");
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(mode)).unwrap();
         let m = std::fs::metadata(&dir).unwrap();

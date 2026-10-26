@@ -556,7 +556,7 @@ fn grant_source_write(dir: &Path) {
         let Ok(md) = e.metadata() else { continue };
         let mode = md.permissions().mode() & 0o7777;
         let x = if md.is_dir() || mode & 0o111 != 0 { 0o100 } else { 0o000 };
-        let want = (mode &! 0o700) | 0o600 | x;
+        let want = (mode & !0o700) | 0o600 | x;
         if want != mode {
             let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(want));
         }
