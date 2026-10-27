@@ -56,6 +56,22 @@ sudo ./stage3.sh /mnt/mydistro         # self-hosting rebuild, seed removed
 sudo ./mkiso.sh /mnt/mydistro out.iso  # bootable image
 ```
 
+### Iterating on a few recipes: `rebuild.sh`
+
+`build-all.sh` fingerprints the WHOLE recipe tree, so editing one recipe
+invalidates stage 2, stage 3 (toolchain/world rebuild) and the ISO. For the
+edit-build-boot loop use the incremental path instead — it rebuilds and
+reinstalls only the named recipes (build root + final root) and can repack
+the ISO:
+
+```bash
+sudo ./rebuild.sh --iso out/test.iso /mnt/mydistro runit-services shadow
+```
+
+Dependents are not rebuilt (name them too after changing a library). No
+stamps are touched, so a later full `build-all.sh` still rebuilds from the
+changed recipe tree, as a release build should.
+
 ### build-all.sh specifics
 
 * **state lives outside the target**: `$(dirname TARGET)/.<name>.build/`

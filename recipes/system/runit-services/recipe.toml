@@ -5,7 +5,7 @@
 [package]
 name = "runit-services"
 version = "0.4"
-rel = 3
+rel = 4
 arch = ["x86_64"]
 summary = "runit stage scripts and supervised service tree"
 license = ["MIT"]
@@ -25,6 +25,14 @@ cat > %{pkgdir}/etc/runit/1 <<'EOF'
 PATH=/usr/bin:/usr/sbin:/bin:/sbin
 
 mount -o remount,rw / 2>/dev/null || true
+
+# pseudo filesystems the initramfs does not hand over (ptys for ssh/tmux/
+# script, POSIX shm, a clean volatile /run on disk boots too)
+mountpoint -q /run || mount -t tmpfs -o mode=0755,nosuid,nodev tmpfs /run 2>/dev/null || true
+mkdir -p /dev/pts /dev/shm
+mountpoint -q /dev/pts || mount -t devpts -o gid=5,mode=0620 devpts /dev/pts 2>/dev/null || true
+mountpoint -q /dev/shm || mount -t tmpfs -o mode=1777,nosuid,nodev tmpfs /dev/shm 2>/dev/null || true
+
 mount -a 2>/dev/null || true
 
 hostname -F /etc/hostname 2>/dev/null || true
@@ -101,6 +109,13 @@ ssh-keygen -A >/dev/null 2>&1
 exec sshd -D
 EOF
 chmod 755 %{pkgdir}/etc/sv/*/run
+
+# runit ships no shutdown tools: runit-init 0 = power off, 6 = reboot
+install -d -m755 %{pkgdir}/usr/bin
+for c in poweroff:0 halt:0 reboot:6; do
+    printf '#!/bin/sh\nexec runit-init %s\n' "${c#*:}" > %{pkgdir}/usr/bin/${c%%:*}
+    chmod 755 %{pkgdir}/usr/bin/${c%%:*}
+done
 
 # --- default runsvdir -------------------------------------------------------
 for svc in getty-tty1 getty-tty2 getty-tty3 getty-tty4 udevd dhcpcd sysklogd crond; do

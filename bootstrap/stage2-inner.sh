@@ -107,6 +107,30 @@ fi
 COUNT=$(echo "$ORDER" | awk 'NF{n++} END{print n+0}')
 
 # --------------------------------------------------------------------------
+# Incremental mode (bootstrap/rebuild.sh): STAGE2_REBUILD="pkg1 pkg2 ..."
+# rebuilds + reinstalls ONLY those recipes — even when already installed —
+# in dependency order, instead of walking the whole graph. Everything else is
+# left alone (the final-root sync below still runs, so the clean root gets the
+# new archives). Dependents are NOT rebuilt: list them too if they must be.
+# --------------------------------------------------------------------------
+if [ -n "${STAGE2_REBUILD:-}" ]; then
+    ALL_ORDER=$("$DPM_BIN" --recipes "$REPO/recipes" deps-all --include-installed)
+    for want in $STAGE2_REBUILD; do
+        case $'\n'"$ALL_ORDER"$'\n' in
+            *$'\n'"$want"$'\n'*) ;;
+            *) echo "stage2-inner: STAGE2_REBUILD: no recipe named '$want'" >&2; exit 1 ;;
+        esac
+    done
+    ORDER=$(for p in $ALL_ORDER; do
+        case " $STAGE2_REBUILD " in *" $p "*) echo "$p" ;; esac
+    done)
+    COUNT=$(echo "$ORDER" | awk 'NF{n++} END{print n+0}')
+    echo "== stage2-inner: INCREMENTAL rebuild of $COUNT package(s): $(echo $ORDER)"
+    # a stale build dir of the same name-version-rel must not be reused
+    for p in $ORDER; do rm -rf /build/"$p"-[0-9]*; done
+fi
+
+# --------------------------------------------------------------------------
 # The seed's Debian g++ searches /usr/include/x86_64-linux-gnu BEFORE
 # /usr/include. Once DPM has installed OUR glibc (headers in /usr/include),
 # Debian's own glibc headers there (bits/, sys/, gnu/, asm/, ...) would be a

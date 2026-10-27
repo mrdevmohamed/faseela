@@ -284,6 +284,12 @@ mkdir -p /rw/upper /rw/work
 mount -t overlay overlay -o lowerdir=/ro,upperdir=/rw/upper,workdir=/rw/work /newroot \
     || { echo "initramfs: overlayfs mount failed"; exec sh; }
 
+# live session only: unlock root (base-files ships `root:*`, which makes login
+# impossible on the ISO). The change lives in the tmpfs overlay — the squashfs
+# and disk installs are untouched (the installer sets a real root password).
+[ -f /newroot/etc/shadow ] && sed -i 's/^root:[^:]*:/root::/' /newroot/etc/shadow
+echo "initramfs: live session — root has an empty password"
+
 # hand the pseudo filesystems over to the real root; keep the boot media
 # mounted at /cdrom inside the live system (the disk installer reads the
 # kernel + initramfs from there)
