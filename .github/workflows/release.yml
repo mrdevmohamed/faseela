@@ -27,6 +27,10 @@ on:
         description: "Rebuild every package in stage 3"
         type: boolean
         default: false
+      resume:
+        description: "Resume from the cached build target of the previous run (uncheck for a clean start)"
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -52,12 +56,49 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Free disk space (hosted runners only)
-        if: ${{ vars.ISO_RUNNER == '' }}
+      # The hosted runner already has ~100 GB free; removing dotnet/android/ghc
+      # cost ~52 s per run. Opt in with the repository variable FREE_DISK=true.
+      - name: Free disk space (opt-in)
+        if: ${{ vars.FREE_DISK == 'true' && vars.ISO_RUNNER == '' }}
         run: |
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
           sudo apt-get clean
           df -h / /mnt
+
+      # The seed (~330 MB, ~1 min to assemble from Debian packages) only
+      # changes when its builder does. Restored with its mtime, because
+      # build-all.sh fingerprints the seed by size+mtime.
+      - name: Cache the bootstrap seed
+        id: seedcache
+        uses: actions/cache@v4
+        with:
+          path: |
+            bootstrap/seed/seed.tar.zst
+            bootstrap/seed/seed.tar.zst.sha256
+          key: seed-${{ runner.os }}-${{ hashFiles('bootstrap/seed/build-seed.sh', 'bootstrap/seed/seed.toml') }}
+
+      # Resume = restore the whole build target (/mnt/mydistro + its state dir)
+      # saved by the previous dispatch run, even if that run failed or timed
+      # out. Stage 2 skips packages that are already installed, so a re-run
+      # continues where the last one stopped. Tag (release) builds are always
+      # clean.
+      - name: Restore the previous build target
+        id: tgtcache
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.resume }}
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/target.tar.zst
+          key: iso-target-${{ runner.os }}-never-matches
+          restore-keys: |
+            iso-target-${{ runner.os }}-
+
+      - name: Unpack the previous build target
+        if: ${{ steps.tgtcache.outputs.cache-matched-key != '' }}
+        run: |
+          ls -lh "$RUNNER_TEMP/target.tar.zst"
+          sudo tar -I zstd -xpf "$RUNNER_TEMP/target.tar.zst" -C /mnt --numeric-owner
+          rm -f "$RUNNER_TEMP/target.tar.zst"
+          ls /mnt
 
       - name: Install host tools
         run: |
@@ -66,16 +107,40 @@ jobs:
             squashfs-tools grub-pc-bin grub-efi-amd64-bin grub-common xorriso mtools \
             gcc make curl zstd ca-certificates util-linux
 
-      - name: Allow unprivileged user namespaces
+      - name: Allow unprivileged user namespaces, disable core dumps
         run: |
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+          # a crash loop (3000+ aborts in the failed run) must not spend ~1 s
+          # per crash writing cores
+          sudo sysctl -w kernel.core_pattern='|/bin/false' || true
 
       - name: Build the distribution (seed -> stage1 -> stage2 -> stage3 -> ISO)
+        id: build
+        timeout-minutes: 320 # leaves ~35 min of the 355 for saving the cache and logs
         run: |
           args=(--isolation "$ISOLATION" --out "$GITHUB_WORKSPACE/out/mydistro-x86_64.iso")
           [[ "${{ inputs.with_gui }}" == "true" ]]     && args+=(--with-gui)
           [[ "${{ inputs.stage3_world }}" == "true" ]] && args+=(--stage3-world)
           sudo -E ./bootstrap/build-all.sh "${args[@]}" "$TARGET"
+
+      - name: Pack the build target for the next run
+        id: packtgt
+        if: ${{ always() && github.event_name == 'workflow_dispatch' && steps.build.conclusion != 'skipped' }}
+        continue-on-error: true
+        run: |
+          sudo ./bootstrap/umount-chroot.sh "$TARGET" || true
+          sudo tar -I 'zstd -T0 -3' --one-file-system -cpf "$RUNNER_TEMP/target.tar.zst" --numeric-owner \
+            --exclude='mydistro/build/*/src' --exclude='mydistro/build/*/pkg' \
+            -C /mnt mydistro .mydistro.build
+          ls -lh "$RUNNER_TEMP/target.tar.zst"
+
+      - name: Save the build target cache
+        if: ${{ always() && steps.packtgt.outcome == 'success' }}
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/target.tar.zst
+          key: iso-target-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Checksums
         id: sum
