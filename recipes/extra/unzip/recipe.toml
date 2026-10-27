@@ -16,5 +16,5 @@ build = ["bzip2"]
 run = []
 
 [build]
-compile = "make -f unix/Makefile -j%{jobs} generic"
+compile = "make -f unix/Makefile -j%{jobs} CC=\"gcc -std=gnu89\" generic"
 install = "make -f unix/Makefile prefix=%{pkgdir}/usr MANDIR=%{pkgdir}/usr/share/man/man1 install"
