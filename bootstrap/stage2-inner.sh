@@ -187,6 +187,31 @@ seed_glibc_relink() {
     fi
 }
 
+# --------------------------------------------------------------------------
+# seed_libs_relink: seed_glibc_relink generalised to EVERY shared library the
+# seed ships in its multiarch dir. Same root cause as glibc: ld.so.cache was
+# built while only the seed's copy existed, so after one of OUR packages
+# installs a newer libfoo.so.N into /usr/lib the loader keeps resolving the
+# soname to the seed's OLD file. Seen with openssl 3.5 (python's _ssl/_hashlib
+# failed with "libcrypto.so.3: version `OPENSSL_3.4.0' not found" because the
+# seed's OpenSSL 3.0 was loaded). Repoint each seed soname at our copy when we
+# have one. Builtin tests only (no forks unless a link really changes).
+# SEED_LIBDIR / NEW_LIBDIR exist so the logic can be tested outside a chroot.
+# Idempotent; harmless where no seed multiarch dir exists (the final root).
+# --------------------------------------------------------------------------
+seed_libs_relink() {
+    local seed_dir="${SEED_LIBDIR:-/usr/lib/x86_64-linux-gnu}"
+    local new_dir="${NEW_LIBDIR:-/usr/lib}" old new
+    [ -d "$seed_dir" ] || return 0
+    for old in "$seed_dir"/lib*.so.* "$seed_dir"/ld-*.so.*; do
+        { [ -e "$old" ] || [ -L "$old" ]; } || continue
+        new="$new_dir/${old##*/}"
+        [ -e "$new" ] || continue
+        [ "$old" -ef "$new" ] && continue
+        ln -s "$new" "$old.dpm-tmp" && mv -T "$old.dpm-tmp" "$old"
+    done
+}
+
 switch_to_new_glibc() {
     [ -d /var/lib/dpm/local/glibc ] || return 0
     [ -e /usr/lib/ld-linux-x86-64.so.2 ] || return 0
@@ -202,6 +227,10 @@ switch_to_new_glibc() {
         ldconfig
     fi
     seed_glibc_relink
+    # any other soname we now provide (openssl, zlib, ...) must win over the
+    # seed's copy too, and the cache must be rebuilt after every install
+    seed_libs_relink
+    ldconfig || echo "stage2-inner: warning: ldconfig failed" >&2
     # fail early instead of 20 packages later. `expr` is the canary for the
     # RUNPATH problem described at seed_glibc_relink (it crashed configure
     # scripts 3000+ times in a 46-minute loop before this check existed).
