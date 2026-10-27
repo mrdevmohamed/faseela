@@ -8,7 +8,7 @@ arch = ["x86_64"]
 summary = "Userspace interface to the kernel DRM subsystem"
 license = ["MIT"]
 source = "https://dri.freedesktop.org/libdrm/libdrm-%{version}.tar.xz"
-sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+sha256 = "ac36293f61ca4aafaf4b16a2a7afff312aa4f5c37c9fbd797de9e3c0863ca379"
 
 [depends]
 build = ["meson", "ninja", "pkgconf"]

@@ -8,7 +8,7 @@ arch = ["x86_64"]
 summary = "Keyboard handling library (xkb)"
 license = ["MIT"]
 source = "https://xkbcommon.org/download/libxkbcommon-%{version}.tar.xz"
-sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+sha256 = "65782f0a10a4b455af9c6baab7040e2f537520caa2ec2092805cdfd36863b247"
 
 [depends]
 build = ["meson", "ninja", "pkgconf", "wayland", "wayland-protocols", "xkeyboard-config", "bison"]

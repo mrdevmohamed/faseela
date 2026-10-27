@@ -8,7 +8,7 @@ arch = ["x86_64"]
 summary = "Minimal seat management daemon and library"
 license = ["MIT"]
 source = "https://git.sr.ht/~kennylevinsen/seatd/archive/%{version}.tar.gz"
-sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+sha256 = "819979c922a0be258aed133d93920bce6a3d3565a60588d6d372ce9db2712cd3"
 
 [depends]
 build = ["meson", "ninja", "pkgconf"]

@@ -8,7 +8,7 @@ arch = ["x86_64"]
 summary = "Fast, lightweight Wayland terminal emulator"
 license = ["MIT"]
 source = "https://codeberg.org/dnkl/foot/archive/%{version}.tar.gz"
-sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+sha256 = "aa537908dff8a573adb68137974f8b317eed3b779d3e6954da84e0baff7b13a0"
 source_dir = "foot"
 
 [depends]

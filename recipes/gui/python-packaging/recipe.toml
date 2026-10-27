@@ -8,7 +8,7 @@ arch = ["x86_64"]
 summary = "Core utilities for python packages (pure python)"
 license = ["Apache-2.0", "BSD-2-Clause"]
 source = "https://github.com/pypa/packaging/archive/refs/tags/%{version}.tar.gz"
-sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+sha256 = "c448ea78de5134f5002a2aa2bb62a0fb4714bb4ab2d2b00bce8ed6ca22502d5a"
 source_dir = "packaging-%{version}"
 
 [depends]

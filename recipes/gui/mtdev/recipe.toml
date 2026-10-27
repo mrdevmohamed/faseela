@@ -8,7 +8,7 @@ arch = ["x86_64"]
 summary = "Multitouch protocol translation library"
 license = ["MIT"]
 source = "https://bitmath.org/code/mtdev/mtdev-%{version}.tar.bz2"
-sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+sha256 = "15d7b28da8ac71d8bc8c9287c2045fd174267bc740bec10cfda332dc1204e0e0"
 
 [depends]
 build = ["pkgconf"]

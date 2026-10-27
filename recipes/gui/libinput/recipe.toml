@@ -8,7 +8,7 @@ arch = ["x86_64"]
 summary = "Input device handling library"
 license = ["MIT"]
 source = "https://gitlab.freedesktop.org/libinput/libinput/-/archive/%{version}/libinput-%{version}.tar.gz"
-sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+sha256 = "5c1c4150f217fea1db2d1fd88e2607b2f1928cfde65c34da65a9f24dcfd69464"
 
 [depends]
 build = ["meson", "ninja", "pkgconf", "libevdev", "mtdev", "eudev"]

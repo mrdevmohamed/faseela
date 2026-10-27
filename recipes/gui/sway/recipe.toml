@@ -8,7 +8,7 @@ arch = ["x86_64"]
 summary = "i3-compatible Wayland compositor"
 license = ["MIT"]
 source = "https://github.com/swaywm/sway/releases/download/%{version}/sway-%{version}.tar.gz"
-sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+sha256 = "b2fbf3a2f94c8926efa18d6af59bb9f5f1eafa6d46491284b1610c57bef2d105"
 
 [depends]
 build = ["meson", "ninja", "pkgconf", "wlroots", "wayland", "wayland-protocols", "libxkbcommon", "pcre2", "json-c", "pango", "cairo", "libevdev", "libinput", "xkeyboard-config"]

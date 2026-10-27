@@ -8,7 +8,7 @@ arch = ["x86_64"]
 summary = "X keyboard layout data"
 license = ["MIT"]
 source = "https://www.x.org/releases/individual/data/xkeyboard-config/xkeyboard-config-%{version}.tar.xz"
-sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+sha256 = "a6b06ebfc1f01fc505f2f05f265f95f67cc8873a54dd247e3c2d754b8f7e0807"
 
 [depends]
 build = ["meson", "ninja", "pkgconf", "gettext"]

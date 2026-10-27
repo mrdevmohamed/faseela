@@ -8,7 +8,7 @@ arch = ["x86_64"]
 summary = "OpenGL/GLES/EGL/GBM implementation (software + virgl only)"
 license = ["MIT"]
 source = "https://archive.mesa3d.org/mesa-%{version}.tar.xz"
-sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+sha256 = "dafe6d5471ec8207543276b96f8645588b2f2d96829d279f54783eb97693091e"
 
 [depends]
 build = ["meson", "ninja", "pkgconf", "python-mako", "python-markupsafe", "python-pyyaml", "python-packaging", "libdrm", "wayland", "wayland-protocols", "expat", "zlib", "zstd", "bison", "flex"]

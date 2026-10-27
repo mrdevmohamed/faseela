@@ -8,7 +8,7 @@ arch = ["x86_64"]
 summary = "Text layout and rendering library"
 license = ["LGPL-2.1-or-later"]
 source = "https://download.gnome.org/sources/pango/1.54/pango-%{version}.tar.xz"
-sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+sha256 = "8a9eed75021ee734d7fc0fdf3a65c3bba51dfefe4ae51a9b414a60c70b2d1ed8"
 
 [depends]
 build = ["meson", "ninja", "pkgconf", "glib", "harfbuzz", "fribidi", "cairo", "fontconfig", "freetype"]

@@ -8,7 +8,7 @@ arch = ["x86_64"]
 summary = "Wrapper library for evdev input devices"
 license = ["MIT"]
 source = "https://www.freedesktop.org/software/libevdev/libevdev-%{version}.tar.xz"
-sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+sha256 = "abf1aace86208eebdd5d3550ffded4c8d73bb405b796d51c389c9d0604cbcfbf"
 
 [depends]
 build = ["meson", "ninja", "pkgconf"]

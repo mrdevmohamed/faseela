@@ -8,7 +8,7 @@ arch = ["x86_64"]
 summary = "EDID and DisplayID library"
 license = ["MIT"]
 source = "https://gitlab.freedesktop.org/emersion/libdisplay-info/-/archive/%{version}/libdisplay-info-%{version}.tar.gz"
-sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+sha256 = "f7331fcaf5527251b84c8fb84238d06cd2f458422ce950c80e86c72927aa8c2b"
 
 [depends]
 build = ["meson", "ninja", "pkgconf", "hwdata"]

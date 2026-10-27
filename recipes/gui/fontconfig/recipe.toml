@@ -8,7 +8,7 @@ arch = ["x86_64"]
 summary = "Font configuration and lookup library"
 license = ["MIT"]
 source = "https://www.freedesktop.org/software/fontconfig/release/fontconfig-%{version}.tar.xz"
-sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+sha256 = "63a0658d0e06e0fa886106452b58ef04f21f58202ea02a94c39de0d3335d7c0e"
 
 [depends]
 build = ["freetype", "expat", "gperf", "pkgconf"]

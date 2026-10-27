@@ -8,7 +8,7 @@ arch = ["x86_64"]
 summary = "2D vector graphics library"
 license = ["LGPL-2.1-only", "MPL-1.1"]
 source = "https://cairographics.org/releases/cairo-%{version}.tar.xz"
-sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+sha256 = "1570e57a181d2106391089ed801da62d6e53930b7b6b7ea90fa96e1b39114984"
 
 [depends]
 build = ["meson", "ninja", "pkgconf", "pixman", "freetype", "fontconfig", "libpng", "zlib"]

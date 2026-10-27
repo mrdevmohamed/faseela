@@ -8,7 +8,7 @@ arch = ["x86_64"]
 summary = "Wayland protocol extensions"
 license = ["MIT"]
 source = "https://gitlab.freedesktop.org/wayland/wayland-protocols/-/archive/%{version}/wayland-protocols-%{version}.tar.gz"
-sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+sha256 = "a6069948458a1d86cea2b33a9735e67d7524118c32c388d75efb881a9e9d2cd9"
 
 [depends]
 build = ["meson", "ninja", "pkgconf", "wayland"]

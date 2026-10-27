@@ -8,7 +8,7 @@ arch = ["x86_64"]
 summary = "Low-level pixel manipulation library"
 license = ["MIT"]
 source = "https://cairographics.org/releases/pixman-%{version}.tar.gz"
-sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+sha256 = "a0624db90180c7ddb79fc7a9151093dc37c646d8c38d3f232f767cf64b85a226"
 
 [depends]
 build = ["meson", "ninja", "pkgconf"]

@@ -8,7 +8,7 @@ arch = ["x86_64"]
 summary = "Python template library (pure python)"
 license = ["MIT"]
 source = "https://github.com/sqlalchemy/mako/archive/refs/tags/rel_1_3_6.tar.gz"
-sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+sha256 = "9d9edc6ca26bc9b79fa1ceb2e1a42f0ab3e259767c919599ef1f38f104195292"
 source_dir = "mako-rel_1_3_6"
 
 [depends]

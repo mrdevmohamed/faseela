@@ -8,7 +8,7 @@ arch = ["x86_64"]
 summary = "Simple font loading and glyph rasterization library"
 license = ["MIT"]
 source = "https://codeberg.org/dnkl/fcft/archive/%{version}.tar.gz"
-sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+sha256 = "ae6872d42c96e6ca4fa35e4e6ef86e2458e4119fc7393dadd06a36c86bb3def2"
 source_dir = "fcft"
 
 [depends]

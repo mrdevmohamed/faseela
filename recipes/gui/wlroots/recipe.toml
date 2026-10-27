@@ -8,7 +8,7 @@ arch = ["x86_64"]
 summary = "Modular Wayland compositor library"
 license = ["MIT"]
 source = "https://gitlab.freedesktop.org/wlroots/wlroots/-/archive/%{version}/wlroots-%{version}.tar.gz"
-sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+sha256 = "703c515917d9eb258e44296795f8626190e119b0ee8bfb32fe9f834dab1a1462"
 
 [depends]
 build = ["meson", "ninja", "pkgconf", "wayland", "wayland-protocols", "libdrm", "libxkbcommon", "libinput", "pixman", "seatd", "libdisplay-info", "mesa", "eudev"]
