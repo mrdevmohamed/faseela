@@ -142,10 +142,10 @@ dict(sub="extra1", name="brotli", ver="1.1.0",
 dict(sub="extra1", name="p7zip", ver="17.05",
      url="https://github.com/p7zip-project/p7zip/archive/refs/tags/v%{version}.tar.gz",
      sha="d2788f892571058c08d27095c22154579dfefb807ebe357d145ab2ddddefb1a6",
-     comment="# all2 = 7zr + 7za (static, no external codecs needed)",
+     comment="# `all2` builds bin/7z (EXTERNAL_CODECS) but NOT 7za/7zr on 17.05, so build them explicitly",
      summary="p7zip — command line version of 7-Zip for POSIX",
      license=["LGPL-2.1-or-later", "BSD-3-Clause"], bdeps=[], rdeps=[],
-     compile="make -j%{jobs} all2",
+     compile="make -j%{jobs} 7za && make -j%{jobs} 7zr",
      install="""
 install -d %{pkgdir}/usr/bin %{pkgdir}/usr/share/man/man1
 install -m755 bin/7za bin/7zr %{pkgdir}/usr/bin/
