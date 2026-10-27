@@ -4,7 +4,7 @@
 [package]
 name = "glibc"
 version = "2.40"
-rel = 1
+rel = 2
 arch = ["x86_64"]
 summary = "The GNU C Library (glibc)"
 license = ["LGPL-2.1"]
@@ -35,7 +35,12 @@ cd build && CC="gcc -U_FORTIFY_SOURCE" ../configure --prefix=/usr \
 compile = "cd build && make -j%{jobs}"
 check = "cd build && make check"
 install = """
-cd build && make DESTDIR=%{pkgdir} install
+# INSTALL_INFO=: — during stage2 /usr/bin/makeinfo is the seed stand-in
+# (bootstrap/stage2-inner.sh) which leaves libc.info EMPTY; on hosts whose seed
+# ships install-info, glibc's manual/Makefile then dies with
+# "install-info: libc.info: empty file". Skip the dir-file registration here;
+# the real texinfo package is built later.
+cd build && make DESTDIR=%{pkgdir} install INSTALL_INFO=:
 # Binaries are linked with PT_INTERP=/lib64/ld-linux-x86-64.so.2. With
 # slibdir=/usr/lib glibc does not create that link, so on a host/seed root it
 # keeps pointing at the OLD loader (seed's /lib/x86_64-linux-gnu) and new

@@ -1,9 +1,10 @@
 # boot recipe: Linux kernel (x86_64 defconfig base image)
 # rel 2: force the filesystem/devtmpfs options the live ISO depends on
+# rel 3: libelf (objtool/ORC), bc, openssl, kmod (depmod) declared as build deps
 [package]
 name = "linux"
 version = "6.10"
-rel = 3
+rel = 4
 arch = ["x86_64"]
 summary = "Linux kernel (x86_64 defconfig base image)"
 license = ["GPL-2.0"]
@@ -11,7 +12,7 @@ source = "https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-%{version}.tar.xz"
 sha256 = "774698422ee54c5f1e704456f37c65c06b51b4e9a8b0866f34580d86fef8e226"
 
 [depends]
-build = ["bison", "flex", "perl"]
+build = ["bison", "flex", "perl", "bc", "openssl", "elfutils", "kmod"]
 run = []
 
 [build]

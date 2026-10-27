@@ -1,0 +1,23 @@
+# base recipe: elfutils — libelf/libdw (gelf.h); required by the kernel's objtool
+# sha256 is the all-zero placeholder: run `python3 scripts/fill-sha256.py elfutils`
+[package]
+name = "elfutils"
+version = "0.191"
+rel = 1
+arch = ["x86_64"]
+summary = "ELF object file access library (libelf, libdw) and tools"
+license = ["GPL-3.0-or-later", "LGPL-3.0-or-later", "GPL-2.0-or-later"]
+source = "https://sourceware.org/elfutils/ftp/%{version}/elfutils-%{version}.tar.bz2"
+sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+
+[depends]
+build = ["zlib", "zstd", "bzip2", "xz", "m4"]
+run = ["zlib", "zstd"]
+
+[build]
+configure = """
+./configure --prefix=/usr --libdir=/usr/lib \
+    --disable-debuginfod --disable-libdebuginfod --disable-nls --disable-werror
+"""
+compile = "make -j%{jobs}"
+install = "make DESTDIR=%{pkgdir} install"
