@@ -132,7 +132,15 @@ mkdir -p /build
 # BEFORE the resolved order so fixes reach the rest of the graph.
 # --------------------------------------------------------------------------
 REBUILD_AFTER_CHANGE="readline"
+# Only packages ALREADY installed (resumed build) are queued. On a fresh
+# build nothing is installed yet — building e.g. readline here would run
+# before its build dependency (ncurses) exists and fail with
+# "cannot find -lncurses"; the resolved order below builds it correctly.
 for pkg in $REBUILD_AFTER_CHANGE; do
+    if [ ! -d "/var/lib/dpm/local/$pkg" ]; then
+        echo "== stage2-inner: (recipe-change queue) $pkg not installed yet — skipped (built in resolved order)"
+        continue
+    fi
     echo "== stage2-inner: (recipe-change queue) $pkg"
     build_one "$pkg"
 done
