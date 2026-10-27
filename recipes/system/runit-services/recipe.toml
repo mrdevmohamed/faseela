@@ -5,7 +5,7 @@
 [package]
 name = "runit-services"
 version = "0.4"
-rel = 2
+rel = 3
 arch = ["x86_64"]
 summary = "runit stage scripts and supervised service tree"
 license = ["MIT"]
@@ -44,6 +44,10 @@ EOF
 cat > %{pkgdir}/etc/runit/2 <<'EOF'
 #!/bin/sh
 # runit stage 2 — supervise services forever
+# PATH is inherited by every supervised service: it must cover /usr/sbin
+# (agetty, crond, dhcpcd, syslogd, udevd live there; /sbin -> usr/bin only)
+PATH=/usr/bin:/usr/sbin:/bin:/sbin
+export PATH
 exec runsvdir -P /etc/runit/runsvdir/default
 EOF
 cat > %{pkgdir}/etc/runit/3 <<'EOF'
@@ -84,7 +88,7 @@ install -d -m755 %{pkgdir}/etc/sv/dhcpcd
 printf '#!/bin/sh\nexec dhcpcd -B\n' > %{pkgdir}/etc/sv/dhcpcd/run
 
 install -d -m755 %{pkgdir}/etc/sv/sysklogd
-printf '#!/bin/sh\nexec sysklogd -n\n' > %{pkgdir}/etc/sv/sysklogd/run
+printf '#!/bin/sh\nexec syslogd -n\n' > %{pkgdir}/etc/sv/sysklogd/run
 
 install -d -m755 %{pkgdir}/etc/sv/crond
 printf '#!/bin/sh\nexec crond -n\n' > %{pkgdir}/etc/sv/crond/run

@@ -739,8 +739,22 @@ fn run_hook(label: &str, script: &str, root: &Path) -> Result<()> {
         .unwrap_or(false);
     let status = if live {
         println!("dpm: running {label} hook");
+        // Installing glibc over a seed with a different glibc swaps the
+        // loader (/usr/lib64/ld-linux-x86-64.so.2) BEFORE /etc/ld.so.cache is
+        // regenerated, so the hook's own bash would run on the new loader with
+        // the OLD libc from the cache ("__vdso_gettimeofday: invalid mode for
+        // dlopen()"). Put /usr/lib first so loader and libc always match.
+        let ld_path = match std::env::var_os("LD_LIBRARY_PATH") {
+            Some(v) if !v.is_empty() => {
+                let mut p = std::ffi::OsString::from("/usr/lib:");
+                p.push(v);
+                p
+            }
+            _ => std::ffi::OsString::from("/usr/lib"),
+        };
         Command::new("bash")
             .args(["-e", "-c", script])
+            .env("LD_LIBRARY_PATH", ld_path)
             .env("DPM_ROOT", root)
             .env(crate::lock::HELD_ENV, "1") // we hold the db lock; nested dpm must not wait for it
             .status()?

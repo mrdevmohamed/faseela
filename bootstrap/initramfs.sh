@@ -247,29 +247,37 @@ if [ -n "$rootdev" ] && mount "$rootdev" /ro 2>/dev/null; then
     mount --move /sys /ro/sys
     mount --move /dev /ro/dev
     echo "initramfs: switch_root -> runit"
+    export PATH=/bin:/usr/bin:/usr/sbin:/sbin
     exec switch_root /ro /usr/bin/runit
 fi
 [ -z "$rootdev" ] || echo "initramfs: WARNING root=$rootdev not mountable — trying live media"
 
 echo "initramfs: waiting for boot media"
+# The media is the device whose filesystem contains /live/rootfs.squashfs
+# (mkiso.sh layout). Checking for the file — not just "mountable" — skips the
+# EFI system partition that a hybrid ISO written to a USB stick exposes.
+SQUASH=/cdrom/live/rootfs.squashfs
 found=""
-for i in $(seq 1 10); do
-    for dev in /dev/sr[0-9]* /dev/sd[a-z]*[0-9] /dev/vd[a-z]*[0-9] /dev/nvme*n*p[0-9]; do
+for i in $(seq 1 15); do
+    for dev in /dev/sr[0-9]* /dev/sd[a-z] /dev/sd[a-z]*[0-9] /dev/vd[a-z] /dev/vd[a-z]*[0-9] /dev/nvme*n*p[0-9] /dev/nvme*n[0-9]; do
         [ -b "$dev" ] || continue
-        if mount -t iso9660 -o ro "$dev" /cdrom 2>/dev/null; then
-            found="$dev"; break 2
-        fi
-        # USB sticks often expose the ISO as a plain partition
-        if mount -o ro "$dev" /cdrom 2>/dev/null; then
-            found="$dev"; break 2
-        fi
+        for fs in iso9660 ""; do
+            if [ -n "$fs" ]; then mount -t "$fs" -o ro "$dev" /cdrom 2>/dev/null || continue
+            else mount -o ro "$dev" /cdrom 2>/dev/null || continue; fi
+            if [ -f "$SQUASH" ]; then found="$dev"; break 3; fi
+            umount /cdrom 2>/dev/null
+        done
     done
     sleep 1
 done
-[ -n "$found" ] || { echo "initramfs: no boot media found"; exec sh; }
+if [ -z "$found" ]; then
+    echo "initramfs: no boot media with /live/rootfs.squashfs found"
+    echo "initramfs: block devices seen:"; cat /proc/partitions
+    exec sh
+fi
 echo "initramfs: boot media at $found"
 
-mount -t squashfs -o ro /cdrom/rootfs.squashfs /ro || { echo "initramfs: squashfs mount failed"; exec sh; }
+mount -t squashfs -o ro "$SQUASH" /ro || { echo "initramfs: squashfs mount failed"; exec sh; }
 
 mount -t tmpfs tmpfs /rw
 mkdir -p /rw/upper /rw/work
@@ -286,6 +294,7 @@ mkdir -p /newroot/cdrom
 mount --move /cdrom /newroot/cdrom
 
 echo "initramfs: switch_root -> runit"
+export PATH=/bin:/usr/bin:/usr/sbin:/sbin
 exec switch_root /newroot /usr/bin/runit
 
 # never reached unless switch_root failed
