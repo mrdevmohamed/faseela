@@ -1,4 +1,5 @@
-# # kbd >= 2.7 uses the meson build system
+# kbd 2.7.1 ships an autotools tree (no meson.build): `meson setup build`
+# failed with "Neither source directory 'build' ... contain a build file".
 # extra recipe: kbd — Linux console keymaps, fonts and utilities
 [package]
 name = "kbd"
@@ -11,10 +12,10 @@ source = "https://kernel.org/pub/linux/utils/kbd/kbd-%{version}.tar.xz"
 sha256 = "f167d899d92b56ccf12f6f49355173f93870a95f15d8aeebf5fdcd28a621aca8"
 
 [depends]
-build = ["meson", "ninja"]
+build = []
 run = []
 
 [build]
-configure = "meson setup build --prefix=/usr -D vlock=disabled -D tests=false"
-compile = "ninja -C build"
-install = "DESTDIR=%{pkgdir} meson install -C build"
+configure = "./configure --prefix=/usr --disable-vlock --disable-tests"
+compile = "make -j%{jobs}"
+install = "make DESTDIR=%{pkgdir} install"
