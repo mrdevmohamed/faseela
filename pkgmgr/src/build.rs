@@ -152,10 +152,25 @@ pub fn build(rec: &Recipe, opts: &BuildOpts) -> Result<BuildResult> {
         // expand %{version} & co. in the source URL itself
         let source = rec.expand(source, &ctx);
         let fname = source.rsplit('/').next().unwrap_or("source.tar");
-        let tarball = work.join(fname);
-        println!("dpm: downloading {source}");
-        fetch::download(&source, &tarball)?;
-        fetch::verify_sha256(&tarball, &rec.package.sha256)?;
+        // Source cache: the work dir is wiped on every build, so a tarball
+        // kept inside it was downloaded again each time. Keep it in a
+        // persistent, content-keyed cache instead ($DPM_SRCCACHE, default
+        // <builddir>/distfiles). A hit is re-verified against the recipe's
+        // sha256, so a corrupt/truncated entry is re-downloaded.
+        let cache_dir = std::env::var_os("DPM_SRCCACHE")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| builddir.join("distfiles"));
+        std::fs::create_dir_all(&cache_dir)
+            .with_context(|| format!("create source cache {}", cache_dir.display()))?;
+        let sha = rec.package.sha256.as_str();
+        let tarball = cache_dir.join(format!("{}-{}", sha.get(..16).unwrap_or("nosha"), fname));
+        if tarball.exists() && fetch::verify_sha256(&tarball, sha).is_ok() {
+            println!("dpm: source cached: {}", tarball.display());
+        } else {
+            println!("dpm: downloading {source}");
+        }
+        fetch::download_cached(&source, &tarball, Some(sha))?;
+        fetch::verify_sha256(&tarball, sha)?;
 
         // tarball or single file (e.g. a pinned CA bundle)?
         let is_tar = Command::new("tar")
