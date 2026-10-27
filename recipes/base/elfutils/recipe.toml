@@ -8,7 +8,7 @@ arch = ["x86_64"]
 summary = "ELF object file access library (libelf, libdw) and tools"
 license = ["GPL-3.0-or-later", "LGPL-3.0-or-later", "GPL-2.0-or-later"]
 source = "https://sourceware.org/elfutils/ftp/%{version}/elfutils-%{version}.tar.bz2"
-sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+sha256 = "df76db71366d1d708365fc7a6c60ca48398f14367eb2b8954efc8897147ad871"
 
 [depends]
 build = ["zlib", "zstd", "bzip2", "xz", "m4"]
