@@ -337,6 +337,8 @@ struct Ctx {
     profiles: PathBuf,
     jobs: Option<u32>,
     repo: Option<String>,
+    /// the resolved configuration, kept for `config show` (sources + file)
+    cfg: Config,
 }
 
 impl Ctx {
@@ -348,6 +350,7 @@ impl Ctx {
             profiles: cfg.profiles.clone(),
             jobs: cfg.jobs,
             repo: cfg.repo.clone(),
+            cfg: cfg.clone(),
         }
     }
 }
@@ -679,10 +682,11 @@ fn cmd_build(
         build::rebuild_check(&rec, &opts)?;
     }
     let archive = if install_after {
-        // produced by build() below, or already sitting in out/ on a
-        // --rebuild-check / --use-cache run
+        // --rebuild-check already produced the archive; otherwise ALWAYS
+        // build — an archive left in out/ by an earlier run carries the same
+        // name-version-rel even when the recipe or patches changed since.
         let expected = opts.outdir.join(format!("{}.dpm.tar.zst", rec.id()));
-        if expected.exists() {
+        if rebuild_check && expected.exists() {
             expected
         } else {
             build::build(&rec, &opts)?.archive
@@ -715,7 +719,14 @@ fn cmd_install(
 ) -> Result<()> {
     if !file.exists() {
         // a near-miss hint saves a trip to `ls build/out`
-        let dir = file.parent().unwrap_or_else(|| Path::new("."));
+        let dir = match file.parent() {
+            Some(d) if !d.as_os_str().is_empty() => d,
+            _ => Path::new("."),
+        };
+        let wanted = file
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| file.display().to_string());
         let names: Vec<String> = std::fs::read_dir(dir)
             .map(|rd| {
                 rd.filter_map(|e| e.ok())
@@ -726,7 +737,7 @@ fn cmd_install(
         bail!(
             "archive not found: {}{}",
             file.display(),
-            suggest::hint(&file.display().to_string(), &names)
+            suggest::hint(&wanted, &names)
         );
     }
     install::install_archive(file, &ctx.root, force, allow_unsigned, key.as_deref(), "explicit")?;
@@ -1090,8 +1101,8 @@ fn cmd_owner(ctx: &Ctx, file: &str) -> Result<()> {
 }
 
 fn cmd_config_show(ctx: &Ctx) -> Result<()> {
-    // reload the raw config to annotate every key with its source
-    let cfg = config::load(&Overrides::default())?;
+    // the config resolved at startup, flags included, so sources are truthful
+    let cfg = &ctx.cfg;
     let pal = Palette::auto(Stream::Stdout);
     println!("{} {}", pal.header("dpm config"), pal.dim("(precedence: flag > env > dpm.toml > default)"));
     let show = |key: &str, value: String, source: &str| {

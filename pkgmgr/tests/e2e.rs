@@ -317,3 +317,88 @@ fn deps_all_skips_installed_unless_include_installed() {
     assert_eq!(deps_all("--include-installed"), "hello\nzzz");
     let _ = fs::remove_dir_all(&scratch);
 }
+
+/// Regression: `build --install` must rebuild even when an archive with the
+/// same name-version-rel is already in out/ (recipe edited, version not bumped).
+#[test]
+fn build_install_rebuilds_instead_of_reusing_a_stale_archive() {
+    let scratch = std::env::temp_dir().join(format!("dpm-e2e-stale-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&scratch);
+    let recipes = scratch.join("recipes/demo");
+    fs::create_dir_all(&recipes).unwrap();
+    let root = scratch.join("rootfs");
+    fs::create_dir_all(&root).unwrap();
+    let write_recipe = |marker: &str| {
+        fs::write(
+            recipes.join("recipe.toml"),
+            format!(
+                "[package]\nname = \"demo\"\nversion = \"1.0\"\nrel = 1\narch = [\"x86_64\"]\n\
+                 summary = \"demo\"\n\n[build]\ninstall = \"\"\"\n\
+                 mkdir -p %{{pkgdir}}/usr/bin\necho {marker} > %{{pkgdir}}/usr/bin/demo\n\"\"\"\n"
+            ),
+        )
+        .unwrap();
+    };
+    let go = || {
+        let o = Command::new(dpm_bin())
+            .args([
+                "build", "--install", "demo", "--force",
+                "--recipes", scratch.join("recipes").to_str().unwrap(),
+                "--builddir", scratch.join("build").to_str().unwrap(),
+                "--root", root.to_str().unwrap(),
+            ])
+            .output()
+            .unwrap();
+        assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
+    };
+    write_recipe("first");
+    go();
+    assert_eq!(fs::read_to_string(root.join("usr/bin/demo")).unwrap().trim(), "first");
+    write_recipe("second");
+    go();
+    assert_eq!(
+        fs::read_to_string(root.join("usr/bin/demo")).unwrap().trim(),
+        "second",
+        "build --install installed a stale archive"
+    );
+    let _ = fs::remove_dir_all(&scratch);
+}
+
+/// Regression: the near-miss hint for a missing archive must work both for a
+/// path with a directory and for a bare file name in the CWD.
+#[test]
+fn install_missing_archive_suggests_the_near_miss() {
+    let scratch = std::env::temp_dir().join(format!("dpm-e2e-hint-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&scratch);
+    fs::create_dir_all(scratch.join("out")).unwrap();
+    fs::write(scratch.join("out/demo-1.0-1.dpm.tar.zst"), b"x").unwrap();
+    let root = scratch.join("rootfs");
+    let o = Command::new(dpm_bin())
+        .args(["install", "--root", root.to_str().unwrap(), "out/demo-1.0-2.dpm.tar.zst"])
+        .current_dir(&scratch)
+        .output()
+        .unwrap();
+    assert!(!o.status.success());
+    assert!(String::from_utf8_lossy(&o.stderr).contains("did you mean `demo-1.0-1.dpm.tar.zst`"));
+    let o = Command::new(dpm_bin())
+        .args(["install", "--root", root.to_str().unwrap(), "demo-1.0-2.dpm.tar.zst"])
+        .current_dir(scratch.join("out"))
+        .output()
+        .unwrap();
+    assert!(String::from_utf8_lossy(&o.stderr).contains("did you mean `demo-1.0-1.dpm.tar.zst`"));
+    let _ = fs::remove_dir_all(&scratch);
+}
+
+/// Regression: `config show` must attribute a value passed as a flag to "flag".
+#[test]
+fn config_show_reports_flag_as_the_source() {
+    let o = Command::new(dpm_bin())
+        .args(["config", "show", "--root", "/xyz"])
+        .env_remove("DPM_ROOT")
+        .env_remove("DPM_CONFIG")
+        .output()
+        .unwrap();
+    let out = String::from_utf8_lossy(&o.stdout);
+    let line = out.lines().find(|l| l.contains("/xyz")).expect("root line");
+    assert!(line.contains("(flag)"), "got: {line}");
+}

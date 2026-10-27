@@ -7,8 +7,9 @@ set -euo pipefail
 # locate the repo relative to this script so it works from any checkout
 HERE="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$HERE/.." && pwd)"
-DPM="$REPO_ROOT/pkgmgr/target/release/dpm"
-MKFAKE="$REPO_ROOT/pkgmgr/target/release/examples/mkfake"
+# override via env: DPM=... MKFAKE=... ./smoke-v06.sh
+DPM="${DPM:-$REPO_ROOT/pkgmgr/target/release/dpm}"
+MKFAKE="${MKFAKE:-$REPO_ROOT/pkgmgr/target/release/examples/mkfake}"
 RECIPES="$REPO_ROOT/recipes"
 WORK=$(mktemp -d /tmp/dpm-smoke06-XXXX)
 ROOT=$WORK/root
