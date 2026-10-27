@@ -407,7 +407,11 @@ pub fn build(rec: &Recipe, opts: &BuildOpts) -> Result<BuildResult> {
                 Some(sandbox_base.clone())
             }
         } else {
-            Some(builddir.to_string_lossy().into_owned())
+            // Match this build's own work dir (e.g. /build/perl-5.44.0-1),
+            // not the bare builddir: with builddir=/build the bare path is a
+            // substring of innocent doc text ("/build", "/builddir"...) and
+            // flagged 24 false positives in perl's man pages and modules.
+            Some(work.to_string_lossy().into_owned())
         };
         let ctx = crate::lint::LintCtx {
             pkgdir: &pkg,
