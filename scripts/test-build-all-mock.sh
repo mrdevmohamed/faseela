@@ -53,8 +53,9 @@ echo ok > "$1/usr/bin/env"
 EOF
 cat > "$MOCK/stage2.sh" <<'EOF'
 set -e
-echo "mock: stage2 graph"
+echo "mock: stage2 graph (SINGLE_ROOT=${SINGLE_ROOT:-unset})"
 echo built > "$1/stage2.marker"
+[[ "${SINGLE_ROOT:-0}" == 1 ]] || mkdir -p "$1/sysroot"
 EOF
 cat > "$MOCK/stage3.sh" <<'EOF'
 set -e
@@ -66,6 +67,7 @@ set -e
 ROOT="$1"; OUT="$2"
 echo "mock: mkiso $ROOT -> $OUT"
 mkdir -p "$(dirname "$OUT")"
+echo "$ROOT" > "$(dirname "$OUT")/mkiso.root"
 dd if=/dev/zero of="$OUT" bs=1K count=64 status=none
 EOF
 cat > "$MOCK/umount-chroot.sh" <<'EOF'
@@ -96,6 +98,9 @@ check "A7 ISO ready in output"             "OUT | grep -q 'ISO ready.*mock.iso'"
 check "A8 ISO file non-empty"               "[[ -s $ISO ]]"
 check "A9 stage markers in target"         "[[ -f $TGT/stage2.marker && -f $TGT/stage3.marker ]]"
 check "A10 next steps mentioned"           "OUT | grep -q 'validate-install.sh'"
+check "A11 ISO is made from the FINAL root" "[[ \$(cat $WORK/out/mkiso.root) == $TGT/sysroot ]]"
+check "A12 layout recorded as two-root"    "[[ \$(cat $STATE/layout) == two-root ]]"
+check "A13 final root dir created by stage2" "[[ -d $TGT/sysroot ]]"
 
 say "B. re-run: everything skipped"
 RC=$(RUN)
@@ -177,6 +182,35 @@ check "K1 exit 0"                          "[[ $RC -eq 0 ]]"
 check "K2 adoption notice"                "OUT | grep -q 'adopting existing'"
 check "K3 seed stage not re-run"          "! OUT | grep -q 'mock: assembling seed'"
 rm -f "$MOCK/seed/seed.tar.zst"
+
+say "L. --single-root: layout switch invalidates stage2+3+iso, ISO from TARGET"
+RC=$(RUN --single-root)
+check "L1 exit 0"                          "[[ $RC -eq 0 ]]"
+check "L2 layout-switch notices (x3)"      "OUT | grep -c 'layout two-root -> single-root' | grep -q '^3\$'"
+check "L3 ISO made from TARGET itself"     "[[ \$(cat $WORK/out/mkiso.root) == $TGT ]]"
+check "L4 stage2 saw SINGLE_ROOT=1"        "OUT | grep -q 'SINGLE_ROOT=1'"
+check "L5 layout recorded as single-root"  "[[ \$(cat $STATE/layout) == single-root ]]"
+check "L6 stage1 stamp untouched"          "[[ -f $STAMPS/stage1.done ]]"
+
+say "M. back to two-root (default) switches again; same layout twice does not"
+RC=$(RUN)
+check "M1 exit 0"                          "[[ $RC -eq 0 ]]"
+check "M2 layout-switch notice"            "OUT | grep -q 'layout single-root -> two-root'"
+check "M3 ISO from sysroot again"          "[[ \$(cat $WORK/out/mkiso.root) == $TGT/sysroot ]]"
+RC=$(RUN)
+check "M4 same layout: nothing invalidated" "! OUT | grep -q 'layout '"
+
+say "N. a build that predates the layout file counts as single-root"
+rm -f "$STATE/layout"
+RC=$(RUN)
+check "N1 exit 0"                          "[[ $RC -eq 0 ]]"
+check "N2 legacy build is switched"        "OUT | grep -q 'layout single-root -> two-root'"
+
+say "O. ISO stage refuses a missing final root"
+rm -rf "$TGT/sysroot" "$STAMPS/iso.done"
+RC=$(RUN --from-stage iso)
+check "O1 exit 2"                          "[[ $RC -eq 2 ]]"
+check "O2 clear message"                   "OUT | grep -q 'final root .*sysroot does not exist'"
 
 # ------------------------------------------------------------------ summary --
 echo

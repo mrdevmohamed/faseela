@@ -17,8 +17,11 @@
 #   grub-mkrescue     (Debian: grub-pc-bin grub-efi-amd64-bin xorriso mtools)
 #   gcc + make        (to compile the initramfs busybox)
 #
+# ROOT is the FINAL root: /mnt/mydistro/sysroot in the default two-root layout
+# (build-all passes it), or /mnt/mydistro itself for a --single-root build.
+#
 # Usage:
-#   sudo ./mkiso.sh /mnt/mydistro out/mydistro-x86_64.iso
+#   sudo ./mkiso.sh /mnt/mydistro/sysroot out/mydistro-x86_64.iso
 # Env overrides: VOL_ID (default MYDISTRO), SQUASH_COMP (gzip|xz|zstd), JOBS
 set -euo pipefail
 
@@ -79,9 +82,15 @@ if mountpoint -q "$ROOT/proc" || mountpoint -q "$ROOT/dev" \
 fi
 
 echo "== stage4: mksquashfs of $ROOT"
+# Excludes are relative to ROOT and only passed when they exist (a clean
+# two-root final root has none of the build dirs; the legacy single root does).
+EXCL=()
+for d in build build3 mydistro sources boot .dpm; do
+    [[ -e $ROOT/$d ]] && EXCL+=("$d")
+done
 mksquashfs "$ROOT" "$ISO/live/rootfs.squashfs" \
     -comp "$SQUASH_COMP" -noappend -no-recovery -processors "$JOBS" \
-    -e build build3 mydistro sources boot .dpm
+    ${EXCL[@]:+-e "${EXCL[@]}"}
 
 # 3) kernel + grub config
 cp "$KERNEL" "$ISO/boot/$KVER"

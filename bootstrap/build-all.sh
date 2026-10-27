@@ -72,6 +72,8 @@ Options:
   --wipe            delete TARGET entirely first (implies --fresh)
   --no-iso          stop after stage 3 (no ISO produced)
   --keep-mounts     do not unmount the chroot bind mounts at the end
+  --single-root     legacy layout: install into the build root only and pack
+                    TARGET itself into the ISO (default: TWO roots — see below)
   --stage3-world    STAGE3_WORLD=1 — rebuild EVERY package in stage 3
   --with-gui        WITH_GUI=1 — include recipes/gui in stage 2/3
   --isolation LVL   none|env|sandbox|closure (default none); closure applies
@@ -84,8 +86,15 @@ Options:
   --dry-run         print what would run; execute and write nothing
   -h, --help        this text
 
+Two-root layout (default):
+  build root   TARGET            seed toolchain + build tools; every package is
+                                 installed here so later builds can link to it
+  final root   TARGET/sysroot    a CLEAN system, only distro packages (no seed,
+                                 no build dirs) — the ISO is made from THIS
+  Switching layouts between runs invalidates stage 2 onward automatically.
+
 Arguments:
-  TARGET            the future distro root (e.g. /mnt/mydistro)
+  TARGET            the build root (e.g. /mnt/mydistro); the final root is TARGET/sysroot
   OUT_ISO           ISO output path (positional alternative to --out)
 
 Examples:
@@ -102,7 +111,7 @@ note() { echo "$PROG: $*"; }
 # ---------------------------------------------------------------- arguments --
 TARGET="" OUT_ISO="" FROM_STAGE=""
 OPT_FRESH=0 OPT_WIPE=0 OPT_NO_ISO=0 OPT_KEEP_MOUNTS=0
-OPT_WORLD=0 OPT_GUI=0 OPT_LIST=0 OPT_DRYRUN=0
+OPT_WORLD=0 OPT_GUI=0 OPT_LIST=0 OPT_DRYRUN=0 OPT_SINGLE=0
 OPT_ISOLATION="${STAGE2_ISOLATION:-none}"
 JOBS="${DPM_JOBS:-}"
 VOL_ID="${VOL_ID:-MYDISTRO}"
@@ -115,6 +124,7 @@ while [[ $# -gt 0 ]]; do
         --wipe)         OPT_WIPE=1; OPT_FRESH=1; shift ;;
         --no-iso)       OPT_NO_ISO=1; shift ;;
         --keep-mounts)  OPT_KEEP_MOUNTS=1; shift ;;
+        --single-root)  OPT_SINGLE=1; shift ;;
         --stage3-world) OPT_WORLD=1; shift ;;
         --with-gui)     OPT_GUI=1; shift ;;
         --isolation)    [[ $# -ge 2 ]] || die "--isolation needs a value"; OPT_ISOLATION="$2"; shift 2 ;;
@@ -149,6 +159,9 @@ STATE="$(dirname -- "$TARGET")/.$(basename -- "$TARGET").build"
 STAMPS="$STATE/stamps"
 LOGS="$STATE/logs"
 META="$STATE/meta"
+LAYOUT_FILE="$STATE/layout"
+if (( OPT_SINGLE )); then LAYOUT=single-root; FINAL_HOST="$TARGET"
+else                      LAYOUT=two-root;    FINAL_HOST="$TARGET/sysroot"; fi
 if [[ -n $OUT_ISO ]]; then OUT_ISO="$(realpath -m -- "$OUT_ISO")"
 else OUT_ISO="$REPO/out/mydistro-x86_64.iso"; fi
 
@@ -185,6 +198,7 @@ stage_index() {  # accept seed|0..3|iso|4 -> index into STAGE_IDS
 list_stages() {
     local i id status n=0
     echo "target: $TARGET"
+    echo "final:  $FINAL_HOST ($LAYOUT)"
     echo "state:  $STATE"
     echo
     printf '  %-8s %-50s %s\n' STAGE DESCRIPTION STATUS
@@ -283,6 +297,22 @@ on_exit() {
     wait 2>/dev/null || true
 }
 
+# layout switch (two-root <-> single-root): stage 2 onward installed packages
+# into the OTHER layout, so their stamps are stale. A build that predates the
+# layout file is a single-root build.
+if [[ -d $STAMPS ]] && (( ! OPT_LIST )); then
+    PREV_LAYOUT=single-root
+    [[ -f $LAYOUT_FILE ]] && PREV_LAYOUT="$(cat "$LAYOUT_FILE")"
+    if [[ $PREV_LAYOUT != "$LAYOUT" ]]; then
+        for id in stage2 stage3 iso; do
+            if [[ -f "$(stamp_file "$id")" ]]; then
+                note "invalidating stamp: $id (layout $PREV_LAYOUT -> $LAYOUT)"
+                if (( ! OPT_DRYRUN )); then rm -f "$(stamp_file "$id")"; fi
+            fi
+        done
+    fi
+fi
+
 # decide where the run starts
 if [[ -n $FROM_STAGE ]]; then
     START="$(stage_index "$FROM_STAGE")" || die "--from-stage must be seed|0|1|2|3|iso|4 (got '$FROM_STAGE')"
@@ -354,12 +384,14 @@ if [[ $OPT_ISOLATION == closure ]]; then
     echo "$PROG: note: --isolation closure applies to stage 3; stage 2 uses sandbox"
 fi
 export STAGE3_ISOLATION="$OPT_ISOLATION"
+export SINGLE_ROOT="$OPT_SINGLE"
 export STAGE3_WORLD="$OPT_WORLD"
 export VOL_ID SQUASH_COMP JOBS="$JOBS"
 
 # logging (never in --dry-run: it must not touch anything)
 if (( ! OPT_DRYRUN )); then
     mkdir -p "$LOGS"
+    echo "$LAYOUT" > "$LAYOUT_FILE"
     LOG="$LOGS/build-$(date +%Y%m%d-%H%M%S)-$$.log"
     exec > >(tee -a "$LOG") 2>&1
 fi
@@ -391,8 +423,11 @@ run_stage() {
         stage1) CMD=(bash "$HERE/stage1.sh" "$TARGET") ;;
         stage2) CMD=(bash "$HERE/stage2.sh" "$TARGET") ;;
         stage3) CMD=(bash "$HERE/stage3.sh" "$TARGET") ;;
-        iso)    CMD=(bash "$HERE/mkiso.sh" "$TARGET" "$OUT_ISO") ;;
+        iso)    CMD=(bash "$HERE/mkiso.sh" "$FINAL_HOST" "$OUT_ISO") ;;
     esac
+    if [[ $id == iso ]] && (( ! OPT_DRYRUN )) && [[ ! -d $FINAL_HOST ]]; then
+        die "final root $FINAL_HOST does not exist — run stage 2 (and 3) first (layout: $LAYOUT)"
+    fi
     if (( OPT_DRYRUN )); then
         echo "[dry-run] would run:  ${CMD[*]}"
         echo "[dry-run] would stamp: $(stamp_file "$id")"
@@ -412,6 +447,7 @@ run_stage() {
 T_START=$(date +%s)
 banner "mydistro build — target $TARGET"
 echo "  jobs=$JOBS  isolation=$OPT_ISOLATION  gui=$OPT_GUI  stage3-world=$OPT_WORLD"
+echo "  layout=$LAYOUT  build-root=$TARGET  final-root=$FINAL_HOST"
 echo "  state=$STATE"
 echo "  iso output: $OUT_ISO"
 if (( OPT_DRYRUN )); then echo "  (dry run — nothing is executed or recorded)"; fi

@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+### Two-root build: clean final root separate from the build root
+- Packages are now installed into the build root `/` (needed for later builds)
+  **and** into a clean final root `TARGET/sysroot` (`/sysroot` in the chroot).
+  The ISO is built from the final root only, so no Ubuntu seed files, `/opt/seed`
+  or build directories can leak into the image.
+- New `bootstrap/final-root.sh` (install/sync/seal helpers) used by stage2/stage3;
+  `final root` sync makes resumed builds and `--from-stage 3` safe, and
+  `ldconfig -r` is run once at the end (dpm skips glibc's hook in a shell-less root).
+- `build-all.sh`: `--single-root` (legacy layout); a layout switch invalidates
+  stage 2/3/iso stamps; the ISO stage refuses a missing final root.
+- `mkiso.sh`: takes the final root; squashfs excludes are passed only if present.
+- Tests: `scripts/test-final-root.sh` (new, in CI) and extended
+  `scripts/test-build-all-mock.sh` (layout cases A11-A13, L, M, N, O).
+
 ### Fix stage-2 glibc build failure on Ubuntu seed compiler
 - `recipes/toolchain/glibc`: configure with `CC="gcc -U_FORTIFY_SOURCE"`.
   The seed gcc (Ubuntu 24.04, gcc 13) defines `_FORTIFY_SOURCE=3` by default and

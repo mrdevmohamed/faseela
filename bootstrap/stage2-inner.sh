@@ -42,6 +42,16 @@ fi
 export DPM_JOBS="${DPM_JOBS:-4}"
 REPO=/mydistro
 
+# Two-root layout: FINAL_ROOT (default /sysroot, set by stage2.sh) is the clean
+# system every package is installed into IN ADDITION to the build root "/".
+# Empty = legacy single-root mode. See bootstrap/final-root.sh.
+. "$REPO/bootstrap/final-root.sh"
+if final_root_enabled; then
+    echo "== stage2-inner: two-root layout: build root=/  final root=$FINAL_ROOT"
+else
+    echo "== stage2-inner: single-root layout (legacy): installing into / only"
+fi
+
 echo "== [1/3] compiling DPM with seed rustc"
 cd "$REPO/pkgmgr"
 cargo build --release
@@ -118,6 +128,7 @@ build_one() {
         exit 1
     fi
     /usr/bin/dpm --root / install --force "$archive"
+    install_final "$archive"
 }
 
 mkdir -p /build
@@ -152,5 +163,18 @@ while IFS= read -r pkg; do
     echo "== stage2-inner: [$i/$COUNT] $pkg"
     build_one "$pkg"
 done <<< "$ORDER"
+
+# Make sure the final root has EVERY package the build root has (resume after
+# a layout switch or an interrupted run), then seal it.
+if final_root_enabled; then
+    ALL=$(/usr/bin/dpm --recipes "$REPO/recipes" deps-all --include-installed)
+    if [[ "${WITH_GUI:-0}" != "1" && -d "$REPO/recipes/gui" ]]; then
+        GUI_PKGS=" $(ls "$REPO/recipes/gui" | tr '\n' ' ') "
+        ALL=$(for p in $ALL; do [[ "$GUI_PKGS" == *" $p "* ]] || echo "$p"; done)
+    fi
+    printf '%s\n' "$ALL" > /build/final-root.order
+    sync_final_root /build/final-root.order
+    finalize_final_root
+fi
 
 echo "== stage2-inner: full system complete ($COUNT packages)"

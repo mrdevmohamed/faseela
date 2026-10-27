@@ -81,6 +81,7 @@ sudo ./mkiso.sh /mnt/mydistro out.iso  # bootable image
 | `seed/build-seed.sh` | host   | assembles + packs the seed                         |
 | `stage1.sh`        | host     | unpack seed, mounts, invoke chroot                 |
 | `stage1-inner.sh`  | chroot   | prepare chroot, verify seed toolchain (C/C++/Rust) |
+| `final-root.sh`    | chroot   | two-root helpers: install into / sysroot, sync, seal |
 | `stage2.sh`        | host     | chroot entry for stage2                            |
 | `stage2-inner.sh`  | chroot   | compile DPM with seed rustc, build the full graph  |
 | `stage3.sh`        | host     | chroot entry for the self-hosting rebuild          |
@@ -100,3 +101,24 @@ target with `sudo bootstrap/umount-chroot.sh /mnt/mydistro`.
 
 The optional Wayland desktop (`recipes/gui`) is skipped by default; build it with
 `WITH_GUI=1 sudo ./stage2.sh /mnt/mydistro` (see `recipes/gui/README.md`).
+
+## Two roots: build root vs. final root
+
+By default the build uses **two roots** instead of installing everything over
+the Ubuntu seed:
+
+| root       | path (host)         | path (chroot) | contents |
+|------------|---------------------|---------------|----------|
+| build root | `TARGET`            | `/`           | seed toolchain + every package (later builds link against it) |
+| final root | `TARGET/sysroot`    | `/sysroot`    | **clean** system: only distro packages — no seed files, no `/opt/seed`, no build dirs |
+
+* Stage 2 and 3 install each archive into `/` **and** `dpm --root /sysroot`.
+  At the end of each stage the final root is synced (resume-safe), its ld.so
+  cache is regenerated, and it is checked for seed/build leaks.
+* The ISO (stage 4) is packed from the **final root**; the build root is
+  never shipped. Validate the result with `scripts/validate-install.sh`.
+* `--single-root` restores the old behaviour (one root, ISO from `TARGET`).
+  Switching layouts between runs invalidates stage 2 onward automatically
+  (recorded in `<state>/layout`).
+* Extra disk: the final root adds roughly the size of the installed system
+  (a few GB) on top of the build root.

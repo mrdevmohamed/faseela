@@ -44,8 +44,19 @@ touch -- "$LFS/mydistro/pkgmgr/Cargo.toml" 2>/dev/null
 # fails with "no /proc/self/exe available".  Idempotent + loud on failure.
 bash "$HERE/ensure-chroot-mounts.sh" "$LFS"
 
+# two-root layout: the clean final root lives INSIDE the build root at
+# $LFS/sysroot (== /sysroot in the chroot). SINGLE_ROOT=1 = legacy behaviour.
+if [[ "${SINGLE_ROOT:-0}" == "1" ]]; then
+    FINAL_ROOT=""
+else
+    FINAL_ROOT="${FINAL_ROOT:-/sysroot}"
+    [[ $FINAL_ROOT == /* && $FINAL_ROOT != / ]] || { echo "stage2: FINAL_ROOT must be an absolute path other than /" >&2; exit 1; }
+    mkdir -p "$LFS$FINAL_ROOT"
+fi
+
 bash "$HERE/enter-root.sh" "$LFS" /usr/bin/env -i \
     HOME=/root TERM="$TERM" DPM_JOBS="${DPM_JOBS:-4}" WITH_GUI="${WITH_GUI:-0}" \
+    FINAL_ROOT="$FINAL_ROOT" \
     STAGE2_ISOLATION="${STAGE2_ISOLATION:-none}" \
     bash -c '. /opt/seed/env.sh && bash /mydistro/bootstrap/stage2-inner.sh'
 

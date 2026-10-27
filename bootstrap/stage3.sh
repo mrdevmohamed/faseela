@@ -31,12 +31,26 @@ cp -a "$REPO/pkgmgr" "$REPO/recipes" "$REPO/profiles" "$REPO/bootstrap" "$LFS/my
 # setup in dpm's sandbox (writes /proc/self/uid_map) fails too
 bash "$HERE/ensure-chroot-mounts.sh" "$LFS"
 
+# two-root layout (see stage2.sh / final-root.sh); SINGLE_ROOT=1 = legacy
+if [[ "${SINGLE_ROOT:-0}" == "1" ]]; then
+    FINAL_ROOT=""
+else
+    FINAL_ROOT="${FINAL_ROOT:-/sysroot}"
+    [[ $FINAL_ROOT == /* && $FINAL_ROOT != / ]] || { echo "stage3: FINAL_ROOT must be an absolute path other than /" >&2; exit 1; }
+    mkdir -p "$LFS$FINAL_ROOT"
+fi
+
 bash "$HERE/enter-root.sh" "$LFS" /usr/bin/env -i \
     HOME=/root TERM="$TERM" DPM_JOBS="${DPM_JOBS:-4}" STAGE3_WORLD="${STAGE3_WORLD:-0}" WITH_GUI="${WITH_GUI:-0}" \
+    FINAL_ROOT="$FINAL_ROOT" \
     bash <<'EOS'
 set -euo pipefail
 export PATH="/usr/bin:/bin:/usr/sbin:/sbin"
 export DPM_JOBS="${DPM_JOBS:-4}"
+. /mydistro/bootstrap/final-root.sh
+if final_root_enabled; then
+    echo "== stage3: two-root layout: build root=/  final root=$FINAL_ROOT"
+fi
 # Build isolation (docs/design/build-isolation.md §5.4): stage3 is the first
 # fully hermetic pass — `closure` builds against assembled archives, never the
 # live system, so the seed (deleted below) is provably unnecessary.
@@ -74,6 +88,18 @@ fi
 
 mkdir -p /build3
 
+# two-root: make sure the final root already holds every installed package
+# (e.g. `--from-stage 3` after a build made before the two-root layout)
+if final_root_enabled; then
+    SYNC_ORDER=$(/usr/bin/dpm --recipes /mydistro/recipes deps-all --include-installed) || SYNC_ORDER=""
+    if [[ "${WITH_GUI:-0}" != "1" && -d /mydistro/recipes/gui ]]; then
+        GUI_PKGS=" $(ls /mydistro/recipes/gui | tr '\n' ' ') "
+        SYNC_ORDER=$(for p in $SYNC_ORDER; do [[ "$GUI_PKGS" == *" $p "* ]] || echo "$p"; done)
+    fi
+    printf '%s\n' "$SYNC_ORDER" > /build3/final-root.order
+    sync_final_root /build3/final-root.order
+fi
+
 # `closure` needs the base-devel archive before anything else: it IS the
 # base layer of every build root
 if [ "$ISOLATION" = "closure" ]; then
@@ -95,10 +121,13 @@ for pkg in $ORDER; do
     ARCHIVE=$(ls /build3/out/"$pkg"-[0-9]*.dpm.tar.zst 2>/dev/null | sort -V | tail -1)
     [ -n "$ARCHIVE" ] || { echo "stage3: no archive built for $pkg" >&2; exit 1; }
     /usr/bin/dpm --root / install --force "$ARCHIVE"
+    install_final "$ARCHIVE"
 done
 
 echo "== stage3: removing seed toolchain"
 rm -rf /opt/cross-tools /opt/cargo /opt/rustup /opt/seed
+# the final root never contained the seed; verify that and refresh ld.so.cache
+finalize_final_root
 echo "== stage3: self-hosted (rebuilt with its own compiler)"
 EOS
 
