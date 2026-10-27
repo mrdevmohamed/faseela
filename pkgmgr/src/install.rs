@@ -619,6 +619,58 @@ fn running_as_root() -> bool {
     unsafe { geteuid() == 0 }
 }
 
+/// Does `path` exist as seen from inside a chroot at `root`? Symlinks are
+/// resolved relative to `root` (an absolute target like `/usr/bin` means
+/// `root/usr/bin`, not the host's), unlike `root.join(path).exists()`, which
+/// follows absolute links out of the root and can report a shell that the
+/// chroot does not actually have.
+fn exists_in_root(root: &Path, path: &str) -> bool {
+    let mut cur = root.to_path_buf();
+    let mut todo: Vec<std::ffi::OsString> = Path::new(path)
+        .components()
+        .rev()
+        .filter_map(|c| match c {
+            std::path::Component::Normal(n) => Some(n.to_os_string()),
+            _ => None,
+        })
+        .collect();
+    let mut hops = 0;
+    while let Some(part) = todo.pop() {
+        cur.push(&part);
+        match std::fs::symlink_metadata(&cur) {
+            Err(_) => return false,
+            Ok(md) if md.file_type().is_symlink() => {
+                hops += 1;
+                if hops > 40 {
+                    return false;
+                }
+                let target = match std::fs::read_link(&cur) {
+                    Ok(t) => t,
+                    Err(_) => return false,
+                };
+                cur.pop();
+                if target.is_absolute() {
+                    cur = root.to_path_buf();
+                }
+                for c in target.components().rev() {
+                    match c {
+                        std::path::Component::Normal(n) => todo.push(n.to_os_string()),
+                        std::path::Component::ParentDir => todo.push("..".into()),
+                        _ => {}
+                    }
+                }
+            }
+            Ok(_) => {
+                if part == ".." {
+                    cur.pop();
+                    cur.pop();
+                }
+            }
+        }
+    }
+    true
+}
+
 /// Hooks run either on the live system (`--root /`) or, when dpm runs as
 /// root and the target has a shell, inside a chroot of the target. Anything
 /// else is skipped: executing a package's script on the host while
@@ -641,7 +693,7 @@ fn run_hook(label: &str, script: &str, root: &Path) -> Result<()> {
     } else {
         let shell = ["/bin/bash", "/bin/sh"]
             .into_iter()
-            .find(|sh| root.join(sh.trim_start_matches('/')).exists());
+            .find(|sh| exists_in_root(root, sh));
         match shell {
             Some(sh) if running_as_root() => {
                 println!("dpm: running {label} hook in chroot {}", root.display());
