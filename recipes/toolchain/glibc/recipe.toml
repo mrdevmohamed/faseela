@@ -4,7 +4,7 @@
 [package]
 name = "glibc"
 version = "2.40"
-rel = 2
+rel = 3
 arch = ["x86_64"]
 summary = "The GNU C Library (glibc)"
 license = ["LGPL-2.1"]
@@ -55,4 +55,20 @@ post_install = """
 # search the new glibc's /usr/lib before any seed multiarch directory
 [ -d /etc/ld.so.conf.d ] && echo /usr/lib > /etc/ld.so.conf.d/00-usrlib.conf
 ldconfig
+# The seed (Debian/Ubuntu) ships binaries with RUNPATH=/usr/lib/x86_64-linux-gnu.
+# RUNPATH is searched BEFORE /etc/ld.so.cache, so after our loader is in place
+# those binaries (expr, ...) would load the seed's OLD libc.so.6 with the NEW
+# ld.so — a loader/libc mismatch that shows up as "stack smashing detected".
+# Point the seed's copies of the glibc libraries at ours. Atomic (ln + mv -T),
+# idempotent, and a no-op where no seed multiarch dir exists (the final root).
+if [ -d /usr/lib/x86_64-linux-gnu ]; then
+    for b in ld-linux-x86-64.so.2 libc.so.6 libm.so.6 libdl.so.2 libpthread.so.0 librt.so.1 libutil.so.1 libresolv.so.2 libanl.so.1 libBrokenLocale.so.1 libmvec.so.1 libthread_db.so.1 libc_malloc_debug.so.0 libnss_files.so.2 libnss_dns.so.2 libnss_compat.so.2 libnss_hesiod.so.2 libnss_db.so.2; do
+        new=/usr/lib/$b; old=/usr/lib/x86_64-linux-gnu/$b
+        if [ -e "$new" ] && { [ -e "$old" ] || [ -L "$old" ]; }; then
+            if [ "$(readlink -f "$old")" != "$(readlink -f "$new")" ]; then
+                ln -s "$new" "$old.dpm-tmp" && mv -T "$old.dpm-tmp" "$old"
+            fi
+        fi
+    done
+fi
 """

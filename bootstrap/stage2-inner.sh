@@ -169,6 +169,24 @@ purge_seed_libc_headers() {
 # ld.so.conf and rebuild the cache. Idempotent; runs before every build, so a
 # resumed build repairs an already-installed glibc without rebuilding it.
 # --------------------------------------------------------------------------
+# --------------------------------------------------------------------------
+# seed_glibc_relink: see the glibc recipe's post_install hook for the why.
+# Repeated here so a resumed build (glibc already installed by an older
+# recipe) is repaired too. Idempotent.
+# --------------------------------------------------------------------------
+seed_glibc_relink() {
+    if [ -d /usr/lib/x86_64-linux-gnu ]; then
+        for b in ld-linux-x86-64.so.2 libc.so.6 libm.so.6 libdl.so.2 libpthread.so.0 librt.so.1 libutil.so.1 libresolv.so.2 libanl.so.1 libBrokenLocale.so.1 libmvec.so.1 libthread_db.so.1 libc_malloc_debug.so.0 libnss_files.so.2 libnss_dns.so.2 libnss_compat.so.2 libnss_hesiod.so.2 libnss_db.so.2; do
+            new=/usr/lib/$b; old=/usr/lib/x86_64-linux-gnu/$b
+            if [ -e "$new" ] && { [ -e "$old" ] || [ -L "$old" ]; }; then
+                if [ "$(readlink -f "$old")" != "$(readlink -f "$new")" ]; then
+                    ln -s "$new" "$old.dpm-tmp" && mv -T "$old.dpm-tmp" "$old"
+                fi
+            fi
+        done
+    fi
+}
+
 switch_to_new_glibc() {
     [ -d /var/lib/dpm/local/glibc ] || return 0
     [ -e /usr/lib/ld-linux-x86-64.so.2 ] || return 0
@@ -183,7 +201,17 @@ switch_to_new_glibc() {
         echo /usr/lib > /etc/ld.so.conf.d/00-usrlib.conf
         ldconfig
     fi
-    # fail early instead of 20 packages later
+    seed_glibc_relink
+    # fail early instead of 20 packages later. `expr` is the canary for the
+    # RUNPATH problem described at seed_glibc_relink (it crashed configure
+    # scripts 3000+ times in a 46-minute loop before this check existed).
+    if ! timeout 20 expr a : '\(a\)' >/dev/null 2>&1 || ! timeout 20 expr 2 + 3 >/dev/null 2>&1; then
+        echo "stage2-inner: expr (a seed binary) fails on our glibc — loader/libc mismatch" >&2
+        for f in /usr/bin/expr /usr/bin/getent; do echo "--- ldd $f" >&2; ldd "$f" >&2 || true; done
+        readelf -d /usr/bin/expr 2>/dev/null | grep -i 'rpath\|runpath' >&2 || true
+        ls -l /usr/lib/x86_64-linux-gnu/libc.so.6 /usr/lib/libc.so.6 >&2 || true
+        exit 1
+    fi
     if ! getent passwd root >/dev/null; then
         echo "stage2-inner: getent fails after switching to our glibc loader" >&2
         ldd "$(command -v getent)" >&2 || true
