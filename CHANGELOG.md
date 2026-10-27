@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Fix stage-2 ninja failure: `c++: not found`
+- The Debian/Ubuntu seed lacked the `c++` symlink (an `update-alternatives` link
+  that `dpkg -x` never creates), so ninja's bootstrap (`configure.py` runs plain
+  `c++`) failed at stage2 [3/89]. `build-seed.sh` now links `c++ -> g++`;
+  `stage1-inner.sh` checks for it; `stage2-inner.sh` repairs existing seeds on
+  every run, so a resumed build needs no stage-1 rerun.
+
 ### Two-root build: clean final root separate from the build root
 - Packages are now installed into the build root `/` (needed for later builds)
   **and** into a clean final root `TARGET/sysroot` (`/sysroot` in the chroot).

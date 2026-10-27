@@ -54,7 +54,10 @@ trap 'rm -rf "$T"' EXIT
 cd "$T"
 fail() { echo "stage1-inner: SEED CHECK FAILED: $*" >&2; exit 1; }
 
-for t in bash sh env make gcc g++ cc ld as ar ldconfig grep sed gawk awk tar gzip xz zstd bzip2 \
+# Debian alternatives links that `dpkg -x` skipped (older seeds lack c++)
+[ -e /usr/bin/c++ ] || { [ -x /usr/bin/g++ ] && ln -s g++ /usr/bin/c++; }
+
+for t in bash sh env make gcc g++ cc c++ ld as ar ldconfig grep sed gawk awk tar gzip xz zstd bzip2 \
          patch m4 bison flex find diff file pkg-config python3 perl curl install sha256sum; do
     command -v "$t" >/dev/null 2>&1 || fail "'$t' not found in PATH"
 done

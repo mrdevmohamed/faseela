@@ -87,6 +87,9 @@ for d in bin sbin lib lib64; do
 done
 [[ -e "$SEED_ROOT/usr/bin/sh" ]] || ln -s bash "$SEED_ROOT/usr/bin/sh"
 [[ -e "$SEED_ROOT/usr/bin/cc" ]] || ln -s gcc  "$SEED_ROOT/usr/bin/cc"
+# c++ is a Debian *alternatives* link (g++ postinst), also skipped by dpkg -x.
+# Many build systems (ninja's bootstrap, cmake, meson...) call plain `c++`.
+[[ -e "$SEED_ROOT/usr/bin/c++" ]] || ln -s g++  "$SEED_ROOT/usr/bin/c++"
 [[ -e "$SEED_ROOT/usr/bin/awk" ]] || ln -s gawk "$SEED_ROOT/usr/bin/awk"
 mkdir -p "$SEED_ROOT"/{etc,tmp,root,var,dev,proc,sys,run}
 chmod 1777 "$SEED_ROOT/tmp"

@@ -42,6 +42,14 @@ fi
 export DPM_JOBS="${DPM_JOBS:-4}"
 REPO=/mydistro
 
+# Seed fix-ups. dpkg -x never ran the Debian maintainer scripts, so the
+# update-alternatives symlinks are missing from the seed. `c++` is needed by
+# e.g. ninja's bootstrap (configure.py runs plain `c++`). Done here, not in
+# stage1, so seeds built/stamped earlier are repaired on resume. Idempotent;
+# harmless once our own gcc (which installs c++ itself) replaces it.
+[ -e /usr/bin/c++ ] || { [ -x /usr/bin/g++ ] && ln -s g++ /usr/bin/c++; }
+[ -e /usr/bin/cc  ] || { [ -x /usr/bin/gcc ] && ln -s gcc /usr/bin/cc; }
+
 # Two-root layout: FINAL_ROOT (default /sysroot, set by stage2.sh) is the clean
 # system every package is installed into IN ADDITION to the build root "/".
 # Empty = legacy single-root mode. See bootstrap/final-root.sh.
