@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Fix stage-2 glibc build failure on Ubuntu seed compiler
+- `recipes/toolchain/glibc`: configure with `CC="gcc -U_FORTIFY_SOURCE"`.
+  The seed gcc (Ubuntu 24.04, gcc 13) defines `_FORTIFY_SOURCE=3` by default and
+  glibc's `-Wp,-U_FORTIFY_SOURCE` does not cancel it, so `misc/syslog.c` failed
+  with `inlining failed in call to 'always_inline' 'syslog'` (stage2, 12/115).
+
 ### Stage scripts enter the target with pivot_root instead of chroot
 - New `bootstrap/enter-root.sh TARGET CMD...`: private mount namespace +
   `pivot_root`, then a lazy unmount of the host root (via `umount`, else

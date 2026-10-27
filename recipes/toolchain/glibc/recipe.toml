@@ -18,8 +18,14 @@ run = []
 
 [build]
 prepare = "mkdir -v build"
+# glibc must NOT be built with _FORTIFY_SOURCE. Ubuntu's gcc (the stage-2 seed
+# compiler) enables -D_FORTIFY_SOURCE=3 by default, and glibc's own
+# `-Wp,-U_FORTIFY_SOURCE` does not cancel it (the driver only suppresses its
+# default when it sees a plain -U). The result is
+#   syslog.c: error: inlining failed in call to 'always_inline' 'syslog'
+# so pass -U at driver level via CC (config.make keeps it for the compile).
 configure = """
-cd build && ../configure --prefix=/usr       \
+cd build && CC="gcc -U_FORTIFY_SOURCE" ../configure --prefix=/usr \
     --disable-werror                         \
     --enable-kernel=5.4                      \
     --enable-stack-protector=strong          \
