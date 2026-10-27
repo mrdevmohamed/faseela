@@ -68,9 +68,13 @@ jobs:
       # The seed (~330 MB, ~1 min to assemble from Debian packages) only
       # changes when its builder does. Restored with its mtime, because
       # build-all.sh fingerprints the seed by size+mtime.
-      - name: Cache the bootstrap seed
+      # Restore here, save AFTER the build with `always()`: a plain
+      # actions/cache step saves only when the job succeeds, so a failed run
+      # lost the seed while the target cache (whose stamps say "seed done")
+      # survived -> the next resume died with "stage1: seed missing".
+      - name: Restore the bootstrap seed
         id: seedcache
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: |
             bootstrap/seed/seed.tar.zst
@@ -122,6 +126,16 @@ jobs:
           [[ "${{ inputs.with_gui }}" == "true" ]]     && args+=(--with-gui)
           [[ "${{ inputs.stage3_world }}" == "true" ]] && args+=(--stage3-world)
           sudo -E ./bootstrap/build-all.sh "${args[@]}" "$TARGET"
+
+      - name: Save the bootstrap seed (also on failure)
+        if: ${{ always() && steps.seedcache.outputs.cache-hit != 'true' && hashFiles('bootstrap/seed/seed.tar.zst') != '' }}
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            bootstrap/seed/seed.tar.zst
+            bootstrap/seed/seed.tar.zst.sha256
+          key: seed-${{ runner.os }}-${{ hashFiles('bootstrap/seed/build-seed.sh', 'bootstrap/seed/seed.toml') }}
 
       - name: Pack the build target for the next run
         id: packtgt
