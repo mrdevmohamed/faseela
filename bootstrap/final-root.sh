@@ -72,6 +72,10 @@ finalize_final_root() {
     # root that is still half-populated)
     for d in dev proc sys run tmp root boot mnt media; do mkdir -p "$FINAL_ROOT/$d"; done
     chmod 1777 "$FINAL_ROOT/tmp"
+    # PT_INTERP of every binary is /lib64/ld-linux-x86-64.so.2
+    mkdir -p "$FINAL_ROOT/usr/lib64"
+    [ -e "$FINAL_ROOT/usr/lib64/ld-linux-x86-64.so.2" ] || [ -L "$FINAL_ROOT/usr/lib64/ld-linux-x86-64.so.2" ] \
+        || ln -s ../lib/ld-linux-x86-64.so.2 "$FINAL_ROOT/usr/lib64/ld-linux-x86-64.so.2"
     chmod 0750 "$FINAL_ROOT/root"
     # glibc's post_install hook (`ldconfig`) is SKIPPED by dpm for a non-"/"
     # root while the root has no shell yet (glibc installs before bash), and

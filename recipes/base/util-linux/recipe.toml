@@ -14,6 +14,17 @@ build = ["ncurses"]
 run = ["ncurses"]
 
 [build]
-configure = "./configure --bindir=/usr/bin --libdir=/usr/lib --runstatedir=/run --sbindir=/usr/sbin --disable-chfn-chsh --disable-login --disable-nologin --disable-su --disable-setpriv --disable-runuser --disable-pylibmount --disable-static --without-python --without-systemd --disable-liblastlog2"
+# libmount/src/hook_idmap.c uses RESOLVE_NO_SYMLINKS (kernel UAPI
+# <linux/openat2.h>) without pulling that header in on this toolchain
+# (glibc 2.40 does not define it): "RESOLVE_NO_SYMLINKS undeclared".
+# Force-include the header from our linux-headers package.
+# chrt.c / uclampset.c: `struct sched_attr` and sched_setattr() are only
+# provided by util-linux's own fallback when SYS_sched_setattr is defined;
+# glibc 2.40 has neither, so give the x86_64 syscall numbers explicitly
+# (sched_setattr=314, sched_getattr=315 — stable kernel ABI).
+# The same files fail when configure believes sched_setattr/struct sched_attr
+# exist (then util-linux skips its fallback but glibc 2.40 declares neither):
+# tell configure they are absent so the fallback is always used.
+configure = "ac_cv_func_sched_setattr=no ac_cv_func_sched_getattr=no ac_cv_type_struct_sched_attr=no CPPFLAGS='-include linux/openat2.h -DSYS_sched_setattr=314 -DSYS_sched_getattr=315' ./configure --bindir=/usr/bin --libdir=/usr/lib --runstatedir=/run --sbindir=/usr/sbin --disable-chfn-chsh --disable-login --disable-nologin --disable-su --disable-setpriv --disable-runuser --disable-pylibmount --disable-static --without-python --without-systemd --disable-liblastlog2"
 compile = "make -j%{jobs}"
 install = "make DESTDIR=%{pkgdir} install"

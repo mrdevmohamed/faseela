@@ -9,7 +9,7 @@ summary = "Wayland desktop session: seatd service, start-sway, default fonts/ter
 license = ["MIT"]
 
 [depends]
-build = []
+build = ["shadow"]
 run = ["sway", "foot", "seatd", "mesa", "dejavu-fonts", "eudev", "runit", "shadow"]
 
 [build]

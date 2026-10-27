@@ -10,8 +10,8 @@ source = "https://cdn.openbsd.org/pub/OpenBSD/OpenSSH/portable/openssh-%{version
 sha256 = "b343fbcdbff87f15b1986e6e15d6d4fc9a7d36066be6b7fb507087ba8f966c02"
 
 [depends]
-build = ["openssl", "zlib"]
-run = ["openssl", "zlib"]
+build = ["openssl", "zlib", "shadow"]
+run = ["openssl", "zlib", "shadow"]
 
 [build]
 prepare = "install -m700 -d %{pkgdir}/var/lib/sshd"

@@ -10,8 +10,8 @@ source = "https://github.com/NetworkConfiguration/dhcpcd/releases/download/v10.2
 sha256 = "6721e606609226dbf4d864a78802a9e96beec0ee034a1bd84138b3e037bba7d9"
 
 [depends]
-build = []
-run = []
+build = ["shadow"]
+run = ["shadow"]
 
 [build]
 configure = "./configure --prefix=/usr --sysconfdir=/etc --libexecdir=/usr/lib/dhcpcd --dbdir=/var/lib/dhcpcd --runstatedir=/run --privsepuser=dhcpcd"

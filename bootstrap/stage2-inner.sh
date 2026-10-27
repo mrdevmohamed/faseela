@@ -53,6 +53,16 @@ DPM_BIN="${DPM_BIN:-/usr/bin/dpm}"
 [ -e /usr/bin/c++ ] || { [ -x /usr/bin/g++ ] && ln -s g++ /usr/bin/c++; }
 [ -e /usr/bin/cc  ] || { [ -x /usr/bin/gcc ] && ln -s gcc /usr/bin/cc; }
 
+# The build root's /etc/group comes from the seed (stage1 writes only root and
+# nogroup; base-files' own group file lands as /etc/group.dpm-new there).
+# util-linux's install runs `chgrp tty .../wall`, which fails with
+# "invalid group: 'tty'". Make sure the groups that install steps chgrp to
+# exist. Idempotent; same gid as base-files.
+for g in tty:5; do
+    name=${g%%:*}; gid=${g##*:}
+    grep -q "^$name:" /etc/group || echo "$name:x:$gid:" >> /etc/group
+done
+
 # Two-root layout: FINAL_ROOT (default /sysroot, set by stage2.sh) is the clean
 # system every package is installed into IN ADDITION to the build root "/".
 # Empty = legacy single-root mode. See bootstrap/final-root.sh.
@@ -125,6 +135,38 @@ purge_seed_libc_headers() {
     fi
 }
 
+# --------------------------------------------------------------------------
+# Seed loader/libc switch. The seed's /usr/lib64/ld-linux-x86-64.so.2 points at
+# the seed's (Debian/Ubuntu) loader. Our glibc installs its loader to
+# /usr/lib but does not replace that link, so freshly built binaries
+# (PT_INTERP=/lib64/ld-linux-x86-64.so.2) ran on the OLD loader with the NEW
+# libc and segfaulted (e.g. `getent` in dhcpcd's post_install hook). As soon as
+# our glibc is installed: point the link at our loader, make /usr/lib win in
+# ld.so.conf and rebuild the cache. Idempotent; runs before every build, so a
+# resumed build repairs an already-installed glibc without rebuilding it.
+# --------------------------------------------------------------------------
+switch_to_new_glibc() {
+    [ -d /var/lib/dpm/local/glibc ] || return 0
+    [ -e /usr/lib/ld-linux-x86-64.so.2 ] || return 0
+    local want=../lib/ld-linux-x86-64.so.2 cur
+    cur=$(readlink /usr/lib64/ld-linux-x86-64.so.2 2>/dev/null || true)
+    if [ "$cur" != "$want" ]; then
+        echo "== stage2-inner: switching the build root to our glibc loader"
+        mkdir -p /usr/lib64
+        ln -sfn "$want" /usr/lib64/ld-linux-x86-64.so.2
+    fi
+    if [ -d /etc/ld.so.conf.d ] && [ "$(cat /etc/ld.so.conf.d/00-usrlib.conf 2>/dev/null)" != /usr/lib ]; then
+        echo /usr/lib > /etc/ld.so.conf.d/00-usrlib.conf
+        ldconfig
+    fi
+    # fail early instead of 20 packages later
+    if ! getent passwd root >/dev/null; then
+        echo "stage2-inner: getent fails after switching to our glibc loader" >&2
+        ldd "$(command -v getent)" >&2 || true
+        exit 1
+    fi
+}
+
 # Build isolation (docs/design/build-isolation.md §5.4): stage2 must build
 # against the seed + what it has built so far, so only `sandbox` (or `none`
 # while bringing it up) is valid here — `closure` needs the finished
@@ -143,6 +185,7 @@ echo "== stage2-inner: isolation=$ISOLATION"
 build_one() {
     local pkg="$1"
     purge_seed_libc_headers
+    switch_to_new_glibc
     "$DPM_BIN" --recipes "$REPO/recipes" --profiles "$REPO/profiles" --builddir /build \
         --jobs "$DPM_JOBS" build ${ISOLATION:+--isolation "$ISOLATION"} "$pkg"
     local archive
@@ -155,6 +198,7 @@ build_one() {
         exit 1
     fi
     "$DPM_BIN" --root / install --force "$archive"
+    switch_to_new_glibc
     install_final "$archive"
 }
 

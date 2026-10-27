@@ -34,8 +34,20 @@ cd build && CC="gcc -U_FORTIFY_SOURCE" ../configure --prefix=/usr \
 """
 compile = "cd build && make -j%{jobs}"
 check = "cd build && make check"
-install = "cd build && make DESTDIR=%{pkgdir} install"
+install = """
+cd build && make DESTDIR=%{pkgdir} install
+# Binaries are linked with PT_INTERP=/lib64/ld-linux-x86-64.so.2. With
+# slibdir=/usr/lib glibc does not create that link, so on a host/seed root it
+# keeps pointing at the OLD loader (seed's /lib/x86_64-linux-gnu) and new
+# binaries (getent, ...) run with a loader/libc mismatch and segfault.
+mkdir -p %{pkgdir}/usr/lib64
+ln -sfv ../lib/ld-linux-x86-64.so.2 %{pkgdir}/usr/lib64/ld-linux-x86-64.so.2
+"""
 
 [hooks]
 # runs on the target system after install
-post_install = "ldconfig"
+post_install = """
+# search the new glibc's /usr/lib before any seed multiarch directory
+[ -d /etc/ld.so.conf.d ] && echo /usr/lib > /etc/ld.so.conf.d/00-usrlib.conf
+ldconfig
+"""
