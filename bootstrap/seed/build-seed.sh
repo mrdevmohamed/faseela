@@ -14,7 +14,21 @@ set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 SEED_ROOT="${1:-$HERE/seed-root}"
 
-echo "== stage0: assembling seed in $SEED_ROOT"
+# The seed's sanity gate runs `chroot` (needs root); an unprivileged build
+# cannot produce a VERIFIED seed, so fail here instead of minutes later.
+[[ $EUID -eq 0 ]] || { echo "seed: must run as root (the sanity check chroots into the seed)" >&2; exit 1; }
+# Everything downstream (recipes arch=["x86_64"], profiles/x86_64.toml, the
+# loader path below) targets x86_64 — fail with a precise message instead
+# of a bogus "loader missing" on e.g. aarch64 hosts.
+ARCH="$(uname -m)"
+case "$ARCH" in
+    x86_64) ;;
+    *) echo "seed: unsupported host architecture '$ARCH'" >&2
+       echo "seed: this distribution (and the seed loader check below) targets x86_64" >&2
+       exit 1 ;;
+esac
+
+echo "== stage0: assembling seed in $SEED_ROOT (host: $(uname -srm))"
 mkdir -p "$SEED_ROOT"
 
 # --------------------------------------------------------------------------
@@ -69,6 +83,9 @@ if command -v apt-get >/dev/null 2>&1; then
     chmod 755 "$TMP_DEBS"            # let the _apt user write when run as root
     cd "$TMP_DEBS"
     apt-get download "${ALL_PKGS[@]}" >/dev/null
+    # record exactly what was downloaded (name_version_arch.deb carries the
+    # resolved versions — the seed's provenance record)
+    mapfile -t DOWNLOADED_DEBS < <(ls ./*.deb 2>/dev/null | sed 's|^\./||' | sort)
     for deb in ./*.deb; do
         dpkg -x "$deb" "$SEED_ROOT"
     done
@@ -93,9 +110,20 @@ done
 [[ -e "$SEED_ROOT/usr/bin/awk" ]] || ln -s gawk "$SEED_ROOT/usr/bin/awk"
 mkdir -p "$SEED_ROOT"/{etc,tmp,root,var,dev,proc,sys,run}
 chmod 1777 "$SEED_ROOT/tmp"
-ldconfig -r "$SEED_ROOT" 2>/dev/null || true
+# The loader needs /etc/ld.so.cache to find Debian's multiarch libraries —
+# a missing cache used to be SILENT here and blow up later as cryptic link
+# failures inside the chroot. Warn loudly; the chroot check below is the
+# hard gate.
+if ! ldconfig -r "$SEED_ROOT" 2>/dev/null; then
+    echo "seed: WARNING: ldconfig -r $SEED_ROOT failed — the chroot sanity check below will decide" >&2
+fi
+if [[ ! -s "$SEED_ROOT/etc/ld.so.cache" ]]; then
+    echo "seed: WARNING: $SEED_ROOT/etc/ld.so.cache is empty or missing" >&2
+fi
 
-# sanity: the seed must be able to run its own binaries
+# sanity: the seed must be able to run its own binaries. This is the seed's
+# TRUST GATE: a seed that passes this actually executed its gcc-compiled
+# binaries against its own loader and libraries.
 LOADER="$(ls "$SEED_ROOT"/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2 \
              "$SEED_ROOT"/lib64/ld-linux-x86-64.so.2 2>/dev/null | head -n1 || true)"
 for t in grep sed awk make gcc ld ldconfig; do
@@ -120,6 +148,29 @@ export PATH="/opt/cargo/bin:$PATH"
 export DPM_JOBS="${DPM_JOBS:-4}"
 EOF
 
+# --------------------------------------------------------------------------
+# 4) Provenance manifest — everything the seed contains, where it came from
+#    and what built it. Ships INSIDE the tarball (opt/seed/manifest.txt), so
+#    stage1 prints it and any later audit can identify the seed exactly.
+#    This is the honest record of the bootstrap trust boundary: the seed is
+#    PREBUILT (Debian packages + a rustup-installed rustc), not source-built.
+# --------------------------------------------------------------------------
+{
+    echo "# mydistro bootstrap seed manifest"
+    echo "built-utc = $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    echo "host = $(uname -srm)"
+    echo "seed-builder = bootstrap/seed/build-seed.sh"
+    echo "seed-manifest-spec = $(sha256sum "$HERE/seed.toml" 2>/dev/null | cut -d' ' -f1)"
+    echo "rustc = $("$CARGO_HOME/bin/rustc" --version 2>/dev/null || echo unknown)"
+    echo ""
+    echo "# debian packages extracted into the seed (name_version_arch.deb):"
+    printf '%s\n' "${DOWNLOADED_DEBS[@]-}"
+} > "$SEED_ROOT/opt/seed/manifest.txt"
+
 echo "seed: packing seed.tar.zst"
-tar -cf - -C "$SEED_ROOT" . | zstd -3 -o "$HERE/seed.tar.zst"
+tar -cf - -C "$SEED_ROOT" . | zstd -3 -q -o "$HERE/seed.tar.zst"
+# sidecar: lets build-all's seed adoption and stage1 verify the exact
+# artifact this build produced (sha256, sha256sum -c compatible)
+( cd "$HERE" && sha256sum seed.tar.zst > seed.tar.zst.sha256 )
 echo "seed: done -> $HERE/seed.tar.zst ($(du -h "$HERE/seed.tar.zst" | cut -f1))"
+echo "seed: manifest: $HERE/seed-root/opt/seed/manifest.txt (also inside the tarball)"

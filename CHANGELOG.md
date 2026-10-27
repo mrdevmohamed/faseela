@@ -2,6 +2,84 @@
 
 ## Unreleased
 
+### Bootstrap audit: input-tracked resume, verified self-hosting, hardened gates
+- **Resume is now input-tracked** (`build-all.sh`): every finished stage
+  records a fingerprint of its inputs (stage scripts, recipe/profile trees,
+  effective options, seed identity) in `<stage>.inputs`; a stamp whose inputs
+  changed — or that predates input tracking — is invalidated together with
+  everything downstream, with a notice naming the changed keys. This fixes
+  the silent-skip class of bugs: `--with-gui` after a default build, a later
+  `--stage3-world`, `--vol-id`/`--squash-comp` changes, recipe edits and
+  stage-script edits used to be quietly ignored on re-run and report success.
+- A stage that runs invalidates all later stamps (upstream-continuity
+  invariant); `--from-stage S` re-runs S itself — including the seed when it
+  would otherwise be adopted.
+- **Concurrency**: the state dir is `flock`ed; a second concurrent
+  `build-all` against the same target exits immediately. `--list-stages`
+  reports `done` / `stale (inputs changed|not recorded)` / `FAILED` /
+  `pending` / `done (adopted)`; failed stages leave a marker that is cleared
+  on their later success.
+- **`--wipe` safety**: refuses FHS top-level paths and their interiors, the
+  repo and every ancestor of it, `$HOME`, mountpoints, and targets with
+  `dev/proc/sys/run` still mounted; prints the size before deleting; a
+  refused invocation creates nothing. All refusals now run BEFORE any state
+  is created.
+- **Seed provenance**: `build-seed.sh` gates on root + x86_64 up front,
+  warns loudly on `ldconfig -r` failure, records `opt/seed/manifest.txt`
+  (exact .deb names, rustc version, host, date) inside the tarball and
+  writes a `seed.tar.zst.sha256` sidecar. Adoption and stage 1 verify the
+  sidecar (a corrupt seed is rebuilt, not adopted) and stage 1 runs
+  `zstd -t` before unpacking anything over the target.
+- **Stage 3 proves self-hosting** instead of trusting exit codes: gcc and dpm
+  must be db-owned (ours, not the seed's), a pthread C program must compile
+  AND run after the seed is deleted, and no ELF in the final root may
+  reference `/opt/{seed,cargo,rustup,cross-tools}` (interpreter, DT_NEEDED
+  or RPATH — `verify_final_root_no_seed_refs` in `final-root.sh`). The
+  toolchain set is derived from `recipes/toolchain/` instead of a hardcoded
+  list.
+- **ISO structural validation** (`mkiso.sh`): xorriso is required up front;
+  after `grub-mkrescue` the image must actually contain
+  `/boot/<kernel>`, `/boot/initramfs.img`, `/boot/grub/grub.cfg` and
+  `/live/rootfs.squashfs` (verified via `xorriso -indev -ls`) or the stage
+  fails — still not a boot test, and documented as such.
+- **Fixed dead precondition checks** (found by the new mkiso test):
+  `$(ls glob | sort | tail)` under `set -euo pipefail` killed the script
+  silently (exit 2) on exactly the paths the friendly errors were written
+  for — the kernel check in `mkiso.sh`, the per-package archive checks in
+  `stage2-inner.sh`/`stage3-inner.sh`, the modules-dir warning in
+  `initramfs.sh`, and `find_archive` in `final-root.sh` (which only survived
+  by accident of its `||`-list call context). All now fail with their
+  intended message and exit code; mkiso's fatal messages go to stderr.
+- **Stage 2 can re-run after stage 3** (`--from-stage 2` world rebuild):
+  `/opt/seed/env.sh` is sourced only when present and the installed
+  `/usr/bin/dpm` is reused when the seed's cargo is gone (fail loudly if
+  neither). The leftover one-time `REBUILD_AFTER_CHANGE="readline"` hack is
+  gone; the documented procedures are `--from-stage 2` (everything) or
+  `dpm --root / remove <pkg>` + re-run (one package).
+- **Repo sync into the chroot** (`sync-repo.sh`, new): stages 1-3 copy the
+  repo without the ~1 GB seed tarball, the multi-GB `seed-root` scratch and
+  the host's `pkgmgr/target` cargo output (merge semantics preserved).
+- **initramfs.sh**: scratch in `mktemp -d` (not the repo dir), option values
+  are validated; **ensure-chroot-mounts.sh**: a failed resolv.conf copy now
+  falls back to public resolvers instead of a silently dead DNS; every
+  build log starts with an audit header (args, host, tool versions, seed
+  identity, commit).
+- **Pre-flight**: zstd/unshare/pivot_root/mount are checked for stages 1-3
+  alongside the ISO tools (xorriso added).
+- **Tests**: `scripts/test-build-all-mock.sh` extended to 131 checks
+  (input invalidation, cascade, legacy stamps, failure markers, lock, seed
+  sidecar adoption, `--from-stage seed` force, `--wipe` refusals, dry-run
+  purity); new `scripts/test-mkiso.sh` (27 checks: gates, structural
+  validation, failure propagation); `scripts/test-final-root.sh` extended
+  with the seed-reference ELF scan against gcc-built poisoned binaries (22
+  checks). All three are now actually wired into CI, plus
+  `validate-install.sh` which had never been run in CI either.
+- **Docs**: `bootstrap/README.md` gains the stage contracts, the seed trust
+  boundary (the bootstrap is NOT source-only), the verified-vs-intended
+  boundary, a test inventory and known limitations; the main README's
+  "every recipe carries a sha256" claim is corrected (32 GUI placeholders
+  by design) and the pipeline description matches the new resume semantics.
+
 ### Fix stage-2 ninja failure: `c++: not found`
 - The Debian/Ubuntu seed lacked the `c++` symlink (an `update-alternatives` link
   that `dpkg -x` never creates), so ninja's bootstrap (`configure.py` runs plain

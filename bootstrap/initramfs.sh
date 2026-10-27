@@ -39,10 +39,15 @@ JOBS="${DPM_JOBS:-4}"
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --root) ROOT="$2"; shift 2 ;;
-        --out)  OUT="$2";  shift 2 ;;
-        --src)  SRC="$2";  shift 2 ;;
-        --jobs) JOBS="$2"; shift 2 ;;
+        --root| --out| --src| --jobs)
+            [[ $# -ge 2 ]] || { echo "initramfs: $1 needs a value" >&2; exit 1; }
+            case "$1" in
+                --root) ROOT="$2" ;;
+                --out)  OUT="$2"  ;;
+                --src)  SRC="$2"  ;;
+                --jobs) JOBS="$2" ;;
+            esac
+            shift 2 ;;
         *) echo "initramfs: unknown option $1" >&2; exit 1 ;;
     esac
 done
@@ -51,8 +56,9 @@ done
 [[ -d $ROOT ]] || { echo "initramfs: target root $ROOT missing" >&2; exit 1; }
 OUT="${OUT:-initramfs.img}"
 
-WORK="$PWD/.initramfs-build"
-mkdir -p "$WORK"
+# scratch in a private mktemp dir (the old $PWD/.initramfs-build collided
+# between concurrent runs and littered the repo when the process was killed)
+WORK="$(mktemp -d /tmp/initramfs-build.XXXXXX)"
 trap 'rm -rf "$WORK"' EXIT
 
 # ---------------------------------------------------------------------------
@@ -107,7 +113,10 @@ for applet in sh cat echo mount umount mkdir mknod switch_root insmod modprobe m
 done
 
 # Storage + USB/HID controllers + filesystems from the target root.
-KVER="$(ls "$ROOT/lib/modules" 2>/dev/null | sort -V | tail -1)"
+# `|| true`: with pipefail a missing modules dir makes `ls` fail and the
+# assignment would kill the script silently (exit 2) before the warning
+# below could run
+KVER="$(ls "$ROOT/lib/modules" 2>/dev/null | sort -V | tail -1 || true)"
 MODLIST="scsi_mod cdrom sr_mod sd_mod sg ahci ata_piix nvme virtio virtio_ring virtio_pci virtio_blk virtio_scsi usb_common usbcore usb_storage uas xhci_pci ehci_pci uhci_hcd hid usbhid hid_generic iso9660 squashfs overlay loop fat vfat nls_cp437 dm_mod"
 if [[ -z $KVER ]]; then
     echo "initramfs: WARNING no modules in $ROOT/lib/modules — CD/DVD boot may" \

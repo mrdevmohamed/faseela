@@ -57,12 +57,16 @@ fi
 
 # DNS for the chroot — only if stage1 has not provided one already (stage1
 # owns the full canonical logic; this is the resume-path fallback so that a
-# direct start at stage2/3 also gets a working resolver)
+# direct start at stage2/3 also gets a working resolver). The result is
+# VERIFIED: a copy that failed silently used to leave the chroot with no
+# resolver, and every download died with a misleading DNS timeout.
 if [[ ! -s "$LFS/etc/resolv.conf" ]]; then
     mkdir -p "$LFS/etc"
     if [[ -s /etc/resolv.conf ]]; then
         cp -L /etc/resolv.conf "$LFS/etc/resolv.conf" 2>/dev/null || true
-    else
+    fi
+    if [[ ! -s "$LFS/etc/resolv.conf" ]]; then
+        # host file missing or the copy failed — public resolvers instead
         printf 'nameserver 1.1.1.1\nnameserver 8.8.8.8\n' > "$LFS/etc/resolv.conf"
     fi
 fi

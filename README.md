@@ -253,18 +253,24 @@ sudo bootstrap/build-all.sh --isolation closure --stage3-world /mnt/mydistro
 bootstrap/build-all.sh --list-stages /mnt/mydistro   # progress + resume
 ```
 
-It stamps each finished stage (state kept outside the target), logs every
-run, runs pre-flight checks (root, disk space, host tools) before starting,
-and after a failure re-running the same command resumes from the broken
-stage. See `bootstrap/README.md` for the full option list.
+It stamps each finished stage together with a fingerprint of that stage's
+inputs (scripts, recipes, profiles, effective options — state kept outside
+the target), logs every run (with an audit header: host, tool versions,
+seed identity, commit), runs pre-flight checks (root, disk space, host
+tools) before starting, holds an exclusive lock per target, and after a
+failure re-running the same command resumes from the broken stage. A stamp
+whose recorded inputs no longer match (option change, recipe edit, script
+edit) is invalidated together with everything downstream — resume never
+silently reuses a stale result. See `bootstrap/README.md` for the full
+option list, the stage contracts and the seed trust boundary.
 
 | Stage      | Script                      | What it does                                        |
 |------------|-----------------------------|-----------------------------------------------------|
-| 0 — Seed   | `bootstrap/seed/build-seed.sh` | Assemble a prebuilt toolchain tarball (gcc, glibc, rustc...) |
-| 1 — Chroot | `bootstrap/stage1.sh`       | chroot + verify the seed toolchain (it IS the temporary toolchain) |
-| 2 — Core   | `bootstrap/stage2.sh`       | Build & install core system with DPM from recipes   |
-| 3 — Self   | `bootstrap/stage3.sh`       | Rebuild the world with the distro's own toolchain   |
-| 4 — ISO    | `bootstrap/mkiso.sh`        | squashfs + initramfs + grub → bootable live ISO     |
+| 0 — Seed   | `bootstrap/seed/build-seed.sh` | Assemble a prebuilt toolchain tarball (Debian .debs + rustup rustc — the bootstrap is NOT source-only), with a content manifest + sha256 sidecar |
+| 1 — Chroot | `bootstrap/stage1.sh`       | verify the seed (zstd + sha256), unpack, chroot; seed toolchain verified (it IS the temporary toolchain) |
+| 2 — Core   | `bootstrap/stage2.sh`       | Build & install core system with DPM from recipes (into the build root and the clean final root) |
+| 3 — Self   | `bootstrap/stage3.sh`       | Rebuild the toolchain (or world) with the distro's own toolchain, remove the seed, PROVE self-hosting (compile+run test, db ownership, ELF /opt scan) |
+| 4 — ISO    | `bootstrap/mkiso.sh`        | squashfs + initramfs + grub → hybrid ISO, structurally validated (boot-critical members verified IN the image) |
 | 5 — Disk   | `bootstrap/install.sh`      | run in the live system: partition, copy, grub → installed disk |
 
 See `bootstrap/README.md` for details and host requirements.
@@ -283,9 +289,12 @@ See `bootstrap/README.md` for details and host requirements.
 - [x] Toolchain recipes (linux-headers, glibc, binutils, m4, gmp,
       mpfr, mpc, gcc, make, pkgconf)
 - [x] Bootstrap scripts (seed / stage1 / stage2 / stage3 / mkiso)
-- [x] One-command pipeline driver (`bootstrap/build-all.sh`): stamp-based
-      resume, per-run logs, pre-flight checks, `--dry-run`/`--from-stage`/
-      `--fresh`/`--wipe`/`--no-iso`
+- [x] One-command pipeline driver (`bootstrap/build-all.sh`): input-tracked
+      stamp resume (option/recipe/script changes invalidate exactly the
+      affected stages and downstream), per-run logs with audit headers,
+      pre-flight checks, exclusive per-target lock, failure markers,
+      `--dry-run`/`--from-stage`/`--fresh`/`--wipe` (with protected-path
+      refusals)/`--no-iso`
 - [x] Base recipes (35): zlib, bzip2, file, ncurses, readline, pcre2, libffi,
       expat, gdbm, gperf, coreutils, bash, tar, gzip, xz, zstd, grep, gawk,
       sed, flex, bison, bc, diffutils, findutils, gettext, texinfo,
@@ -324,10 +333,13 @@ See `bootstrap/README.md` for details and host requirements.
 - [ ] initramfs: LVM/LUKS (needs cryptsetup/lvm2 recipes — stretch)
 - [ ] Remote repo mirrors list / repo priority
 
-Every recipe carries a sha256 computed from the actual upstream tarball
-(no copied-and-pasted hashes). Full graph sanity check:
-`dpm --recipes recipes deps-all` — all 114 packages resolve in
-topological order (base-files #5, runit-services right after runit).
+Every recipe outside `recipes/gui` carries a sha256 computed from the actual
+upstream tarball (no copied-and-pasted hashes). The 32 GUI recipes ship a
+zero placeholder instead and fail loudly at source verification until
+`scripts/fill-sha256.py` pins them — an unpinned source is never silently
+built. Full graph sanity check: `dpm --recipes recipes deps-all` — all 148
+packages resolve in topological order (base-files #5, runit-services right
+after runit).
 
 ## Booting the ISO
 

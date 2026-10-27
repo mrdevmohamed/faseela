@@ -52,4 +52,30 @@ check "install_final no-op"             "install_final /nonexistent"
 check "sync no-op"                      "sync_final_root /nonexistent"
 check "finalize no-op"                  "finalize_final_root"
 
+# verify_final_root_no_seed_refs: the stage-3 self-hosting proof that scans a
+# root's ELFs for interpreter/NEEDED/RPATH references into the deleted /opt/*
+# seed dirs. Fixtures: a clean binary, one poisoned with DT_RUNPATH=/opt/seed,
+# one whose interpreter points at /opt/cargo — plus non-ELFs that must not be
+# flagged. Compiled here on purpose: readelf must parse REAL ELF metadata.
+SR="$W/seedref"; mkdir -p "$SR/usr/bin" "$SR/usr/lib"
+printf '#!/bin/sh\necho not-an-elf\n' > "$SR/usr/bin/a-script"
+printf 'plain data, not an elf\n' > "$SR/usr/bin/notes.txt"
+printf 'int main(void){return 0;}\n' > "$W/t.c"
+gcc -o "$SR/usr/bin/clean" "$W/t.c" 2>/dev/null || echo "WARN: gcc unavailable — seedref checks degraded"
+if [[ -x $SR/usr/bin/clean ]]; then
+    gcc -Wl,-rpath,/opt/seed/lib -o "$SR/usr/bin/poisoned-rpath" "$W/t.c"
+    gcc -Wl,--dynamic-linker=/opt/cargo/lib/ld.so -o "$SR/usr/bin/poisoned-interp" "$W/t.c"
+    mkdir -p "$SR/cleanonly/usr/bin"
+    cp "$SR/usr/bin/clean" "$SR/usr/bin/a-script" "$SR/cleanonly/usr/bin/"
+    check "clean tree (script ignored) passes"  "verify_final_root_no_seed_refs $SR/cleanonly"
+    out=$(verify_final_root_no_seed_refs "$SR" 2>&1); rc=$?
+    check "poisoned tree fails the scan"        "[[ $rc -ne 0 ]]"
+    check "rpath poison is named"               "printf '%s' \"\$out\" | grep -q poisoned-rpath"
+    check "interpreter poison is named"         "printf '%s' \"\$out\" | grep -q poisoned-interp"
+    check "the /opt path is shown"              "printf '%s' \"\$out\" | grep -q '/opt/seed/lib'"
+    check "clean binary not accused"            "! printf '%s' \"\$out\" | grep -q 'bin/clean references'"
+    out=$(READELF_BIN=/nonexistent-readelf verify_final_root_no_seed_refs "$SR/cleanonly" 2>&1) || true
+    check "missing readelf warns, does not fail" "printf '%s' \"\$out\" | grep -q 'cannot scan'"
+fi
+
 echo; echo "  PASS: $PASS   FAIL: $FAIL"; [[ $FAIL -eq 0 ]]

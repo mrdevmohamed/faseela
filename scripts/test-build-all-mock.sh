@@ -36,8 +36,9 @@ chmod +x "$MOCK/build-all.sh"
 # relax ONLY the disk floor in the throwaway copy (see header comment)
 sed -i 's/^MIN_FREE_KB=.*/MIN_FREE_KB=1/' "$MOCK/build-all.sh"
 sed -i 's/\[\[ $EUID -ne 0 \]\]/false/' "$MOCK/build-all.sh"
-# stub the iso host tools the pre-flight looks for (container lacks them)
-for t in mksquashfs grub-mkrescue; do
+# stub the host tools the pre-flight looks for (container lacks them):
+# mksquashfs/grub-mkrescue/xorriso for the iso stage, zstd for stages 1-3
+for t in mksquashfs grub-mkrescue xorriso zstd; do
     printf '#!/bin/sh\nexit 0\n' > "$WORK/bin/$t"; chmod +x "$WORK/bin/$t"
 done
 export PATH="$WORK/bin:$PATH"
@@ -89,7 +90,8 @@ ERR() { cat "$WORK/last.err"; }
 say "A. full run from scratch (all five stages)"
 RC=$(RUN)
 check "A1 exit 0"                          "[[ $RC -eq 0 ]]"
-check "A2 five stamps written"             "[[ \$(ls $STAMPS | wc -l) -eq 5 ]]"
+check "A2 five stamps written"             "[[ \$(ls $STAMPS/*.done | wc -l) -eq 5 ]]"
+check "A2b five input sidecars written"    "[[ \$(ls $STAMPS/*.inputs | wc -l) -eq 5 ]]"
 check "A3 seed stamp exists"               "[[ -f $STAMPS/seed.done ]]"
 check "A4 iso stamp exists"                "[[ -f $STAMPS/iso.done ]]"
 check "A5 meta has 5 ok lines"             "[[ \$(grep -c '|ok$' $STATE/meta) -eq 5 ]]"
@@ -211,6 +213,165 @@ rm -rf "$TGT/sysroot" "$STAMPS/iso.done"
 RC=$(RUN --from-stage iso)
 check "O1 exit 2"                          "[[ $RC -eq 2 ]]"
 check "O2 clear message"                   "OUT | grep -q 'final root .*sysroot does not exist'"
+
+# RUNT: like RUN but against an arbitrary target (the P-Y scenarios each get
+# a fresh one so they cannot inherit state from A-O)
+RUNT() {
+    local tgt="$1"; shift
+    bash "$MOCK/build-all.sh" "$@" "$tgt" "$ISO" > "$WORK/last.out" 2> "$WORK/last.err"
+    echo $?
+}
+STATE_OF() { printf '%s/.%s.build' "$WORK" "$1"; }
+STAMPS_OF() { printf '%s/.%s.build/stamps' "$WORK" "$(basename -- "$1")"; }
+
+say "P. changed options invalidate exactly the affected stages (input sidecars)"
+rm -rf "$WORK/tgtP" "$WORK/.tgtP.build"
+PST="$(STAMPS_OF "$WORK/tgtP")"
+RC=$(RUNT "$WORK/tgtP")
+check "P1 full build exits 0"              "[[ $RC -eq 0 ]]"
+RC=$(RUNT "$WORK/tgtP" --with-gui)
+check "P2 --with-gui exits 0"              "[[ $RC -eq 0 ]]"
+check "P3 stage2 invalidated, gui named"   "OUT | grep -q 'invalidating stamp: stage2 (inputs changed: gui)'"
+check "P4 stage2/3/iso re-ran"             "OUT | grep -q 'mock: stage2 graph' && OUT | grep -q 'mock: mkiso'"
+check "P5 seed/stage1 stamps kept"         "[[ -f $PST/seed.done && -f $PST/stage1.done ]]"
+check "P6 stage3/iso re-stamped"           "[[ -f $PST/stage3.done && -f $PST/iso.done ]]"
+RC=$(RUNT "$WORK/tgtP" --with-gui)
+check "P7 same options again: nothing to do" "OUT | grep -q 'nothing to run'"
+RC=$(RUNT "$WORK/tgtP" --with-gui --stage3-world)
+check "P8 --stage3-world exits 0"          "[[ $RC -eq 0 ]]"
+check "P9 stage3 invalidated, world named" "OUT | grep -q 'invalidating stamp: stage3 (inputs changed: world)'"
+check "P10 stage2 kept (stamp + not re-run)" "[[ -f $PST/stage2.done ]] && ! OUT | grep -q 'mock: stage2 graph'"
+RC=$(RUNT "$WORK/tgtP")
+check "P11 gui off re-runs stage2+"        "OUT | grep -q 'mock: stage2 graph' && OUT | grep -q 'mock: mkiso'"
+check "P12 seed/stage1 still kept"         "[[ -f $PST/seed.done && -f $PST/stage1.done ]]"
+RC=$(RUNT "$WORK/tgtP" --vol-id CUSTOM)
+check "P13 --vol-id re-runs only iso"      "OUT | grep -q 'invalidating stamp: iso (inputs changed: volid)'"
+check "P14 stage2/3 skipped"               "! OUT | grep -q 'mock: stage2 graph' && ! OUT | grep -q 'mock: stage3'"
+check "P15 stage2/3 stamps kept"           "[[ -f $PST/stage2.done && -f $PST/stage3.done ]]"
+RC=$(RUNT "$WORK/tgtP" --vol-id CUSTOM --squash-comp zstd)
+check "P16 --squash-comp re-runs only iso" "OUT | grep -q 'invalidating stamp: iso (inputs changed: comp)'"
+RC=$(RUNT "$WORK/tgtP")
+check "P17 back to defaults: iso only"     "OUT | grep -q 'invalidating stamp: iso' && ! OUT | grep -q 'mock: stage2 graph'"
+
+say "Q. a recipe edit invalidates stage2 and downstream"
+mkdir -p "$WORK/repo/recipes/testpkg"
+printf '# mock recipe\n' > "$WORK/repo/recipes/testpkg/recipe.toml"
+rm -rf "$WORK/tgtQ" "$WORK/.tgtQ.build"
+QST="$(STAMPS_OF "$WORK/tgtQ")"
+RC=$(RUNT "$WORK/tgtQ")
+check "Q1 full build exits 0"              "[[ $RC -eq 0 ]]"
+printf '# mock recipe, edited\n' >> "$WORK/repo/recipes/testpkg/recipe.toml"
+RC=$(RUNT "$WORK/tgtQ")
+check "Q2 recipe edit invalidates stage2, recipes named" "OUT | grep -q 'invalidating stamp: stage2 (inputs changed: recipes)'"
+check "Q3 stage2/3/iso re-ran"             "OUT | grep -q 'mock: stage2 graph' && OUT | grep -q 'mock: mkiso'"
+check "Q4 seed/stage1 kept"                "[[ -f $QST/seed.done && -f $QST/stage1.done ]]"
+RC=$(RUNT "$WORK/tgtQ")
+check "Q5 stable recipes: nothing to run"  "OUT | grep -q 'nothing to run'"
+
+say "R. a stage-script edit invalidates from that stage onward"
+printf '# edited\n' >> "$MOCK/stage1.sh"
+RC=$(RUNT "$WORK/tgtQ")
+check "R1 stage1 edit invalidates stage1, scripts named" "OUT | grep -q 'invalidating stamp: stage1 (inputs changed: scripts)'"
+check "R2 stage1..iso re-ran"              "OUT | grep -q 'mock: stage1 into' && OUT | grep -q 'mock: mkiso'"
+check "R3 seed stamp kept"                 "[[ -f $QST/seed.done ]]"
+printf '# edited\n' >> "$MOCK/seed/build-seed.sh"
+RC=$(RUNT "$WORK/tgtQ")
+check "R4 seed-script edit re-runs everything" "OUT | grep -q 'invalidating stamp: seed' && OUT | grep -q 'mock: assembling seed'"
+
+say "S. stamps that predate input tracking are stale and rebuilt"
+rm -rf "$WORK/tgtS" "$WORK/.tgtS.build"
+SST="$(STAMPS_OF "$WORK/tgtS")"
+RC=$(RUNT "$WORK/tgtS")
+check "S1 full build exits 0"              "[[ $RC -eq 0 ]]"
+rm -f "$SST/"*.inputs
+bash "$MOCK/build-all.sh" --list-stages "$WORK/tgtS" > "$WORK/last.out" 2>&1
+check "S2 list shows all five stale"       "[[ \$(OUT | grep -c 'stale (inputs not recorded)') -eq 5 ]]"
+check "S3 list summary counts stale"       "OUT | grep -q 'stale (inputs changed/unknown'"
+RC=$(RUNT "$WORK/tgtS")
+check "S4 all five invalidation notices"   "[[ \$(OUT | grep -c 'pre-dates input tracking') -eq 5 ]]"
+check "S5 seed re-ran too"                 "OUT | grep -q 'mock: assembling seed'"
+
+say "T. a failed stage is marked; --list-stages reports it; success clears it"
+rm -rf "$WORK/tgtT" "$WORK/.tgtT.build"
+TST="$(STAMPS_OF "$WORK/tgtT")"; TSTATE="$(STATE_OF tgtT)"
+RC=$(RUNT "$WORK/tgtT")
+check "T1 full build exits 0"              "[[ $RC -eq 0 ]]"
+sed -i 's/^echo "mock: stage2 graph.*$/exit 1/' "$MOCK/stage2.sh"
+RC=$(RUNT "$WORK/tgtT")
+check "T2 stage2 failure exits 1"          "[[ $RC -eq 1 ]]"
+check "T3 failure marker written"          "[[ -f $TSTATE/failed-stage2 ]]"
+bash "$MOCK/build-all.sh" --list-stages "$WORK/tgtT" > "$WORK/last.out" 2>&1
+check "T4 list shows stage2 FAILED"        "OUT | grep -q 'stage2.*FAILED'"
+check "T5 list summary counts the failure" "OUT | grep -q '1 failed'"
+sed -i 's/^exit 1$/echo "mock: stage2 graph"/' "$MOCK/stage2.sh"
+RC=$(RUNT "$WORK/tgtT")
+check "T6 resume after fix exits 0"        "[[ $RC -eq 0 ]]"
+check "T7 marker cleared on success"       "[[ ! -e $TSTATE/failed-stage2 ]]"
+check "T8 stage3/iso re-stamped"           "[[ -f $TST/stage3.done && -f $TST/iso.done ]]"
+bash "$MOCK/build-all.sh" --list-stages "$WORK/tgtT" > "$WORK/last.out" 2>&1
+check "T9 list is clean again"             "OUT | grep -q '5/5 stages recorded' && ! OUT | grep -q FAILED"
+
+say "U. a concurrent build against the same target is rejected (state lock)"
+( exec 9>>"$TSTATE/lock"; flock -x 9; sleep 10 ) &
+LOCKPID=$!
+sleep 1
+RC=$(RUNT "$WORK/tgtT")
+check "U1 concurrent run exits 2"          "[[ $RC -eq 2 ]]"
+check "U2 lock message shown"              "cat $WORK/last.out $WORK/last.err | grep -q 'another build-all is already running'"
+kill "$LOCKPID" 2>/dev/null; wait "$LOCKPID" 2>/dev/null
+RC=$(RUNT "$WORK/tgtT")
+check "U3 after release the run proceeds"  "[[ $RC -eq 0 ]]"
+
+say "V. seed adoption is checksum-verified when a sidecar exists"
+mkdir -p "$MOCK/seed"
+echo seeddata > "$MOCK/seed/seed.tar.zst"
+( cd "$MOCK/seed" && sha256sum seed.tar.zst > seed.tar.zst.sha256 )
+rm -rf "$WORK/tgtV" "$WORK/.tgtV.build"
+VST="$(STAMPS_OF "$WORK/tgtV")"
+RC=$(RUNT "$WORK/tgtV")
+check "V1 valid sidecar: seed adopted"     "! OUT | grep -q 'mock: assembling seed'"
+check "V2 adoption notice"                 "OUT | grep -q 'adopting existing'"
+check "V3 no seed stamp (adopted)"         "[[ ! -f $VST/seed.done ]]"
+check "V4 later stages ran"                "[[ -f $VST/iso.done ]]"
+bash "$MOCK/build-all.sh" --list-stages "$WORK/tgtV" > "$WORK/last.out" 2>&1
+check "V5 list shows adopted seed"         "OUT | grep -q 'done (adopted'"
+echo "0000000000000000000000000000000000000000000000000000000000000000  seed.tar.zst" > "$MOCK/seed/seed.tar.zst.sha256"
+rm -rf "$WORK/tgtW" "$WORK/.tgtW.build"
+RC=$(RUNT "$WORK/tgtW")
+check "V6 corrupt sidecar: seed NOT adopted" "cat $WORK/last.out $WORK/last.err | grep -q 'NOT adopting'"
+check "V7 seed stage re-runs"              "OUT | grep -q 'mock: assembling seed'"
+check "V8 seed stamped after rebuild"      "[[ -f $(STAMPS_OF "$WORK/tgtW")/seed.done ]]"
+
+say "W. --from-stage seed re-runs the seed even when it is adoptable"
+( cd "$MOCK/seed" && sha256sum seed.tar.zst > seed.tar.zst.sha256 )
+RC=$(RUNT "$WORK/tgtW" --from-stage seed)
+check "W1 exit 0"                          "[[ $RC -eq 0 ]]"
+check "W2 seed stage ran (not adopted)"    "OUT | grep -q 'mock: assembling seed'"
+check "W3 no lying adoption notice"        "! OUT | grep -q 'adopting existing'"
+check "W4 seed stamped"                    "[[ -f $(STAMPS_OF "$WORK/tgtW")/seed.done ]]"
+rm -f "$MOCK/seed/seed.tar.zst" "$MOCK/seed/seed.tar.zst.sha256"
+
+say "X. --wipe refuses protected paths, repo ancestors and HOME"
+RC=$(bash "$MOCK/build-all.sh" --wipe /usr > "$WORK/last.out" 2> "$WORK/last.err"; echo $?)
+check "X1 /usr refused (exit 2, message)"  "[[ $RC -eq 2 ]] && ERR | grep -q 'protected system path'"
+check "X2 refusal created no state dir"    "[[ ! -e /.usr.build ]]"
+RC=$(bash "$MOCK/build-all.sh" --wipe / > "$WORK/last.out" 2> "$WORK/last.err"; echo $?)
+check "X3 / refused"                       "[[ $RC -eq 2 ]]"
+RC=$(bash "$MOCK/build-all.sh" --wipe "$WORK" > "$WORK/last.out" 2> "$WORK/last.err"; echo $?)
+check "X4 repo ancestor refused"           "ERR | grep -q 'contains the repository'"
+check "X5 the work tree survived"          "[[ -d $WORK/repo ]]"
+RC=$(bash "$MOCK/build-all.sh" --wipe "$HOME" > "$WORK/last.out" 2> "$WORK/last.err"; echo $?)
+check "X6 HOME refused"                    "ERR | grep -q 'home directory'"
+
+say "Y. --dry-run changes nothing even when stamps are stale"
+printf '# mock recipe, edited again\n' >> "$WORK/repo/recipes/testpkg/recipe.toml"
+Y_BEFORE="$(ls "$TST" | sort | tr '\n' ' ')"
+bash "$MOCK/build-all.sh" --dry-run "$WORK/tgtT" > "$WORK/last.out" 2>&1
+check "Y1 dry-run lists the three stale stages" "[[ \$(OUT | grep -c 'would run:') -eq 3 ]]"
+check "Y2 dry-run touched no stamp files"  "[[ \$(ls $TST | sort | tr '\n' ' ') == '$Y_BEFORE' ]]"
+check "Y3 dry-run printed no invalidation" "! OUT | grep -q 'invalidating stamp'"
+RC=$(RUNT "$WORK/tgtT")
+check "Y4 the real run then rebuilds them" "OUT | grep -q 'invalidating stamp: stage2 (inputs changed: recipes)'"
 
 # ------------------------------------------------------------------ summary --
 echo

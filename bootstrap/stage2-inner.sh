@@ -41,6 +41,9 @@ chmod 755 /usr/bin/makeinfo
 fi
 export DPM_JOBS="${DPM_JOBS:-4}"
 REPO=/mydistro
+# overridable so tests can drive this script with a stub dpm (same pattern
+# as final-root.sh); in the real chroot /usr/bin/dpm is used
+DPM_BIN="${DPM_BIN:-/usr/bin/dpm}"
 
 # Seed fix-ups. dpkg -x never ran the Debian maintainer scripts, so the
 # update-alternatives symlinks are missing from the seed. `c++` is needed by
@@ -61,18 +64,31 @@ else
 fi
 
 echo "== [1/3] compiling DPM with seed rustc"
-cd "$REPO/pkgmgr"
-cargo build --release
+if command -v cargo >/dev/null 2>&1; then
+    cd "$REPO/pkgmgr"
+    cargo build --release
+    install -Dm755 target/release/dpm /usr/bin/dpm
+else
+    # No cargo on PATH: stage 3 already removed the seed (a `--from-stage 2`
+    # world rebuild with the distro's own toolchain). DPM itself is not
+    # written in a language the distro rebuilds here (no rustc recipe yet),
+    # so the installed seed-built binary keeps serving — verify it works.
+    if [ ! -x /usr/bin/dpm ]; then
+        echo "stage2-inner: no cargo (seed gone?) and no installed /usr/bin/dpm —" >&2
+        echo "stage2-inner: run stage 1 first (unpack the seed), then re-run stage 2" >&2
+        exit 1
+    fi
+    echo "stage2-inner: seed rustc not present (stage 3 removed it) — keeping the installed /usr/bin/dpm"
+fi
 
-echo "== [2/3] self-installing DPM"
-install -Dm755 target/release/dpm /usr/bin/dpm
-/usr/bin/dpm --version
+echo "== [2/3] verifying DPM"
+"$DPM_BIN" --version
 
 echo "== [3/3] building + installing ALL recipes (resolved order)"
 cd "$REPO"
 # dpm deps-all prints the full-graph topological order (bare names, one
 # per line), skipping anything already recorded in the local db.
-ORDER=$(/usr/bin/dpm --recipes "$REPO/recipes" deps-all)
+ORDER=$("$DPM_BIN" --recipes "$REPO/recipes" deps-all)
 # the optional GUI stack (recipes/gui) is opt-in: WITH_GUI=1
 if [[ "${WITH_GUI:-0}" != "1" && -d "$REPO/recipes/gui" ]]; then
     GUI_PKGS=" $(ls "$REPO/recipes/gui" | tr '\n' ' ') "
@@ -127,42 +143,34 @@ echo "== stage2-inner: isolation=$ISOLATION"
 build_one() {
     local pkg="$1"
     purge_seed_libc_headers
-    /usr/bin/dpm --recipes "$REPO/recipes" --profiles "$REPO/profiles" --builddir /build \
+    "$DPM_BIN" --recipes "$REPO/recipes" --profiles "$REPO/profiles" --builddir /build \
         --jobs "$DPM_JOBS" build ${ISOLATION:+--isolation "$ISOLATION"} "$pkg"
     local archive
-    archive=$(ls /build/out/"$pkg"-[0-9]*.dpm.tar.zst 2>/dev/null | sort -V | tail -1)
+    # `|| true`: with pipefail a missing archive makes `ls` fail and the
+    # assignment would kill the script silently (exit 2) before the
+    # diagnostic below could run — the check must stay reachable
+    archive=$(ls /build/out/"$pkg"-[0-9]*.dpm.tar.zst 2>/dev/null | sort -V | tail -1 || true)
     if [ -z "$archive" ]; then
         echo "stage2-inner: no archive built for $pkg" >&2
         exit 1
     fi
-    /usr/bin/dpm --root / install --force "$archive"
+    "$DPM_BIN" --root / install --force "$archive"
     install_final "$archive"
 }
 
 mkdir -p /build
 
 # --------------------------------------------------------------------------
-# Recipe-change queue (resumed stage2): deps-all skips packages the db
-# already records, BY NAME — the db carries no build-id history, so a
-# recipe whose semantics changed after install would never rebuild here,
-# and stage 3 by default rebuilds only the toolchain set: the old feature
-# (e.g. readline shipping its shared library without the curses runtime)
-# would reach the ISO unchanged. Rebuild + reinstall the queued names
-# BEFORE the resolved order so fixes reach the rest of the graph.
+# NOTE on recipe changes during a build: deps-all skips packages the local db
+# already records BY NAME — the db carries no per-package build-id history at
+# stage2's isolation level, so editing a recipe does NOT rebuild an installed
+# package here. Deliberate procedures (use one):
+#   * rebuild everything from the current recipes:  build-all.sh --from-stage 2
+#   * rebuild ONE package:  dpm --root / remove <pkg> && re-run stage 2
+#     (deps-all then re-orders it, and stage 2's final-root sync picks it up)
+# A proper build-id-driven world rebuild is stage3 --isolation closure
+# territory (dpm's build cache already records build ids at `env` and above).
 # --------------------------------------------------------------------------
-REBUILD_AFTER_CHANGE="readline"
-# Only packages ALREADY installed (resumed build) are queued. On a fresh
-# build nothing is installed yet — building e.g. readline here would run
-# before its build dependency (ncurses) exists and fail with
-# "cannot find -lncurses"; the resolved order below builds it correctly.
-for pkg in $REBUILD_AFTER_CHANGE; do
-    if [ ! -d "/var/lib/dpm/local/$pkg" ]; then
-        echo "== stage2-inner: (recipe-change queue) $pkg not installed yet — skipped (built in resolved order)"
-        continue
-    fi
-    echo "== stage2-inner: (recipe-change queue) $pkg"
-    build_one "$pkg"
-done
 
 i=0
 while IFS= read -r pkg; do
@@ -175,7 +183,7 @@ done <<< "$ORDER"
 # Make sure the final root has EVERY package the build root has (resume after
 # a layout switch or an interrupted run), then seal it.
 if final_root_enabled; then
-    ALL=$(/usr/bin/dpm --recipes "$REPO/recipes" deps-all --include-installed)
+    ALL=$("$DPM_BIN" --recipes "$REPO/recipes" deps-all --include-installed)
     if [[ "${WITH_GUI:-0}" != "1" && -d "$REPO/recipes/gui" ]]; then
         GUI_PKGS=" $(ls "$REPO/recipes/gui" | tr '\n' ' ') "
         ALL=$(for p in $ALL; do [[ "$GUI_PKGS" == *" $p "* ]] || echo "$p"; done)

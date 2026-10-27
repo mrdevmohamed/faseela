@@ -59,18 +59,63 @@ sudo ./mkiso.sh /mnt/mydistro out.iso  # bootable image
 ### build-all.sh specifics
 
 * **state lives outside the target**: `$(dirname TARGET)/.<name>.build/`
-  (`stamps/` per-stage completion, `logs/` one timestamped log per run,
-  `meta` per-stage timings) — nothing leaks into the squashfs/ISO
-* **resume**: finished stages are skipped on re-run; after a failure the
-  trap prints the exact command to re-run and the `umount-chroot.sh` hint
+  (`stamps/` per-stage completion + input fingerprints, `logs/` one
+  timestamped log per run, `meta` per-stage timings, `layout`, `lock`) —
+  nothing leaks into the squashfs/ISO
+* **resume is input-tracked, not stamp-blind**: a stage is skipped only when
+  its stamp exists AND the inputs recorded next to it still match — the stage
+  scripts, the recipe/profile trees, and the effective options (`--with-gui`,
+  `--stage3-world`, `--isolation`, `--vol-id`, `--squash-comp`, layout, and
+  for stage 1 the seed identity). A stamp whose inputs changed (or that
+  predates input tracking) is invalidated together with everything
+  downstream; the notice names the changed keys. Changing `--vol-id` re-runs
+  only the ISO stage; editing a recipe re-runs stage 2 onward; an unrelated
+  stamp survives.
+* **a stage that runs invalidates every later stamp** — a stamp is only
+  valid while every upstream stamp stayed valid (the upstream-continuity
+  invariant).
+* **one build per target at a time**: the state dir is `flock`ed; a second
+  concurrent `build-all` against the same target exits immediately with an
+  explanation (`--dry-run` and `--list-stages` take no lock and create
+  nothing).
 * **`--from-stage S`** forces a restart point (stamps from S onward are
-  invalidated — S itself re-runs); `--fresh` redoes everything,
-  `--wipe` also deletes a previous target, `--dry-run` previews, `--no-iso`
+  invalidated — S itself re-runs, even the seed when adoptable);
+  `--fresh` redoes everything, `--wipe` also deletes a previous target,
+  `--dry-run` previews (writes nothing, invalidates nothing), `--no-iso`
   stops after stage 3
+* **`--wipe` safety**: refuses FHS top-level system paths and their
+  interiors, the repository itself and every ancestor of it (the target
+  would swallow the repo), `$HOME`, mountpoints, and a target with
+  `dev/proc/sys/run` still mounted — and prints the size of what it is
+  about to delete
+* **`--list-stages`** distinguishes `done` / `stale (inputs changed)` /
+  `stale (inputs not recorded)` / `FAILED` / `pending` / `done (adopted)` /
+  `skipped (--no-iso)`
 * **pre-flight**: root check, ~10 GB free space, host tools for the stages
-  that will actually run (so a missing xorriso cannot waste hours of gcc)
+  that will actually run (zstd/unshare/pivot_root/mount for stages 1-3;
+  mksquashfs/grub-mkrescue/xorriso/gcc/make for the ISO) — so a missing
+  xorriso cannot waste hours of gcc
+* every log starts with an **audit header**: args, host, bash/tar/zstd
+  versions, seed identity, git commit when the repo is a checkout
+* a failed stage records a failure marker (shown by `--list-stages`, cleared
+  when that stage later succeeds) and the trap prints the exact re-run
+  command plus the `umount-chroot.sh` hint
 * a hand-built `seed/seed.tar.zst` is adopted on the first run instead of
-  re-downloading ~1 GB of toolchain
+  re-downloading ~1 GB of toolchain — but only if it passes its `seed.tar.zst.sha256`
+  sidecar when one exists (a sidecar mismatch means corrupt: rebuild). A
+  hand-built seed without a sidecar is adopted with a notice (legacy
+  behavior), and stage 1 always runs `zstd -t` plus the sidecar check before
+  unpacking anything over the target.
+
+### Stage contracts
+
+| stage | consumes | produces | verifies before stamping |
+|-------|----------|----------|--------------------------|
+| seed | Debian `.deb`s via `apt-get download`, rustup | `seed.tar.zst` (+ `.sha256` sidecar, `manifest.txt` inside) | root + x86_64 host, `ldconfig -r` warns loudly, the seed chroots and runs its own gcc/make/ld on its own loader |
+| stage 1 | seed tarball | chroot with seed + repo copy, mounts, DNS, CA bundle | seed zstd frame + sha256 sidecar BEFORE unpacking; seed toolchain compiles/runs C + Rust inside the chroot |
+| stage 2 | seed toolchain, recipes | full graph installed into `/` and `/sysroot`, `dpm` built and installed | per-package archive exists; final root synced + sealed (no `/opt/*`, no build dirs, key files present) |
+| stage 3 | distro's own toolchain | toolchain set (or world) rebuilt from `recipes/toolchain`, seed removed | **self-hosting proofs**: gcc/dpm are db-owned (ours, not the seed's), a pthread C program compiles AND runs with the seed gone, no ELF in the final root references `/opt/{seed,cargo,rustup,cross-tools}` |
+| iso | final root | hybrid ISO | xorriso must exist up front; after `grub-mkrescue` the image is structurally validated: `/boot/<kernel>`, `/boot/initramfs.img`, `/boot/grub/grub.cfg`, `/live/rootfs.squashfs` must be IN the image |
 
 ## What lives where
 
@@ -78,15 +123,17 @@ sudo ./mkiso.sh /mnt/mydistro out.iso  # bootable image
 |--------------------|----------|----------------------------------------------------|
 | `build-all.sh`     | host     | one-command driver: stages 0-4, resume + logs      |
 | `seed/seed.toml`   | (docs)   | manifest of everything the seed must contain       |
-| `seed/build-seed.sh` | host   | assembles + packs the seed                         |
-| `stage1.sh`        | host     | unpack seed, mounts, invoke chroot                 |
+| `seed/build-seed.sh` | host   | assembles + packs the seed (manifest, sha256 sidecar) |
+| `stage1.sh`        | host     | unpack seed (verified), mounts, invoke chroot      |
 | `stage1-inner.sh`  | chroot   | prepare chroot, verify seed toolchain (C/C++/Rust) |
-| `final-root.sh`    | chroot   | two-root helpers: install into / sysroot, sync, seal |
+| `sync-repo.sh`     | host     | copy repo into the chroot WITHOUT the ~1 GB seed   |
+| `final-root.sh`    | chroot   | two-root helpers: install into / sysroot, sync, seal, seed-ref ELF scan |
 | `stage2.sh`        | host     | chroot entry for stage2                            |
 | `stage2-inner.sh`  | chroot   | compile DPM with seed rustc, build the full graph  |
 | `stage3.sh`        | host     | chroot entry for the self-hosting rebuild          |
+| `stage3-inner.sh`  | chroot   | toolchain/world rebuild + self-hosting proofs      |
 | `initramfs.sh`     | host     | static busybox + /init live-boot initramfs builder |
-| `mkiso.sh`         | host     | squashfs + grub config + hybrid ISO image          |
+| `mkiso.sh`         | host     | squashfs + grub config + hybrid ISO + structural validation |
 
 ## Status
 
@@ -122,3 +169,78 @@ the Ubuntu seed:
   (recorded in `<state>/layout`).
 * Extra disk: the final root adds roughly the size of the installed system
   (a few GB) on top of the build root.
+
+## The seed trust boundary (read this before trusting the result)
+
+The bootstrap is **not** a source-only build. The seed (`bootstrap/seed/`)
+ships **prebuilt binaries from the host distro** — Debian `.deb` packages
+extracted verbatim with `dpkg -x` (gcc, glibc, binutils, make, ...) plus a
+**rustup-installed rustc** used to compile DPM. Trust flows:
+
+* Everything built in stages 2-3 is compiled by the seed's gcc, whose
+  provenance is your Debian mirror, not this repository.
+* Stage 3 removes `/opt/{seed,cargo,rustup,cross-tools}` and then *proves*
+  independence (see the stage contract above) — but the toolchain that
+  built the toolchain was still the seed. A trusted bootstrap would require
+  a source-built seed (future work, LFS-style stages 0/1).
+* What IS verified today: the seed tarball's integrity (zstd frame + sha256
+  sidecar) before it is unpacked; its content manifest
+  (`opt/seed/manifest.txt`: exact `.deb` file names, rustc version, host,
+  build date) ships inside the tarball and is printed by stage 1; the
+  x86_64-only host restriction is checked up front.
+
+## What is verified vs. what is only intended
+
+**Verified by tests on every CI run** (see the test inventory below): resume
+and invalidation semantics, the failure/resume contract, the lock, `--wipe`
+refusals, `--dry-run` side-effect freedom, seed adoption checksums, the
+final-root leak checks, the stage-3 self-hosting proofs against deliberately
+poisoned fixtures, and the ISO structural validation (stubbed tooling).
+
+**NOT verified here**: that the produced ISO actually boots. The structural
+validation proves the boot-critical members are present in the image — a
+boot test needs a VM (the author's runs booted it in QEMU; CI cannot).
+A full source build (all 148 recipes, ~hours) is exercised only by the
+release workflow, not by CI. The 32 GUI recipes with placeholder sha256
+fail loudly at source verification until `scripts/fill-sha256.py` pins
+them (by design — never ship an unpinned source).
+
+## Tests
+
+All of these run in CI (`.github/workflows/ci.yml`) and need neither root
+nor the real ISO tooling:
+
+```bash
+bash -n bootstrap/*.sh scripts/*.sh            # syntax
+shellcheck --severity=error bootstrap/*.sh scripts/*.sh
+python3 -I scripts/check-recipes.py            # recipe sanity (148 recipes)
+bash scripts/test-build-all-mock.sh            # orchestration: 131 checks
+                                                # (stamps, input invalidation,
+                                                #  resume, lock, wipe, seed)
+bash scripts/test-final-root.sh                # two-root helpers + the
+                                                #  seed-reference ELF scan (22)
+bash scripts/test-mkiso.sh                     # ISO gate + structural
+                                                #  validation, stubbed (27)
+bash scripts/validate-install.sh               # installer dry validation
+bash bootstrap/build-all.sh --dry-run /tmp/x   # end-to-end dry run
+cd pkgmgr && cargo test --release --locked     # DPM: 109 tests
+```
+
+The real `stage1-3`/`mkiso` need root and a Debian-ish x86_64 host and are
+NOT covered by CI — they are covered by the release workflow's full build
+and by the author's VM runs.
+
+## Known limitations
+
+* No source-tarball cache across rebuilds (each stage-2/3 run re-downloads;
+  `dpm` has a per-package retry, a shared cache is future work).
+* Stage scripts other than `build-all.sh` keep no state: running them by
+  hand bypasses stamps/input tracking (documented contract — use
+  `build-all.sh --from-stage` instead).
+* The ISO is structurally validated, never boot-tested in CI (no KVM).
+* Stage 2 does not rebuild packages whose recipes changed after install
+  (the db records names, not build ids); deliberate procedures:
+  `build-all.sh --from-stage 2` for everything, or
+  `dpm --root / remove <pkg>` + re-run for one package.
+* A seed adopted without a sidecar is trusted by size only (legacy path,
+  announced in the log).

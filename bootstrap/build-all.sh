@@ -51,6 +51,7 @@ declare -A STAGE_DESC=(
     [iso]="initramfs + squashfs + grub -> bootable ISO"
 )
 SEED_TAR="$HERE/seed/seed.tar.zst"
+SEED_SHA256="$SEED_TAR.sha256"
 
 usage() {
     cat <<EOF
@@ -59,7 +60,8 @@ $PROG — build the whole distribution: empty directory -> bootable ISO
 Usage:
   sudo $PROG [options] TARGET [OUT_ISO]
 
-Stages (resume is automatic: finished stages are skipped on re-run):
+Stages (resume is automatic: a stage is skipped only when its stamp exists
+AND the inputs recorded with it still match — options, recipes, scripts):
   seed    ${STAGE_DESC[seed]}
   stage1  ${STAGE_DESC[stage1]}
   stage2  ${STAGE_DESC[stage2]}
@@ -149,6 +151,12 @@ case "$OPT_ISOLATION" in
     none|env|sandbox|closure) ;;
     *) die "--isolation must be none|env|sandbox|closure (got '$OPT_ISOLATION')" ;;
 esac
+# effective per-stage isolation: stage 2 builds the archive set that
+# `closure` needs, so closure cannot apply there — fold it to sandbox (the
+# strongest level stage2 supports). Precomputed here because the stage input
+# fingerprints below record exactly these effective values.
+if [[ $OPT_ISOLATION == closure ]]; then STAGE2_ISO=sandbox; else STAGE2_ISO=$OPT_ISOLATION; fi
+STAGE3_ISO=$OPT_ISOLATION
 case "$SQUASH_COMP" in gzip|xz|zstd) ;; *) die "--squash-comp must be gzip|xz|zstd" ;; esac
 if [[ -z $JOBS ]]; then JOBS="$(nproc 2>/dev/null || echo 4)"; fi
 [[ $JOBS =~ ^[0-9]+$ && $JOBS -ge 1 ]] || die "--jobs must be a positive integer (got '$JOBS')"
@@ -169,19 +177,163 @@ if [[ $EUID -ne 0 && $OPT_LIST -eq 0 ]]; then
     note "WARNING: not root — only '--from-stage iso' (stage 4) can work without root"
 fi
 
+# ------------------------------------------------- --wipe safety refusals --
+# --wipe rm -rf's the target: refuse everything that must never be deleted —
+# FHS top-level dirs and their system interiors, the repo itself, every
+# ancestor of the repo (a target above it would swallow it), $HOME, and any
+# live mountpoint (TARGET itself or a pseudo-fs still mounted INSIDE it —
+# deleting through a bind of /dev would destroy the host's device nodes).
+# These checks are PURE: they run before any state is created, so a refused
+# target does not even get a state directory next to it.
+if (( OPT_WIPE )); then
+    case "$TARGET" in
+        "/"|"/bin"|"/boot"|"/dev"|"/etc"|"/home"|"/lib"|"/lib32"|"/lib64"|"/libx32"|"/media"|"/mnt"|"/opt"|"/proc"|"/root"|"/run"|"/sbin"|"/srv"|"/sys"|"/tmp"|"/usr"|"/var")
+            die "refusing to --wipe $TARGET (protected system path)" ;;
+        "/bin/"*|"/boot/"*|"/dev/"*|"/etc/"*|"/lib/"*|"/lib32/"*|"/lib64/"*|"/libx32/"*|"/opt/"*|"/proc/"*|"/root/"*|"/run/"*|"/sbin/"*|"/srv/"*|"/sys/"*|"/usr/"*|"/var/"*)
+            die "refusing to --wipe $TARGET (protected system path)" ;;
+    esac
+    _p="$REPO"
+    while [[ -n $_p && $_p != "/" ]]; do
+        [[ $TARGET == "$_p" ]] && die "refusing to --wipe $TARGET (it contains the repository)"
+        _p="$(dirname -- "$_p")"
+    done
+    _p="$HOME"
+    while [[ -n $_p && $_p != "/" ]]; do
+        [[ $TARGET == "$_p" ]] && die "refusing to --wipe $TARGET (it is a home directory)"
+        _p="$(dirname -- "$_p")"
+    done
+    if [[ -e $TARGET ]]; then
+        if mountpoint -q "$TARGET"; then die "refusing to --wipe a mountpoint"; fi
+        for _m in dev proc sys run; do
+            if mountpoint -q "$TARGET/$_m" 2>/dev/null; then
+                die "refusing to --wipe: $TARGET/$_m is still mounted — run first:
+       sudo $HERE/umount-chroot.sh $TARGET"
+            fi
+        done
+    fi
+fi
+
+# non-empty target with no recorded progress = probably not what the user
+# wants (stage1 would unpack the seed over unrelated files). Read-only and
+# wipe modes are exempt: --list-stages inspects anything, --wipe replaces it.
+if [[ -d $TARGET && -n "$(ls -A "$TARGET" 2>/dev/null)" && ! -d $STAMPS ]] \
+   && (( ! OPT_WIPE && ! OPT_DRYRUN && ! OPT_LIST )); then
+    die "TARGET $TARGET is not empty and has no build state
+       - to replace its contents deliberately: re-run with --wipe
+       - or pick a fresh directory"
+fi
+
+# --------------------------------------------------------------- state lock --
+# Two builds against the same TARGET would interleave stamp/log/state writes
+# and corrupt each other's resume state. Hold an exclusive lock for the whole
+# run, acquired only after every refusal so a rejected invocation creates
+# nothing (read-only modes --list-stages/--dry-run take no lock at all).
+if (( ! OPT_DRYRUN && ! OPT_LIST )); then
+    mkdir -p "$STATE"
+    exec 9>>"$STATE/lock"
+    if ! flock -n 9; then
+        die "another build-all is already running against $TARGET (lock: $STATE/lock)
+             If that is wrong, find and stop the other process first."
+    fi
+fi
+
 # ------------------------------------------------------------------- stamps --
+# A stamp is only trustworthy together with the inputs that produced it.
+# Every finished stage records a fingerprint of its contract (stage scripts,
+# recipe/profile trees, the effective options) in <stage>.inputs; a later run
+# invalidates the stage — and everything downstream — when the fingerprint
+# changes. See the invalidation blocks below.
 stamp_file() { printf '%s/%s.done' "$STAMPS" "$1"; }
+inputs_file() { printf '%s/%s.inputs' "$STAMPS" "$1"; }
+failed_file() { printf '%s/failed-%s' "$STATE" "$1"; }
 stage_done() { [[ -f "$(stamp_file "$1")" ]]; }
 
-stage_done_or_adopted() {
+hash_files() {   # one sha256 over the named files (name + content each)
+    local f out=""
+    for f in "$@"; do
+        out+="$(basename -- "$f"):"
+        if [[ -f $f ]]; then out+="$(sha256sum "$f" | cut -d' ' -f1)"
+        else out+="MISSING"; fi
+        out+=$'\n'
+    done
+    printf '%s' "$out" | sha256sum | cut -d' ' -f1
+}
+
+tree_hash() {   # $1 = dir inside the repo: hash of every recipe.toml path+content
+    ( cd "$REPO" 2>/dev/null && find "$1" -name 'recipe.toml' -print0 | sort -z \
+        | xargs -0 -r sha256sum ) 2>/dev/null | sha256sum | cut -d' ' -f1
+}
+
+seed_identity() {   # size+mtime: cheap, and changes whenever the seed is rebuilt
+    if [[ -e $SEED_TAR ]]; then stat -c '%s:%Y' "$SEED_TAR"; else echo none; fi
+}
+
+stage_inputs() {   # the input contract of a stage, one key=value per line
+    case "$1" in
+        seed)   printf 'format=1\nscripts=%s\n' \
+                    "$(hash_files "$HERE/seed/build-seed.sh")" ;;
+        stage1) printf 'format=1\nscripts=%s\nseed=%s\n' \
+                    "$(hash_files "$HERE/stage1.sh" "$HERE/stage1-inner.sh" "$HERE/sync-repo.sh" \
+                         "$HERE/ensure-chroot-mounts.sh" "$HERE/enter-root.sh")" \
+                    "$(seed_identity)" ;;
+        stage2) printf 'format=1\nscripts=%s\nrecipes=%s\nprofiles=%s\ngui=%s\nisolation=%s\nlayout=%s\n' \
+                    "$(hash_files "$HERE/stage2.sh" "$HERE/stage2-inner.sh" "$HERE/sync-repo.sh" \
+                         "$HERE/final-root.sh" "$HERE/ensure-chroot-mounts.sh" "$HERE/enter-root.sh")" \
+                    "$(tree_hash recipes)" "$(tree_hash profiles)" \
+                    "$OPT_GUI" "$STAGE2_ISO" "$LAYOUT" ;;
+        stage3) printf 'format=1\nscripts=%s\nrecipes=%s\nprofiles=%s\ngui=%s\nworld=%s\nisolation=%s\nlayout=%s\n' \
+                    "$(hash_files "$HERE/stage3.sh" "$HERE/stage3-inner.sh" "$HERE/sync-repo.sh" \
+                         "$HERE/final-root.sh" "$HERE/ensure-chroot-mounts.sh" "$HERE/enter-root.sh")" \
+                    "$(tree_hash recipes)" "$(tree_hash profiles)" \
+                    "$OPT_GUI" "$OPT_WORLD" "$STAGE3_ISO" "$LAYOUT" ;;
+        iso)    printf 'format=1\nscripts=%s\nvolid=%s\ncomp=%s\nlayout=%s\n' \
+                    "$(hash_files "$HERE/mkiso.sh" "$HERE/initramfs.sh")" \
+                    "$VOL_ID" "$SQUASH_COMP" "$LAYOUT" ;;
+    esac
+}
+
+# stage_valid: 0 = stamp exists AND inputs match; 1 = no stamp;
+# 2 = stamp predates input tracking (unverifiable)
+stage_valid() {
     local s="$1"
-    if stage_done "$s"; then return 0; fi
-    # A seed tarball built by hand (or left behind by an earlier run whose
-    # stamp was cleared) is adopted instead of re-downloading ~1 GB of
-    # toolchain for nothing.  --fresh still forces a real rebuild: it sets
-    # OPT_FRESH, which skips adoption below.
-    if [[ $s == seed && -s $SEED_TAR && ${OPT_FRESH:-0} -eq 0 ]]; then return 0; fi
+    [[ -f "$(stamp_file "$s")" ]] || return 1
+    [[ -f "$(inputs_file "$s")" ]] || return 2
+    [[ "$(stage_inputs "$s")" == "$(cat "$(inputs_file "$s")")" ]]
+}
+
+# The seed built by build-seed.sh writes a sha256 sidecar next to the
+# tarball. Adopting a hand-built seed without one stays possible (legacy
+# behavior), but a tarball that FAILS its own sidecar is corrupt and must
+# be rebuilt, not adopted.
+seed_adoptable() {
+    [[ -s $SEED_TAR && ${OPT_FRESH:-0} -eq 0 ]] || return 1
+    if [[ -f $SEED_SHA256 ]]; then
+        if (cd "$(dirname -- "$SEED_TAR")" && \
+            sha256sum -c --quiet "$(basename -- "$SEED_TAR").sha256") >/dev/null 2>&1; then
+            return 0
+        fi
+        echo "$PROG: seed failed its sha256 sidecar — NOT adopting it (seed stage will rebuild)" >&2
+        return 1
+    fi
+    return 0
+}
+
+stage_complete() {   # valid stamp, or an adoptable seed
+    local s="$1" rc=0
+    stage_valid "$s" || rc=$?
+    (( rc == 0 )) && return 0
+    if [[ $s == seed && $rc == 1 ]] && seed_adoptable; then return 0; fi
     return 1
+}
+
+# drop stamps + inputs + failure markers of stage index $1 and everything after
+invalidate_from() {
+    local from="$1" j id
+    for (( j = from; j < ${#STAGE_IDS[@]}; j++ )); do
+        id=${STAGE_IDS[$j]}
+        rm -f "$(stamp_file "$id")" "$(inputs_file "$id")" "$(failed_file "$id")"
+    done
+    return 0
 }
 
 stage_index() {  # accept seed|0..3|iso|4 -> index into STAGE_IDS
@@ -196,7 +348,7 @@ stage_index() {  # accept seed|0..3|iso|4 -> index into STAGE_IDS
 }
 
 list_stages() {
-    local i id status n=0
+    local i id status n=0 stale=0 failed=0 rc
     echo "target: $TARGET"
     echo "final:  $FINAL_HOST ($LAYOUT)"
     echo "state:  $STATE"
@@ -204,10 +356,19 @@ list_stages() {
     printf '  %-8s %-50s %s\n' STAGE DESCRIPTION STATUS
     for i in "${!STAGE_IDS[@]}"; do
         id=${STAGE_IDS[$i]}
-        if stage_done "$id"; then
-            status="done $(stat -c %y "$(stamp_file "$id")" 2>/dev/null | cut -d. -f1)"
-            n=$((n+1))
-        elif stage_done_or_adopted "$id"; then
+        status=""
+        if [[ -f "$(failed_file "$id")" && ! -f "$(stamp_file "$id")" ]]; then
+            status="FAILED (see $LOGS)"
+            failed=$((failed+1))
+        elif stage_done "$id"; then
+            rc=0; stage_valid "$id" || rc=$?
+            when="$(stat -c %y "$(stamp_file "$id")" 2>/dev/null | cut -d. -f1)"
+            case $rc in
+                0) status="done $when"; n=$((n+1)) ;;
+                2) status="stale (inputs not recorded) $when"; stale=$((stale+1)) ;;
+                *) status="stale (inputs changed) $when";  stale=$((stale+1)) ;;
+            esac
+        elif [[ $id == seed ]] && seed_adoptable; then
             status="done (adopted $(stat -c %y "$SEED_TAR" 2>/dev/null | cut -d. -f1))"
             n=$((n+1))
         elif [[ $id == iso && $OPT_NO_ISO -eq 1 ]]; then
@@ -219,6 +380,8 @@ list_stages() {
     done
     echo
     echo "  $n/5 stages recorded as complete"
+    (( stale > 0 )) && echo "  $stale stale (inputs changed/unknown — re-run rebuilds them)"
+    (( failed > 0 )) && echo "  $failed failed (re-run resumes there)"
     if [[ -d $LOGS ]]; then
         echo "  logs:   $LOGS ($(ls -1 "$LOGS" 2>/dev/null | wc -l) file(s))"
     fi
@@ -254,9 +417,18 @@ preflight() {
             seed)
                 command -v curl >/dev/null || die "seed stage needs curl on the host"
                 ;;
+            stage1|stage2|stage3)
+                missing=()
+                for t in tar zstd unshare pivot_root mount; do
+                    command -v "$t" >/dev/null || missing+=("$t")
+                done
+                if (( ${#missing[@]} > 0 )); then
+                    die "stages 1-3 need host tool(s): ${missing[*]} (Debian: apt install zstd util-linux tar)"
+                fi
+                ;;
             iso)
                 missing=()
-                for t in mksquashfs grub-mkrescue gcc make; do
+                for t in mksquashfs grub-mkrescue xorriso gcc make; do
                     command -v "$t" >/dev/null || missing+=("$t")
                 done
                 if (( ${#missing[@]} > 0 )); then
@@ -279,6 +451,13 @@ trap 'on_exit $?' EXIT
 on_exit() {
     local rc=$1
     if (( rc != 0 && rc != 2 )); then
+        # record WHICH stage failed so --list-stages can distinguish a
+        # failure from a pending stage (the marker is cleared when that
+        # stage later succeeds)
+        if [[ -n $LOG && $CURRENT_STAGE != "(pre-flight)" ]]; then
+            touch "$(failed_file "$CURRENT_STAGE")" 2>/dev/null || true
+            printf '%s|%s|-|FAIL\n' "$CURRENT_STAGE" "$(date -Is)" >> "$META" 2>/dev/null || true
+        fi
         {
             echo
             echo "$PROG: FAILED during '$CURRENT_STAGE' (exit $rc)"
@@ -307,9 +486,41 @@ if [[ -d $STAMPS ]] && (( ! OPT_LIST )); then
         for id in stage2 stage3 iso; do
             if [[ -f "$(stamp_file "$id")" ]]; then
                 note "invalidating stamp: $id (layout $PREV_LAYOUT -> $LAYOUT)"
-                if (( ! OPT_DRYRUN )); then rm -f "$(stamp_file "$id")"; fi
+                if (( ! OPT_DRYRUN )); then rm -f "$(stamp_file "$id")" "$(inputs_file "$id")" "$(failed_file "$id")"; fi
             fi
         done
+    fi
+fi
+
+# stamp input validation: a stamp whose recorded inputs no longer match the
+# current invocation — or that predates input tracking — is stale. Invalidate
+# it and everything downstream (upstream stages are untouched: their inputs
+# did not change). This is what makes --with-gui, --stage3-world, --vol-id,
+# --squash-comp, recipe edits and stage-script edits resume-correct instead
+# of being silently skipped. Every stale stamp is reported (so a legacy
+# build shows all five), then the cascade starts at the FIRST stale one.
+# Skipped for --fresh/--wipe (everything re-runs anyway) and for the
+# read-only --dry-run/--list-stages modes.
+if [[ -d $STAMPS ]] && (( ! OPT_LIST && ! OPT_DRYRUN && ! OPT_FRESH && ! OPT_WIPE )); then
+    first_stale=-1
+    for i in "${!STAGE_IDS[@]}"; do
+        id=${STAGE_IDS[$i]}
+        [[ -f "$(stamp_file "$id")" ]] || continue
+        rc=0; stage_valid "$id" || rc=$?
+        if (( rc == 0 )); then continue; fi
+        if (( rc == 2 )); then
+            note "invalidating stamp: $id (pre-dates input tracking — its inputs cannot be verified)"
+        else
+            changed="$(diff <(cat "$(inputs_file "$id")") <(stage_inputs "$id") 2>/dev/null \
+                     | grep '^>' | sed 's/^> *//' | cut -d= -f1 | tr '\n' ' ' || true)"
+            changed="${changed% }"
+            note "invalidating stamp: $id (inputs changed: ${changed:-unknown})"
+        fi
+        (( first_stale < 0 )) && first_stale=$i
+    done
+    if (( first_stale >= 0 )); then
+        note "stamps after the first stale one are dropped with it (a stamp is only valid while every upstream stamp stayed valid)"
+        invalidate_from "$first_stale"
     fi
 fi
 
@@ -319,49 +530,35 @@ if [[ -n $FROM_STAGE ]]; then
 else
     START=${#STAGE_IDS[@]}
     for i in "${!STAGE_IDS[@]}"; do
-        if ! stage_done_or_adopted "${STAGE_IDS[$i]}"; then START=$i; break; fi
+        if ! stage_complete "${STAGE_IDS[$i]}"; then START=$i; break; fi
     done
 fi
 END=$(( ${#STAGE_IDS[@]} - 1 ))
 if (( OPT_NO_ISO )); then END=$(( END - 1 )); fi
 
-if (( OPT_WIPE )); then
-    case "$TARGET" in
-        "/"|"$REPO"|"$REPO/"|"$HOME"|"$HOME/"|"$(dirname -- "$REPO")")
-            die "refusing to --wipe $TARGET" ;;
-    esac
-    if [[ -e $TARGET ]]; then
-        if mountpoint -q "$TARGET"; then die "refusing to --wipe a mountpoint"; fi
-        note "--wipe: deleting $TARGET"
-        if (( ! OPT_DRYRUN )); then rm -rf -- "$TARGET"; fi
-    fi
+# --wipe execution (the safety refusals already ran before the lock)
+if (( OPT_WIPE && ! OPT_LIST )) && [[ -e $TARGET ]]; then
+    note "--wipe: deleting $TARGET ($(du -sh --exclude=proc --exclude=sys --exclude=dev --exclude=run "$TARGET" 2>/dev/null | cut -f1 || echo unknown size))"
+    if (( ! OPT_DRYRUN )); then rm -rf -- "$TARGET"; fi
 fi
-if (( OPT_FRESH )) && [[ -d $STAMPS ]]; then
+if (( OPT_FRESH && ! OPT_LIST )) && [[ -d $STAMPS ]]; then
     note "--fresh: clearing stage stamps in $STAMPS"
     if (( ! OPT_DRYRUN )); then rm -rf -- "$STAMPS"; fi
 fi
 # forcing a start point invalidates that stage and everything after it
 # ("start at stage 2" means stage 2 RUNS, stamps from stage 2 onward are stale)
-if [[ -n $FROM_STAGE ]]; then
+if [[ -n $FROM_STAGE ]] && (( ! OPT_LIST )); then
     for i in "${!STAGE_IDS[@]}"; do
         if (( i < START )); then continue; fi
         if [[ -f "$(stamp_file "${STAGE_IDS[$i]}")" ]]; then
             note "invalidating stamp: ${STAGE_IDS[$i]} (restarting at $FROM_STAGE)"
-            if (( ! OPT_DRYRUN )); then rm -f "$(stamp_file "${STAGE_IDS[$i]}")"; fi
+            if (( ! OPT_DRYRUN )); then rm -f "$(stamp_file "${STAGE_IDS[$i]}")" "$(inputs_file "${STAGE_IDS[$i]}")" "$(failed_file "${STAGE_IDS[$i]}")"; fi
         fi
     done
 fi
 
 if (( OPT_LIST )); then list_stages; fi
 
-# non-empty target with no recorded progress = probably not what the user wants
-# (stage1 would unpack the seed over unrelated files)
-if [[ -d $TARGET && -n "$(ls -A "$TARGET" 2>/dev/null)" && ! -d $STAMPS ]] \
-   && (( ! OPT_WIPE && ! OPT_DRYRUN )); then
-    die "TARGET $TARGET is not empty and has no build state
-       - to replace its contents deliberately: re-run with --wipe
-       - or pick a fresh directory"
-fi
 if (( START >= 1 && START <= 3 )) && ! stage_done stage1 && (( ! OPT_DRYRUN )); then
     note "NOTE: starting at stage $START with no stage-1 stamp — stage 2/3 now
       ensure the chroot mounts themselves (ensure-chroot-mounts.sh), but
@@ -375,15 +572,13 @@ fi
 # pass the knobs down to the stage scripts (they read them from the env)
 export DPM_JOBS="$JOBS"
 export WITH_GUI="$OPT_GUI"
-# stage 2 builds against the seed plus what it has built so far; `closure`
-# needs the finished base-devel archive set, which exists only from stage 3 on
-# (stage2-inner.sh rejects it). Use the strongest level stage 2 supports.
-export STAGE2_ISOLATION="$OPT_ISOLATION"
+# STAGE2_ISO/STAGE3_ISO were computed above (input tracking needs them
+# before any stamp is compared); stage2 cannot do closure — see there
+export STAGE2_ISOLATION="$STAGE2_ISO"
 if [[ $OPT_ISOLATION == closure ]]; then
-    export STAGE2_ISOLATION=sandbox
     echo "$PROG: note: --isolation closure applies to stage 3; stage 2 uses sandbox"
 fi
-export STAGE3_ISOLATION="$OPT_ISOLATION"
+export STAGE3_ISOLATION="$STAGE3_ISO"
 export SINGLE_ROOT="$OPT_SINGLE"
 export STAGE3_WORLD="$OPT_WORLD"
 export VOL_ID SQUASH_COMP JOBS="$JOBS"
@@ -394,6 +589,24 @@ if (( ! OPT_DRYRUN )); then
     echo "$LAYOUT" > "$LAYOUT_FILE"
     LOG="$LOGS/build-$(date +%Y%m%d-%H%M%S)-$$.log"
     exec > >(tee -a "$LOG") 2>&1
+    # audit header — the task's "record effective tool versions and important
+    # configuration inputs": every log names the exact host, tools and seed
+    # that produced the build, so a later failure can be attributed
+    {
+        echo "== build-all audit header"
+        echo "started:   $(date -Is)"
+        echo "args:      ${ORIG_ARGS[*]:-}"
+        echo "host:      $(uname -srm)"
+        echo "repo:      $REPO"
+        echo "bash:      $BASH_VERSION"
+        echo "tar:       $(tar --version 2>/dev/null | head -1)"
+        echo "zstd:      $(zstd --version 2>/dev/null | head -1 || echo missing)"
+        echo "seed:      $(seed_identity)"
+        if command -v git >/dev/null 2>&1 && [[ -e $REPO/.git ]]; then
+            git -C "$REPO" rev-parse HEAD 2>/dev/null | sed 's/^/commit:    /'
+        fi
+        echo "== end audit header"
+    }
 fi
 
 banner() {
@@ -414,9 +627,14 @@ fmt_el() {   # seconds -> 1h23m45s / 12m03s / 45s
 STAGE_ELAPSED=()
 RAN_ISO=0
 run_stage() {
-    local id="$1" t0 t1 el
+    local id="$1" idx="$2" t0 t1 el
     CURRENT_STAGE="$id"
     banner "stage $id — ${STAGE_DESC[$id]}"
+    # upstream-continuity invariant: a stage that runs makes every LATER
+    # stamp meaningless (they were produced from this stage's previous
+    # output), so drop them before rebuilding — a stamp is only valid while
+    # every upstream stamp stayed valid
+    if (( ! OPT_DRYRUN )); then invalidate_from $(( idx + 1 )); fi
     t0=$(date +%s)
     case $id in
         seed)   CMD=(bash "$HERE/seed/build-seed.sh") ;;
@@ -430,11 +648,13 @@ run_stage() {
     fi
     if (( OPT_DRYRUN )); then
         echo "[dry-run] would run:  ${CMD[*]}"
-        echo "[dry-run] would stamp: $(stamp_file "$id")"
+        echo "[dry-run] would stamp: $(stamp_file "$id") (inputs recorded in $(inputs_file "$id"))"
     else
         "${CMD[@]}"
         mkdir -p "$STAMPS"
         date > "$(stamp_file "$id")"
+        stage_inputs "$id" > "$(inputs_file "$id")"
+        rm -f "$(failed_file "$id")"
         t1=$(date +%s); el=$((t1 - t0))
         printf '%s|%s|%ss|ok\n' "$id" "$(date -Is)" "$el" >> "$META"
         STAGE_ELAPSED+=("$(printf '%-8s took %s' "$id" "$(fmt_el "$el")")")
@@ -452,9 +672,10 @@ echo "  state=$STATE"
 echo "  iso output: $OUT_ISO"
 if (( OPT_DRYRUN )); then echo "  (dry run — nothing is executed or recorded)"; fi
 
-# a hand-built seed adopted as done is worth saying out loud (the loop below
-# starts past it, so this is the only place the notice is printed)
-if (( ! OPT_DRYRUN )) && ! stage_done seed && stage_done_or_adopted seed; then
+# a hand-built seed adopted as done is worth saying out loud — but only when
+# the seed will actually be SKIPPED (START > 0); with `--from-stage seed` the
+# stage runs even when adoptable, and announcing an adoption there would lie
+if (( ! OPT_DRYRUN )) && (( START > 0 )) && ! stage_done seed && seed_adoptable; then
     note "seed: adopting existing $SEED_TAR (no stamp yet)"
 fi
 
@@ -468,14 +689,18 @@ fi
 for (( i = START; i <= END; i++ )); do
     id=${STAGE_IDS[$i]}
     if (( OPT_DRYRUN )); then
-        run_stage "$id"
-    elif stage_done_or_adopted "$id"; then
+        run_stage "$id" "$i"
+    elif [[ -n $FROM_STAGE && $i -eq $START ]]; then
+        # --from-stage S documents that S itself re-runs. That must hold even
+        # for the seed, where adoption would otherwise quietly skip it.
+        run_stage "$id" "$i"
+    elif stage_complete "$id"; then
         if [[ $id == seed ]] && ! stage_done seed; then
             note "seed: adopting existing $SEED_TAR (no stamp yet)"
         fi
-        echo "-- $PROG: $id already done, skipping"
+        echo "-- $PROG: $id already done (inputs unchanged), skipping"
     else
-        run_stage "$id"
+        run_stage "$id" "$i"
     fi
 done
 

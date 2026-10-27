@@ -31,7 +31,11 @@ install_final() {
 find_archive() {
     local pkg="$1" d a
     for d in "$BUILD_ROOT/build3/out" "$BUILD_ROOT/build/out" "$BUILD_ROOT/var/cache/dpm"; do
-        a=$(ls "$d"/"$pkg"-[0-9]*.dpm.tar.zst 2>/dev/null | sort -V | tail -1)
+        # `|| true`: with pipefail a missing dir makes `ls` fail; this only
+        # works today because the sole caller invokes us inside a `||` list
+        # (which disables set -e in here) — make that an implementation
+        # detail, not a survival requirement
+        a=$(ls "$d"/"$pkg"-[0-9]*.dpm.tar.zst 2>/dev/null | sort -V | tail -1 || true)
         if [ -n "$a" ]; then echo "$a"; return 0; fi
     done
     return 1
@@ -88,4 +92,47 @@ finalize_final_root() {
     done
     [ "$bad" -eq 0 ] || return 1
     echo "== final-root: $FINAL_ROOT is clean ($(ls "$FINAL_ROOT/var/lib/dpm/local" 2>/dev/null | wc -l) packages)"
+}
+
+# Scan the ELF files of a root for references to the bootstrap seed
+# directories (/opt/seed, /opt/cargo, /opt/rustup, /opt/cross-tools) in
+# their interpreter, DT_NEEDED or RPATH/RUNPATH. Called by stage3 AFTER the
+# seed was deleted: any such reference would now be a broken binary (or an
+# undeclared host dependency that the ISO would ship).
+#
+# Reads only interpreter/dynamic entries via readelf — a binary that merely
+# contains the string "/opt/seed" in a data section is NOT flagged.
+#
+# Overridables for tests: READELF_BIN, FILE_BIN and FINAL_ROOT_ELF_DIRS
+# (default "usr/bin usr/sbin usr/lib usr/lib64").
+verify_final_root_no_seed_refs() {
+    local root="${1:?usage: verify_final_root_no_seed_refs ROOT}"
+    local readelf="${READELF_BIN:-readelf}"
+    local filebin="${FILE_BIN:-file}"
+    local dirs="${FINAL_ROOT_ELF_DIRS:-usr/bin usr/sbin usr/lib usr/lib64}"
+    command -v "$readelf" >/dev/null 2>&1 || {
+        echo "final-root: WARNING: readelf not available — cannot scan $root for seed references" >&2
+        return 0
+    }
+    local bad=0 found=0 f out d
+    while IFS= read -r -d '' f; do
+        # skip obviously-non-ELF files cheaply (scripts, data) — readelf
+        # would just error on them
+        if command -v "$filebin" >/dev/null 2>&1; then
+            "$filebin" -b "$f" | grep -q ELF || continue
+        fi
+        out=$("$readelf" -l -d "$f" 2>/dev/null) || continue
+        if printf '%s\n' "$out" | grep -qE '/opt/(seed|cargo|rustup|cross-tools)'; then
+            echo "final-root: ERROR: $f references the seed (interpreter/NEEDED/RPATH):" >&2
+            printf '%s\n' "$out" | grep -E '/opt/(seed|cargo|rustup|cross-tools)' | sed 's/^/    /' >&2
+            bad=1
+        fi
+        found=$((found+1))
+    done < <(
+        # shellcheck disable=SC2086  # FINAL_ROOT_ELF_DIRS is a word list by design
+        for d in $dirs; do find "$root/$d" -type f -print0 2>/dev/null; done
+    )
+    [ "$bad" -eq 0 ] || return 1
+    echo "== final-root: no seed references in $found ELF file(s) under $root"
+    return 0
 }

@@ -12,13 +12,37 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
-REPO="$(dirname "$HERE")"
 LFS="${1:?usage: stage1.sh /mnt/mydistro}"
 [[ "$(realpath -m "$LFS")" != "/" ]] || { echo "stage1: refusing to use / as the target"; exit 1; }
 SEED="$HERE/seed/seed.tar.zst"
+SEED_SHA256="$SEED.sha256"   # sidecar written by build-seed.sh
 
 [[ $EUID -eq 0 ]] || { echo "stage1: must run as root"; exit 1; }
 [[ -f $SEED ]] || { echo "stage1: seed missing — run seed/build-seed.sh first"; exit 1; }
+
+# verify the seed BEFORE unpacking it over $LFS: a truncated or corrupt
+# tarball used to surface as a confusing error deep inside the unpack (or,
+# worse, as a half-unpacked root on resume). zstd -t checks the frame CRC;
+# the sidecar (when present — hand-built seeds may lack it) pins the exact
+# artifact build-seed.sh produced.
+command -v zstd >/dev/null 2>&1 || { echo "stage1: zstd not found on the host (required to unpack the seed)"; exit 1; }
+if ! zstd -t "$SEED" 2>/dev/null; then
+    echo "stage1: seed failed its zstd integrity check: $SEED" >&2
+    echo "stage1: rebuild it:  bootstrap/seed/build-seed.sh   (or delete it and re-run build-all.sh)" >&2
+    exit 1
+fi
+if [[ -f $SEED_SHA256 ]]; then
+    if ! (cd "$(dirname "$SEED")" && sha256sum -c --quiet "$(basename "$SEED").sha256"); then
+        echo "stage1: seed sha256 mismatch against $SEED_SHA256 — the tarball changed" >&2
+        echo "stage1: since it was built. Rebuild it with bootstrap/seed/build-seed.sh." >&2
+        exit 1
+    fi
+else
+    echo "stage1: NOTE: no sha256 sidecar for the seed — proceeding unverified (hand-built seed?)" >&2
+fi
+# provenance: print what the seed records about itself, if anything
+manifest_head="$(tar -xOf "$SEED" ./opt/seed/manifest.txt 2>/dev/null | head -8 || true)"
+if [[ -n $manifest_head ]]; then printf '%s\n' "$manifest_head"; fi
 
 echo "== stage1: unpacking seed into $LFS"
 mkdir -p "$LFS"
@@ -56,9 +80,10 @@ if [[ ! -s $CA_BUNDLE ]]; then
     fi
 fi
 
-# copy repo + recipes into the chroot
-mkdir -p "$LFS/mydistro"
-cp -a "$REPO/pkgmgr" "$REPO/recipes" "$REPO/profiles" "$REPO/bootstrap" "$LFS/mydistro/"
+# copy the build-relevant repo parts into the chroot (excludes the ~1 GB
+# seed tarball, seed-root scratch and the host's cargo output — see
+# sync-repo.sh)
+bash "$HERE/sync-repo.sh" "$LFS"
 
 bash "$HERE/enter-root.sh" "$LFS" /usr/bin/env -i \
     HOME=/root TERM="${TERM:-xterm}" DPM_JOBS="${DPM_JOBS:-4}" \

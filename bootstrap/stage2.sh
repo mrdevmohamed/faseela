@@ -14,11 +14,11 @@ LFS="${1:?usage: stage2.sh /mnt/mydistro}"
 [[ $EUID -eq 0 ]] || { echo "stage2: must run as root"; exit 1; }
 
 # refresh the repo copy inside the chroot: stage1 copied it once, so edits made
-# on the host since then would otherwise never reach the chroot. cp -a merges,
-# so build output already in the chroot (pkgmgr/target) is kept.
-REPO="$(dirname "$HERE")"
-mkdir -p "$LFS/mydistro"
-cp -a "$REPO/pkgmgr" "$REPO/recipes" "$REPO/profiles" "$REPO/bootstrap" "$LFS/mydistro/"
+# on the host since then would otherwise never reach the chroot. The tar
+# extract merges (like cp -a did), so build output already in the chroot
+# (pkgmgr/target) is kept, while the seed tarball and the host's cargo
+# output are excluded (see sync-repo.sh).
+bash "$HERE/sync-repo.sh" "$LFS"
 
 # kept merge output means cargo fingerprints can go stale wrong: cp -a restores
 # the host's (often older) source mtimes, so after an in-chroot source edit is
@@ -54,10 +54,15 @@ else
     mkdir -p "$LFS$FINAL_ROOT"
 fi
 
+# `. /opt/seed/env.sh` is conditional: a re-run AFTER stage 3 (e.g.
+# `--from-stage 2` for a world rebuild with the distro's own toolchain)
+# finds no seed — stage 3 deleted /opt. stage2-inner then keeps the
+# installed /usr/bin/dpm instead of rebuilding it with the seed's cargo.
+# A FRESH target without a seed fails loudly in stage 1 instead.
 bash "$HERE/enter-root.sh" "$LFS" /usr/bin/env -i \
-    HOME=/root TERM="$TERM" DPM_JOBS="${DPM_JOBS:-4}" WITH_GUI="${WITH_GUI:-0}" \
+    HOME=/root TERM="${TERM:-dumb}" DPM_JOBS="${DPM_JOBS:-4}" WITH_GUI="${WITH_GUI:-0}" \
     FINAL_ROOT="$FINAL_ROOT" \
     STAGE2_ISOLATION="${STAGE2_ISOLATION:-none}" \
-    bash -c '. /opt/seed/env.sh && bash /mydistro/bootstrap/stage2-inner.sh'
+    bash -c 'if [ -r /opt/seed/env.sh ]; then . /opt/seed/env.sh; else echo "stage2: NOTE: no /opt/seed/env.sh (seed removed by stage 3?) — using the installed toolchain" >&2; fi; bash /mydistro/bootstrap/stage2-inner.sh'
 
 echo "== stage2: core system installed"
