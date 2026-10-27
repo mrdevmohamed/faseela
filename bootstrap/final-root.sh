@@ -21,9 +21,29 @@ final_root_enabled() { [ -n "$FINAL_ROOT" ]; }
 
 # Install one built archive into the final root as well.
 # `--force` mirrors the build-root install (stage 3 reinstalls over stage 2).
+# The loader directories must be a real usr/lib64 plus a RELATIVE lib64 link.
+# An absolute link (e.g. lib64 -> /usr/lib) resolves against the BUILD root
+# while dpm runs inside the chroot, so an install into $FINAL_ROOT would write
+# the loader link into the build root's /usr/lib. Repairs older sysroots too.
+repair_final_layout() {
+    final_root_enabled || return 0
+    mkdir -p "$FINAL_ROOT/usr"
+    if [ -L "$FINAL_ROOT/usr/lib64" ]; then rm -f "$FINAL_ROOT/usr/lib64"; fi
+    mkdir -p "$FINAL_ROOT/usr/lib64"
+    if [ -L "$FINAL_ROOT/lib64" ]; then
+        [ "$(readlink "$FINAL_ROOT/lib64")" = usr/lib64 ] \
+            || { rm -f "$FINAL_ROOT/lib64"; ln -s usr/lib64 "$FINAL_ROOT/lib64"; }
+    elif [ -e "$FINAL_ROOT/lib64" ]; then
+        echo "final-root: WARNING $FINAL_ROOT/lib64 is not a symlink — left alone" >&2
+    else
+        ln -s usr/lib64 "$FINAL_ROOT/lib64"
+    fi
+}
+
 install_final() {
     final_root_enabled || return 0
     mkdir -p "$FINAL_ROOT"
+    repair_final_layout
     "$DPM_BIN" --root "$FINAL_ROOT" install --force "$1"
 }
 

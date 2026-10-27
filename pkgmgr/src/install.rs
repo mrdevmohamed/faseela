@@ -395,6 +395,49 @@ fn list_staged_files(staged: &Path) -> Result<Vec<String>> {
     Ok(out)
 }
 
+/// Refuse to touch `path` when resolving it (following symlinks) would leave
+/// `root`. The target root is a *tree*, not a chroot: dpm runs from another
+/// root (e.g. a build chroot installing into `/sysroot`), so an absolute
+/// symlink inside the target such as `usr/lib64 -> /usr/lib` resolves to the
+/// RUNNING system's `/usr/lib` and an install would silently rewrite that
+/// instead. Relative links that stay inside `root` (merged-usr `lib -> usr/lib`)
+/// are fine; with `root` = `/` everything is inside.
+fn ensure_inside_root(root: &Path, path: &Path) -> Result<()> {
+    let real_root = std::fs::canonicalize(root)
+        .with_context(|| format!("resolve root {}", root.display()))?;
+    // resolve the nearest ancestor that exists (path itself, else a parent)
+    let mut cur = path;
+    let resolved = loop {
+        match std::fs::canonicalize(cur) {
+            Ok(p) => break p,
+            Err(_) => {
+                // a dangling or looping symlink cannot be resolved, so it
+                // cannot be shown to stay inside root
+                if std::fs::symlink_metadata(cur).map(|m| m.is_symlink()).unwrap_or(false) {
+                    bail!(
+                        "refusing to write through unresolvable symlink {} (target root {})",
+                        cur.display(),
+                        root.display()
+                    );
+                }
+                match cur.parent() {
+                    Some(p) => cur = p,
+                    None => return Ok(()),
+                }
+            }
+        }
+    };
+    if !resolved.starts_with(&real_root) {
+        bail!(
+            "refusing to write through symlink: {} resolves to {}, outside the target root {}",
+            path.display(),
+            resolved.display(),
+            real_root.display()
+        );
+    }
+    Ok(())
+}
+
 /// Undo journal for `move_tree`: every file that replaces an existing one is
 /// first moved to a backup dir, every newly created file is remembered, so a
 /// failure half-way through can restore the previous state (all-or-nothing
@@ -413,6 +456,11 @@ impl Tx {
 
     /// Move `from` to `to`, backing up whatever `to` currently is.
     fn place(&mut self, from: &Path, to: &Path) -> Result<()> {
+        // the leaf may be a symlink (it is replaced, not followed); its
+        // parent directories must stay inside the target root
+        if let Some(parent) = to.parent() {
+            ensure_inside_root(&self.root, parent)?;
+        }
         if std::fs::symlink_metadata(to).is_ok() {
             let rel = to.strip_prefix(&self.root)?;
             let bak = self.bak_root.join(rel);
@@ -431,6 +479,9 @@ impl Tx {
 
     /// Move an existing path into the backup dir (a reversible delete).
     fn remove(&mut self, path: &Path) -> Result<()> {
+        if let Some(parent) = path.parent() {
+            ensure_inside_root(&self.root, parent)?;
+        }
         let rel = path.strip_prefix(&self.root)?;
         let bak = self.bak_root.join(rel);
         if let Some(parent) = bak.parent() {
@@ -479,6 +530,9 @@ fn move_tree(
         let to = dst.join(entry.file_name());
         let is_dir = from.is_dir() && !std::fs::symlink_metadata(&from)?.is_symlink();
         if is_dir {
+            // checked BEFORE create_dir_all, which would happily create
+            // directories through a symlink pointing outside the root
+            ensure_inside_root(root, &to)?;
             std::fs::create_dir_all(&to)?;
             // carry the staged directory's mode over: create_dir_all applies
             // the umask, which would strip e.g. the sticky bit from /tmp
@@ -964,6 +1018,75 @@ mod tests {
         assert!(!root.join("etc/gone").exists());
         tx.rollback();
         assert_eq!(std::fs::read(root.join("etc/gone")).unwrap(), b"keep me");
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn place_refuses_symlink_that_escapes_root() {
+        let base = tmpdir("escape");
+        let root = base.join("root");
+        let other = base.join("other-root-usr-lib");
+        std::fs::create_dir_all(root.join("usr")).unwrap();
+        std::fs::create_dir_all(&other).unwrap();
+        // absolute link inside the target tree, like `usr/lib64 -> /usr/lib`
+        std::os::unix::fs::symlink(&other, root.join("usr/lib64")).unwrap();
+        let stage = base.join("stage");
+        std::fs::create_dir_all(&stage).unwrap();
+        std::fs::write(stage.join("ld.so"), b"loader").unwrap();
+
+        let mut tx = Tx::new(&root, base.join("bak"));
+        let err = tx.place(&stage.join("ld.so"), &root.join("usr/lib64/ld.so")).unwrap_err();
+        assert!(format!("{err:#}").contains("outside the target root"), "{err:#}");
+        assert!(!other.join("ld.so").exists(), "file leaked through the symlink");
+        assert!(stage.join("ld.so").exists(), "source must stay untouched");
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn place_allows_relative_symlink_inside_root() {
+        let base = tmpdir("merged-usr");
+        let root = base.join("root");
+        std::fs::create_dir_all(root.join("usr/lib")).unwrap();
+        std::os::unix::fs::symlink("usr/lib", root.join("lib")).unwrap(); // merged-usr
+        let stage = base.join("stage");
+        std::fs::create_dir_all(&stage).unwrap();
+        std::fs::write(stage.join("libx.so"), b"x").unwrap();
+
+        let mut tx = Tx::new(&root, base.join("bak"));
+        tx.place(&stage.join("libx.so"), &root.join("lib/libx.so")).unwrap();
+        assert_eq!(std::fs::read(root.join("usr/lib/libx.so")).unwrap(), b"x");
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn remove_refuses_symlink_that_escapes_root() {
+        let base = tmpdir("escape-rm");
+        let root = base.join("root");
+        let other = base.join("elsewhere");
+        std::fs::create_dir_all(root.join("usr")).unwrap();
+        std::fs::create_dir_all(&other).unwrap();
+        std::fs::write(other.join("victim"), b"keep").unwrap();
+        std::os::unix::fs::symlink(&other, root.join("usr/lib64")).unwrap();
+
+        let mut tx = Tx::new(&root, base.join("bak"));
+        assert!(tx.remove(&root.join("usr/lib64/victim")).is_err());
+        assert_eq!(std::fs::read(other.join("victim")).unwrap(), b"keep");
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn install_refuses_directory_symlinked_outside_root() {
+        let base = tmpdir("escape-install");
+        let root = base.join("root");
+        let other = base.join("host-usr-lib");
+        std::fs::create_dir_all(root.join("usr")).unwrap();
+        std::fs::create_dir_all(&other).unwrap();
+        std::fs::write(other.join("ld-linux.so.2"), b"REAL LOADER").unwrap();
+        std::os::unix::fs::symlink(&other, root.join("usr/lib64")).unwrap();
+        let pkg = make_pkg(&base, "demo", "1.0", &[("/usr/lib64/ld-linux.so.2", b"new")]);
+
+        assert!(install_archive(&pkg, &root, false, true, None, "explicit").is_err());
+        assert_eq!(std::fs::read(other.join("ld-linux.so.2")).unwrap(), b"REAL LOADER");
         let _ = std::fs::remove_dir_all(&base);
     }
 }

@@ -5,7 +5,7 @@
 [package]
 name = "base-files"
 version = "0.4"
-rel = 1
+rel = 2
 arch = ["x86_64"]
 summary = "FHS skeleton, merged-usr symlinks and core /etc files"
 license = ["MIT"]
@@ -19,7 +19,7 @@ install = '''
 install -d -m755 %{pkgdir}/boot %{pkgdir}/dev %{pkgdir}/home %{pkgdir}/media %{pkgdir}/mnt %{pkgdir}/opt %{pkgdir}/proc %{pkgdir}/run %{pkgdir}/srv %{pkgdir}/sys
 install -d -m750 %{pkgdir}/root
 install -d -m1777 %{pkgdir}/tmp %{pkgdir}/var/tmp
-install -d -m755 %{pkgdir}/usr/bin %{pkgdir}/usr/include %{pkgdir}/usr/lib %{pkgdir}/usr/sbin %{pkgdir}/usr/share %{pkgdir}/usr/src
+install -d -m755 %{pkgdir}/usr/bin %{pkgdir}/usr/include %{pkgdir}/usr/lib %{pkgdir}/usr/lib64 %{pkgdir}/usr/sbin %{pkgdir}/usr/share %{pkgdir}/usr/src
 install -d -m755 %{pkgdir}/usr/local/bin %{pkgdir}/usr/local/etc %{pkgdir}/usr/local/include %{pkgdir}/usr/local/lib %{pkgdir}/usr/local/sbin %{pkgdir}/usr/local/share %{pkgdir}/usr/local/src
 install -d -m755 %{pkgdir}/var/cache %{pkgdir}/var/lib %{pkgdir}/var/local %{pkgdir}/var/lock %{pkgdir}/var/log %{pkgdir}/var/mail %{pkgdir}/var/opt %{pkgdir}/var/run %{pkgdir}/var/spool
 install -d -m755 %{pkgdir}/etc/opt %{pkgdir}/etc/profile.d %{pkgdir}/etc/skel %{pkgdir}/etc/ld.so.conf.d
@@ -28,6 +28,9 @@ install -d -m755 %{pkgdir}/etc/opt %{pkgdir}/etc/profile.d %{pkgdir}/etc/skel %{
 ln -s usr/bin %{pkgdir}/bin
 ln -s usr/bin %{pkgdir}/sbin
 ln -s usr/lib %{pkgdir}/lib
+# RELATIVE on purpose: an absolute link resolves against whichever root dpm runs
+# from (build chroot vs /sysroot) and makes installs write into the wrong tree
+ln -s usr/lib64 %{pkgdir}/lib64
 ln -s /proc/mounts %{pkgdir}/etc/mtab
 
 # users and groups (LFS 12.2 chapter 6 equivalent)
