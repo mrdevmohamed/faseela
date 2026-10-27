@@ -159,6 +159,9 @@ jobs:
       - name: Checksums
         id: sum
         run: |
+          # build-all.sh runs under sudo, so out/ and the ISO are root-owned;
+          # hand them to the runner user before writing the .sha256 next to it.
+          sudo chown -R "$(id -u):$(id -g)" out
           cd out
           sha256sum mydistro-x86_64.iso | tee mydistro-x86_64.iso.sha256
           echo "size=$(stat -c %s mydistro-x86_64.iso)" >> "$GITHUB_OUTPUT"
