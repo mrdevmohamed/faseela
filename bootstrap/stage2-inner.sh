@@ -76,19 +76,26 @@ fi
 echo "== [1/3] compiling DPM with seed rustc"
 if command -v cargo >/dev/null 2>&1; then
     cd "$REPO/pkgmgr"
-    cargo build --release
+    # Offline build from the vendored crates (scripts/vendor-dpm.sh). This is
+    # only the bootstrap dpm: step 3 rebuilds it from its recipe with the
+    # distro's own `rust` package.
+    if [ ! -f .cargo/config.toml ] || [ ! -d vendor ]; then
+        echo "stage2-inner: pkgmgr/vendor or pkgmgr/.cargo/config.toml is missing —" >&2
+        echo "stage2-inner: run scripts/vendor-dpm.sh and commit the result" >&2
+        exit 1
+    fi
+    cargo build --release --offline --locked
     install -Dm755 target/release/dpm /usr/bin/dpm
 else
-    # No cargo on PATH: stage 3 already removed the seed (a `--from-stage 2`
-    # world rebuild with the distro's own toolchain). DPM itself is not
-    # written in a language the distro rebuilds here (no rustc recipe yet),
-    # so the installed seed-built binary keeps serving — verify it works.
+    # No cargo on PATH: the seed is gone and the `rust` recipe is not
+    # installed yet (e.g. a partial `--from-stage 2` rerun). The installed
+    # /usr/bin/dpm keeps serving; step 3 then builds `rust` and rebuilds dpm.
     if [ ! -x /usr/bin/dpm ]; then
         echo "stage2-inner: no cargo (seed gone?) and no installed /usr/bin/dpm —" >&2
         echo "stage2-inner: run stage 1 first (unpack the seed), then re-run stage 2" >&2
         exit 1
     fi
-    echo "stage2-inner: seed rustc not present (stage 3 removed it) — keeping the installed /usr/bin/dpm"
+    echo "stage2-inner: no cargo on PATH — keeping the installed /usr/bin/dpm"
 fi
 
 echo "== [2/3] verifying DPM"

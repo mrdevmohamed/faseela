@@ -1,0 +1,34 @@
+# base recipe: Rust toolchain (rustc + cargo + std) from the official binary release.
+#
+# dpm itself is written in Rust, so the distro needs a Rust toolchain INSIDE
+# its dependency graph — otherwise `dpm` can only be built from the seed's
+# /opt/cargo, which the sandbox hides and stage 3 deletes.
+#
+# Trust boundary (honest): this is a prebuilt upstream binary, pinned by sha256,
+# not bootstrapped from source (rustc needs rustc). It replaces the seed's
+# rustup-installed copy with a pinned, db-owned one under /usr.
+#
+# After bumping `version`, re-pin:  python3 scripts/fill-sha256.py -r rust
+# (compare the result with https://static.rust-lang.org/dist/<tarball>.sha256).
+[package]
+name = "rust"
+version = "1.96.1"
+rel = 1
+arch = ["x86_64"]
+summary = "Rust compiler, cargo and standard library (official binary release)"
+license = ["MIT", "Apache-2.0"]
+source = "https://static.rust-lang.org/dist/rust-%{version}-x86_64-unknown-linux-gnu.tar.xz"
+sha256 = "d29ccb1559a177c4e72291f6e5f629de7fe8885e7521ca47802627544b121e95"
+source_dir = "rust-%{version}-x86_64-unknown-linux-gnu"
+
+[depends]
+build = []
+# rustc links through `cc` and needs libc at run time
+run = ["gcc", "glibc"]
+
+[build]
+# only the components dpm needs: no docs, clippy, rustfmt, rust-src, ...
+install = """
+./install.sh --prefix=/usr --destdir=%{pkgdir} --disable-ldconfig \\
+    --components=rustc,cargo,rust-std-x86_64-unknown-linux-gnu
+"""

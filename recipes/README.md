@@ -26,7 +26,9 @@ The `extra/` recipes are generated from a single data table — edit
 
 * `[depends].build` lists **recipe-level** build dependencies only.
   Tools provided by the bootstrap seed (bash, coreutils, sed, gawk,
-  python3, rustc, curl, ...) are implicit and must NOT be declared.
+  python3, curl, ...) are implicit and must NOT be declared. The exception
+  is the Rust toolchain: it is the `rust` recipe, so a recipe that needs
+  cargo (today only `dpm`) declares `build = ["rust"]`.
 * `source` URLs point at proven-reachable mirrors: `mirrors.kernel.org`
   for GNU software, upstream hosts elsewhere. Substitutions used where an
   upstream host is unreachable from the build farm (documented per recipe):
@@ -54,7 +56,7 @@ mpc → gcc → make → pkgconf
 expat → gdbm → gperf → coreutils → bash → tar → gzip → xz → zstd →
 grep → gawk → sed → flex → bison → bc → diffutils → findutils →
 gettext → texinfo → util-linux → perl → python → openssl → sqlite →
-libunistring → libidn2 → less → dpm (self-hosting)
+libunistring → libidn2 → less → rust → dpm (self-hosting)
 
 **system** — libpsl → curl → git → shadow → procps-ng → psmisc →
 e2fsprogs → eudev → kmod → libpipeline → groff → man-db → libmnl →

@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased — dpm builds with the distro's own Rust
+
+- Fixed the stage 2 failure `cargo: command not found` (exit 127) while
+  building the `dpm` recipe: the sandbox PATH is `/usr/bin:/usr/sbin` and the
+  seed's cargo lives in the hidden `/opt/cargo`.
+- New recipe `rust` (official binary release, sha256-pinned; rustc, cargo and
+  rust-std only). `dpm` now declares `build = ["rust"]`, so cargo is part of
+  the dependency graph instead of an implicit seed tool.
+- dpm's crates are vendored in `pkgmgr/vendor` (`scripts/vendor-dpm.sh`);
+  stage 2 step 1 and the `dpm` recipe build with `--offline --locked`.
+- `recipes/base/dpm` version corrected to 0.8.0 (it still said 0.7.0).
+
 ## 0.8.0 — dependency-aware commands (pkgmgr)
 
 The one thing 0.7 still made you do by hand was walk the dependency list:
