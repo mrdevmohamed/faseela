@@ -11,6 +11,9 @@
 - dpm's crates are vendored in `pkgmgr/vendor` (`scripts/vendor-dpm.sh`);
   stage 2 step 1 and the `dpm` recipe build with `--offline --locked`.
 - `recipes/base/dpm` version corrected to 0.8.0 (it still said 0.7.0).
+- `boot/busybox` (rel 2) installs only `/usr/bin/busybox`, no applet symlink
+  farm. The symlinks (`/bin/tar -> busybox`, ...) shadowed GNU tar in the build
+  root, and busybox's xz decoder rejected the large rust tarball.
 
 ## 0.8.0 — dependency-aware commands (pkgmgr)
 
