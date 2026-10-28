@@ -58,7 +58,7 @@
 - `dpm remove` and `dpm upgrade` in non-interactive scripts now need `--yes`.
   `scripts/smoke-v05.sh`, `scripts/smoke-v06.sh` and the bootstrap docs were
   updated; both smoke suites pass against the release build.
-- 137 tests (was 113): new units cover config precedence/discovery, the
+- 139 tests (was 113): new units cover config precedence/discovery, the
   suggestion ranking, the color policy, glob matching, date/size formatting
   and the confirmation contract; new e2e tests cover flags-after-subcommand,
   search/info/why/list, `build --install`, completions output and the

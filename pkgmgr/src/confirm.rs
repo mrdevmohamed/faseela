@@ -9,14 +9,27 @@
 //! * declining aborts with a non-zero exit and a clear message.
 
 use anyhow::{bail, Result};
-use std::io::{IsTerminal, Write};
+use std::io::{BufRead, IsTerminal, Write};
 
-/// Ask until the user answers. `yes=true` short-circuits.
+/// Ask the user. `yes=true` short-circuits.
 pub fn confirm(prompt: &str, yes: bool) -> Result<()> {
+    let interactive = std::io::stdin().is_terminal();
+    confirm_with(prompt, yes, interactive, &mut std::io::stdin().lock())
+}
+
+/// The policy itself, with the terminal check and the input injected so the
+/// tests do not depend on how `cargo test` was launched (a real terminal
+/// vs. CI / a pipe).
+fn confirm_with(
+    prompt: &str,
+    yes: bool,
+    interactive: bool,
+    input: &mut dyn BufRead,
+) -> Result<()> {
     if yes {
         return Ok(());
     }
-    if !std::io::stdin().is_terminal() {
+    if !interactive {
         bail!(
             "refusing to proceed non-interactively without --yes\n\
              (re-run with --yes, or answer the prompt in a terminal)"
@@ -26,7 +39,7 @@ pub fn confirm(prompt: &str, yes: bool) -> Result<()> {
     write!(err, "{prompt} [y/N] ")?;
     err.flush()?;
     let mut line = String::new();
-    std::io::stdin().read_line(&mut line)?;
+    input.read_line(&mut line)?;
     match line.trim().to_ascii_lowercase().as_str() {
         "y" | "yes" => Ok(()),
         _ => bail!("aborted by user — nothing was changed"),
@@ -37,16 +50,29 @@ pub fn confirm(prompt: &str, yes: bool) -> Result<()> {
 mod tests {
     use super::*;
 
+    fn ask(yes: bool, interactive: bool, typed: &str) -> Result<()> {
+        confirm_with("proceed?", yes, interactive, &mut typed.as_bytes())
+    }
+
     #[test]
     fn yes_flag_short_circuits() {
-        // even in a non-interactive test harness, --yes must not error
-        confirm("proceed?", true).unwrap();
+        // --yes wins even without a terminal and without any input
+        ask(true, false, "").unwrap();
     }
 
     #[test]
     fn non_interactive_without_yes_refuses() {
-        // cargo test stdin is not a tty, so this is the refusal path
-        let err = confirm("proceed?", false).unwrap_err();
+        let err = ask(false, false, "y\n").unwrap_err();
         assert!(err.to_string().contains("--yes"));
+    }
+
+    #[test]
+    fn interactive_accepts_y_and_yes_only() {
+        ask(false, true, "y\n").unwrap();
+        ask(false, true, " YES \n").unwrap();
+        for no in ["n\n", "\n", "", "yep\n"] {
+            let err = ask(false, true, no).unwrap_err();
+            assert!(err.to_string().contains("aborted"), "input {no:?}");
+        }
     }
 }
