@@ -20,3 +20,9 @@ bootstrap/seed/seed.tar*
 
 __pycache__/
 *.pyc
+
+# Vendored crates (scripts/vendor-dpm.sh) must be committed verbatim: cargo
+# verifies a checksum for every file, so a build/, out/ or *.log directory or
+# file dropped by the patterns above breaks the offline build. Keep LAST.
+!/pkgmgr/vendor/
+!/pkgmgr/vendor/**
