@@ -3,14 +3,14 @@
 [package]
 name = "gui-session"
 version = "0.1"
-rel = 1
+rel = 2
 arch = ["x86_64"]
-summary = "Wayland desktop session: seatd service, start-sway, default fonts/terminal"
+summary = "Wayland desktop session: seatd service, start-sway, default fonts/terminal/wallpaper"
 license = ["MIT"]
 
 [depends]
 build = ["shadow"]
-run = ["sway", "foot", "seatd", "mesa", "dejavu-fonts", "eudev", "runit", "shadow"]
+run = ["sway", "swaybg", "foot", "seatd", "mesa", "dejavu-fonts", "eudev", "runit", "shadow"]
 
 [build]
 install = '''
@@ -19,6 +19,49 @@ install -d -m755 %{pkgdir}/etc/sv/seatd %{pkgdir}/etc/runit/runsvdir/default
 printf '#!/bin/sh\nexec seatd -g seat\n' > %{pkgdir}/etc/sv/seatd/run
 chmod 755 %{pkgdir}/etc/sv/seatd/run
 ln -s /etc/sv/seatd %{pkgdir}/etc/runit/runsvdir/default/seatd
+
+# --- default wallpaper: sway's stock config has its own wallpaper line disabled;
+#     this drop-in is read through its `include /etc/sway/config.d/*` -----------
+install -d -m755 %{pkgdir}/usr/share/backgrounds/mydistro %{pkgdir}/etc/sway/config.d
+base64 -d > %{pkgdir}/usr/share/backgrounds/mydistro/default.png <<'PNG'
+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
+AAAASUVORK5CYII=
+PNG
+chmod 644 %{pkgdir}/usr/share/backgrounds/mydistro/default.png
+printf '# default wallpaper (needs swaybg)\noutput * bg /usr/share/backgrounds/mydistro/default.png fill\n' \
+    > %{pkgdir}/etc/sway/config.d/10-wallpaper.conf
 
 # --- start-sway: launch a Sway session from a text console ------------------
 install -d -m755 %{pkgdir}/usr/bin

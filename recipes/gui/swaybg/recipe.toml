@@ -1,0 +1,21 @@
+# gui recipe: swaybg — wallpaper tool for Wayland compositors (used by sway's `output * bg`)
+# sha256 is an all-zero placeholder until `python3 scripts/fill-sha256.py` pins it.
+[package]
+name = "swaybg"
+version = "1.2.1"
+rel = 1
+arch = ["x86_64"]
+summary = "Wallpaper tool for Wayland compositors"
+license = ["MIT"]
+source = "https://github.com/swaywm/swaybg/releases/download/v%{version}/swaybg-%{version}.tar.gz"
+sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+
+[depends]
+build = ["meson", "ninja", "pkgconf", "wayland", "wayland-protocols", "cairo"]
+run = ["wayland", "cairo"]
+
+[build]
+# gdk-pixbuf is not packaged: only PNG (via cairo) and solid colours are supported
+configure = "meson setup build --prefix=/usr --libdir=lib --buildtype=release -D man-pages=disabled -D gdk-pixbuf=disabled"
+compile = "ninja -C build"
+install = "DESTDIR=%{pkgdir} meson install -C build"

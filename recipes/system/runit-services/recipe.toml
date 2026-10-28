@@ -5,7 +5,7 @@
 [package]
 name = "runit-services"
 version = "0.4"
-rel = 4
+rel = 5
 arch = ["x86_64"]
 summary = "runit stage scripts and supervised service tree"
 license = ["MIT"]
@@ -81,7 +81,9 @@ chmod 755 %{pkgdir}/etc/runit/1 %{pkgdir}/etc/runit/2 %{pkgdir}/etc/runit/3 %{pk
 # --- supervised services ----------------------------------------------------
 for tty in 1 2 3 4; do
     install -d -m755 %{pkgdir}/etc/sv/getty-tty$tty
-    printf '#!/bin/sh\nexec agetty --noclear tty%s 38400 linux\n' "$tty" > %{pkgdir}/etc/sv/getty-tty$tty/run
+    # setsid: the getty must lead its own session so the tty becomes its controlling
+    # terminal (else bash prints "cannot set terminal process group ... no job control")
+    printf '#!/bin/sh\nexec setsid -w agetty --noclear tty%s 38400 linux\n' "$tty" > %{pkgdir}/etc/sv/getty-tty$tty/run
     chmod 755 %{pkgdir}/etc/sv/getty-tty$tty/run
 done
 
