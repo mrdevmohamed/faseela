@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.8.0 — dependency-aware commands (pkgmgr)
+
+The one thing 0.7 still made you do by hand was walk the dependency list:
+`dpm deps X`, then build and install every entry yourself, in order.
+
+- **`dpm install <name>...`** builds and installs the packages *and every
+  missing dependency* (build + run, transitive) from the recipes. It prints
+  the plan, asks (`--yes` for scripts), shows `[n/total]` progress and a total
+  time, locks the db around each install only, and after a mid-plan failure
+  says how many packages were installed and that re-running continues where it
+  stopped. Named packages are recorded `explicit`, pulled-in ones `dependency`.
+  `-n/--dry-run` shows the plan only; `--no-deps` skips dependencies.
+  `dpm install <archive>` keeps working unchanged (any argument ending in
+  `.dpm.tar.zst` or containing `/` is an archive; several may be given).
+- **`dpm outdated`** / **`dpm update [name...]`** — compare installed versions
+  with the recipes; update rebuilds the outdated ones in dependency order and
+  keeps each package's install reason.
+- **`dpm autoremove`** (`-n`, `-y`, `--build-deps`) — removes dependency
+  packages nothing needs, dependents first. Build tools of kept packages stay
+  unless `--build-deps` is given.
+- **`dpm list -e` / `-d`** — only explicitly installed packages / only
+  dependencies.
+- Shell completions know the new commands; `install` completes package names
+  as well as files.
+- Internals: the planning logic lives in `src/plan.rs` as pure functions with
+  unit tests; `prepare_build` is shared by `build`, `install <name>` and
+  `update`.
+
 ## 0.7.0 — DPM UX overhaul (pkgmgr)
 
 ### Stop repeating yourself

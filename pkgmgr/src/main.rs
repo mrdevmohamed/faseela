@@ -14,6 +14,7 @@ mod fetch;
 mod install;
 mod lint;
 mod lock;
+mod plan;
 mod profile;
 mod recipe;
 mod repo;
@@ -44,7 +45,11 @@ use config::{Config, Overrides};
 Examples:
   dpm search zip                        find recipes matching \"zip\"
   dpm info zstd                         full package details
-  dpm build --install curl              build and install in one step
+  dpm install curl                      build curl AND its missing dependencies
+  dpm install -n curl                   show that plan, change nothing
+  dpm outdated / dpm update             see and apply newer recipe versions
+  dpm autoremove                        drop dependencies nothing needs
+  dpm build --install curl              build and install ONE recipe
   dpm install --root /mnt/root a.dpm.tar.zst
   dpm why --tree curl                   who needs curl (installed + recipe tree)"
 )]
@@ -123,18 +128,49 @@ enum Cmd {
         force: bool,
     },
 
-    /// Install a built .dpm.tar.zst archive into --root
+    /// Install packages by name (builds them and every missing dependency
+    /// from the recipes, after showing the plan) or install built
+    /// .dpm.tar.zst archives
     Install {
-        file: PathBuf,
-        /// Overwrite files owned by other packages
+        /// package names (`dpm install curl`) or archive paths
+        /// (`dpm install build/out/curl-8.9-1.dpm.tar.zst`)
+        #[arg(required = true)]
+        targets: Vec<String>,
+        #[command(flatten)]
+        flags: PlanFlags,
+        /// By name: build only the named packages, skip their dependencies
         #[arg(long)]
-        force: bool,
-        /// Accept packages without a signature (rejected when trust keys exist)
-        #[arg(long)]
-        allow_unsigned: bool,
-        /// Verify the package signature against this public key instead of the trust store
+        no_deps: bool,
+        /// Archives only: verify the signature against this public key
+        /// instead of the trust store
         #[arg(long)]
         key: Option<PathBuf>,
+    },
+
+    /// List installed packages whose recipe has a newer version
+    Outdated,
+
+    /// Rebuild and reinstall outdated packages from the recipes (all of
+    /// them, or just the names given); shows the plan first
+    Update {
+        /// only update these packages (default: every outdated one)
+        names: Vec<String>,
+        #[command(flatten)]
+        flags: PlanFlags,
+    },
+
+    /// Remove dependency packages that nothing needs any more
+    Autoremove {
+        /// show what would be removed, change nothing
+        #[arg(short = 'n', long)]
+        dry_run: bool,
+        /// do not ask for confirmation (non-interactive runs REQUIRE this)
+        #[arg(short = 'y', long)]
+        yes: bool,
+        /// also remove build-only dependencies (compilers, -dev libraries);
+        /// by default those are kept because the next rebuild needs them
+        #[arg(long)]
+        build_deps: bool,
     },
 
     /// Search the recipes tree by name or summary (substring, or --glob)
@@ -188,6 +224,12 @@ enum Cmd {
     Query {
         /// only show packages whose name contains this (case-insensitive)
         pattern: Option<String>,
+        /// only packages you installed yourself (not pulled in as dependencies)
+        #[arg(short = 'e', long, conflicts_with = "deps")]
+        explicit: bool,
+        /// only packages that were installed as dependencies
+        #[arg(short = 'd', long)]
+        deps: bool,
     },
 
     /// List files owned by an installed package
@@ -305,6 +347,33 @@ enum Cmd {
     CompletePkgs,
 }
 
+/// Flags shared by the commands that build and install by name.
+#[derive(clap::Args, Clone)]
+struct PlanFlags {
+    /// Overwrite files owned by other packages
+    #[arg(long)]
+    force: bool,
+    /// Accept packages without a signature (rejected when trust keys exist)
+    #[arg(long)]
+    allow_unsigned: bool,
+    /// Do not ask for confirmation (non-interactive runs REQUIRE this)
+    #[arg(short = 'y', long)]
+    yes: bool,
+    /// Show the plan and stop: nothing is built or installed
+    #[arg(short = 'n', long)]
+    dry_run: bool,
+    /// Skip a build whose archive already exists with identical inputs
+    /// (needs --isolation env or higher, see `dpm build --use-cache`)
+    #[arg(long)]
+    use_cache: bool,
+    /// Isolation level for the builds: none | env | sandbox | closure
+    #[arg(long)]
+    isolation: Option<String>,
+    /// Continue when the host kernel refuses an isolation feature
+    #[arg(long)]
+    allow_degraded: bool,
+}
+
 #[derive(Subcommand)]
 enum ServiceCmd {
     /// List services in /etc/sv and their enabled state
@@ -393,11 +462,23 @@ fn print_error(e: anyhow::Error) {
 fn lock_mode(cmd: &Cmd) -> Option<lock::Mode> {
     use lock::Mode::{Exclusive, Shared};
     match cmd {
-        Cmd::Install { .. } | Cmd::Remove { .. } | Cmd::Rollback { .. } => Some(Exclusive),
+        // installing archives holds the lock for the whole command; installing
+        // by name builds first, so (like `build --install`) it locks around
+        // each install step only
+        Cmd::Install { targets, .. } => {
+            if targets.iter().all(|t| is_archive_arg(t)) {
+                Some(Exclusive)
+            } else {
+                None
+            }
+        }
+        Cmd::Remove { .. } | Cmd::Rollback { .. } | Cmd::Autoremove { .. } => Some(Exclusive),
         Cmd::Upgrade { dry_run, .. } => Some(if *dry_run { Shared } else { Exclusive }),
-        // `build --install` locks itself around the install step only
-        // (holding the db lock through a full build would starve readers)
-        Cmd::Build { .. } => None,
+        // `build --install` / `update` lock themselves around the install
+        // step only (holding the db lock through a full build would starve
+        // readers)
+        Cmd::Build { .. } | Cmd::Update { .. } => None,
+        Cmd::Outdated => Some(Shared),
         Cmd::Query { .. }
         | Cmd::Info { .. }
         | Cmd::Why { .. }
@@ -462,8 +543,13 @@ fn run(ctx: &Ctx, cmd: Cmd) -> Result<()> {
                 force,
             )
         }
-        Cmd::Install { file, force, allow_unsigned, key } => {
-            cmd_install(ctx, &file, force, allow_unsigned, key)
+        Cmd::Install { targets, flags, no_deps, key } => {
+            cmd_install(ctx, &targets, &flags, no_deps, key)
+        }
+        Cmd::Outdated => cmd_outdated(ctx),
+        Cmd::Update { names, flags } => cmd_update(ctx, &names, &flags),
+        Cmd::Autoremove { dry_run, yes, build_deps } => {
+            cmd_autoremove(ctx, dry_run, yes, build_deps)
         }
         Cmd::Search { term, glob } => cmd_search(ctx, &term, glob),
         Cmd::Info { name } => cmd_info(ctx, &name),
@@ -471,7 +557,9 @@ fn run(ctx: &Ctx, cmd: Cmd) -> Result<()> {
         Cmd::Deps { name } => cmd_deps(ctx, &name),
         Cmd::DepsAll { include_installed } => cmd_deps_all(ctx, include_installed),
         Cmd::Remove { name, force, yes } => cmd_remove(ctx, &name, force, yes),
-        Cmd::Query { pattern } => cmd_query(ctx, pattern.as_deref()),
+        Cmd::Query { pattern, explicit, deps } => {
+            cmd_query(ctx, pattern.as_deref(), explicit, deps)
+        }
         Cmd::Files { name } => cmd_files(ctx, &name),
         Cmd::Owner { file } => cmd_owner(ctx, &file),
         Cmd::RepoCreate { dir, out, sign, key } => {
@@ -629,6 +717,67 @@ fn cmd_build(
     install_force: bool,
 ) -> Result<()> {
     let rec = recipe::load_by_name(&ctx.recipes, name)?;
+    let opts = prepare_build(
+        ctx,
+        &rec,
+        check,
+        isolation,
+        allow_network,
+        allow_degraded,
+        timeout,
+        use_cache,
+    )?;
+    if rebuild_check {
+        build::rebuild_check(&rec, &opts)?;
+    }
+    let archive = if install_after {
+        // --rebuild-check already produced the archive; otherwise ALWAYS
+        // build — an archive left in out/ by an earlier run carries the same
+        // name-version-rel even when the recipe or patches changed since.
+        let expected = opts.outdir.join(format!("{}.dpm.tar.zst", rec.id()));
+        if rebuild_check && expected.exists() {
+            expected
+        } else {
+            build::build(&rec, &opts)?.archive
+        }
+    } else {
+        build::build(&rec, &opts)?;
+        return Ok(());
+    };
+
+    // ---- --install --------------------------------------------------------
+    let pal = Palette::auto(Stream::Stdout);
+    println!(
+        "dpm: installing {} into {}",
+        pal.ver(&archive.display().to_string()),
+        ctx.root.display()
+    );
+    // the library functions never lock; this command-level lock covers just
+    // the install step (upgrade calls install_archive the same way)
+    let _lock = lock::acquire(&ctx.root, lock::Mode::Exclusive)?;
+    install::install_archive(&archive, &ctx.root, install_force, false, None, "explicit")?;
+    Ok(())
+}
+
+/// `dpm install` takes archive paths *or* package names. Something that
+/// ends in `.dpm.tar.zst` or contains a `/` is a file; a bare word is a name.
+fn is_archive_arg(arg: &str) -> bool {
+    arg.ends_with(".dpm.tar.zst") || arg.contains('/')
+}
+
+/// Everything `build` derives from the profile and flags: jobs, flags env,
+/// isolation level, timeout — shared by `build`, `install <name>` and `update`.
+#[allow(clippy::too_many_arguments)]
+fn prepare_build(
+    ctx: &Ctx,
+    rec: &recipe::Recipe,
+    check: build::CheckMode,
+    isolation: Option<&str>,
+    allow_network: bool,
+    allow_degraded: bool,
+    timeout: Option<u64>,
+    use_cache: bool,
+) -> Result<build::BuildOpts> {
     let arch = rec.arch();
     let profile = profile::Profile::load(&ctx.profiles, &arch)?;
     let env = profile.as_ref().map(|p| p.env()).unwrap_or_default();
@@ -662,7 +811,7 @@ fn cmd_build(
         .collect::<Vec<_>>()
         .join(" ");
 
-    let opts = build::BuildOpts {
+    Ok(build::BuildOpts {
         jobs,
         builddir: ctx.builddir.clone(),
         outdir: ctx.builddir.join("out"),
@@ -677,40 +826,222 @@ fn cmd_build(
         allow_unsigned: false,
         profile_flags,
         use_cache,
-    };
-    if rebuild_check {
-        build::rebuild_check(&rec, &opts)?;
-    }
-    let archive = if install_after {
-        // --rebuild-check already produced the archive; otherwise ALWAYS
-        // build — an archive left in out/ by an earlier run carries the same
-        // name-version-rel even when the recipe or patches changed since.
-        let expected = opts.outdir.join(format!("{}.dpm.tar.zst", rec.id()));
-        if rebuild_check && expected.exists() {
-            expected
-        } else {
-            build::build(&rec, &opts)?.archive
-        }
-    } else {
-        build::build(&rec, &opts)?;
-        return Ok(());
-    };
-
-    // ---- --install --------------------------------------------------------
-    let pal = Palette::auto(Stream::Stdout);
-    println!(
-        "dpm: installing {} into {}",
-        pal.ver(&archive.display().to_string()),
-        ctx.root.display()
-    );
-    // the library functions never lock; this command-level lock covers just
-    // the install step (upgrade calls install_archive the same way)
-    let _lock = lock::acquire(&ctx.root, lock::Mode::Exclusive)?;
-    install::install_archive(&archive, &ctx.root, install_force, false, None, "explicit")?;
-    Ok(())
+    })
 }
 
 fn cmd_install(
+    ctx: &Ctx,
+    targets: &[String],
+    flags: &PlanFlags,
+    no_deps: bool,
+    key: Option<PathBuf>,
+) -> Result<()> {
+    let archives = targets.iter().filter(|t| is_archive_arg(t)).count();
+    if archives == targets.len() {
+        for t in targets {
+            install_archive_file(ctx, Path::new(t), flags.force, flags.allow_unsigned, key.clone())?;
+        }
+        return Ok(());
+    }
+    if archives > 0 {
+        bail!("do not mix package names and archive files in one `dpm install`");
+    }
+    if key.is_some() {
+        bail!("--key only applies to archive files (package names are built locally)");
+    }
+    let known = recipe::load_all(&ctx.recipes)?;
+    let installed = installed_map(ctx)?;
+    let plan = plan::install_plan(targets, &installed, &known, plan::Why::Explicit, !no_deps)?;
+    for name in &plan.up_to_date {
+        println!("dpm: {name} is already installed and up to date");
+    }
+    run_plan(ctx, &plan, flags)
+}
+
+/// The installed packages by name, read under a brief shared lock.
+fn installed_map(ctx: &Ctx) -> Result<std::collections::HashMap<String, db::Entry>> {
+    let _lock = lock::acquire(&ctx.root, lock::Mode::Shared)?;
+    Ok(db::Db::new(&ctx.root)
+        .installed()?
+        .into_iter()
+        .map(|e| (e.name.clone(), e))
+        .collect())
+}
+
+/// "3m05s" / "1h02m" / "12s"
+fn format_duration(secs: u64) -> String {
+    match secs {
+        0..=59 => format!("{secs}s"),
+        60..=3599 => format!("{}m{:02}s", secs / 60, secs % 60),
+        _ => format!("{}h{:02}m", secs / 3600, (secs % 3600) / 60),
+    }
+}
+
+/// Show the plan, ask, then build and install every item in order —
+/// dependencies first, one `[n/total]` line per step.
+fn run_plan(ctx: &Ctx, plan: &plan::Plan, flags: &PlanFlags) -> Result<()> {
+    let total = plan.items.len();
+    if total == 0 {
+        println!("dpm: nothing to do");
+        return Ok(());
+    }
+    let pal = Palette::auto(Stream::Stdout);
+    println!(
+        "dpm: {total} package(s) to build and install into {}:",
+        ctx.root.display()
+    );
+    for (i, it) in plan.items.iter().enumerate() {
+        let replaces = match &it.replaces {
+            Some(old) => format!("  replaces {old}"),
+            None => String::new(),
+        };
+        println!(
+            "  {:>3}. {} {}  {}{}",
+            i + 1,
+            pal.name(&format!("{:<22}", it.rec.package.name)),
+            pal.ver(&format!(
+                "{:<12}",
+                format!("{}-{}", it.rec.package.version, it.rec.package.rel)
+            )),
+            pal.dim(it.why.label()),
+            pal.dim(&replaces),
+        );
+    }
+    if flags.dry_run {
+        println!("dpm: dry run — nothing was built or installed");
+        return Ok(());
+    }
+    confirm::confirm(&format!("dpm: build and install {total} package(s)?"), flags.yes)?;
+
+    let started = std::time::Instant::now();
+    for (i, it) in plan.items.iter().enumerate() {
+        let n = i + 1;
+        let id = it.rec.id();
+        let step = || -> Result<()> {
+            println!("dpm: [{n}/{total}] building {id}");
+            let opts = prepare_build(
+                ctx,
+                &it.rec,
+                build::CheckMode::Off,
+                flags.isolation.as_deref(),
+                false,
+                flags.allow_degraded,
+                None,
+                flags.use_cache,
+            )?;
+            let archive = build::build(&it.rec, &opts)
+                .with_context(|| format!("[{n}/{total}] build of {id} failed"))?
+                .archive;
+            println!("dpm: [{n}/{total}] installing {id}");
+            // the library functions never lock; hold the db lock for this one
+            // install only, never through a build
+            let _lock = lock::acquire(&ctx.root, lock::Mode::Exclusive)?;
+            install::install_archive(
+                &archive,
+                &ctx.root,
+                flags.force,
+                flags.allow_unsigned,
+                None,
+                it.why.db_reason(),
+            )
+            .with_context(|| format!("[{n}/{total}] install of {id} failed"))?;
+            Ok(())
+        };
+        if let Err(e) = step() {
+            if i > 0 {
+                eprintln!(
+                    "dpm: {i} of {total} package(s) were installed before this failure — \
+                     re-run the same command to continue (installed packages are skipped)"
+                );
+            }
+            return Err(e);
+        }
+    }
+    println!(
+        "dpm: done — {total} package(s) installed in {}",
+        format_duration(started.elapsed().as_secs())
+    );
+    Ok(())
+}
+
+fn cmd_outdated(ctx: &Ctx) -> Result<()> {
+    let known = recipe::load_all(&ctx.recipes)?;
+    let installed = db::Db::new(&ctx.root).installed()?;
+    let list = plan::outdated(&installed, &known);
+    if list.is_empty() {
+        println!("dpm: everything is up to date ({} installed)", installed.len());
+        return Ok(());
+    }
+    let pal = Palette::auto(Stream::Stdout);
+    for (e, r) in &list {
+        println!(
+            "{} {} -> {}",
+            pal.name(&format!("{:<24}", e.name)),
+            pal.dim(&format!("{:<14}", format!("{}-{}", e.version, e.rel))),
+            pal.ver(&format!("{}-{}", r.package.version, r.package.rel)),
+        );
+    }
+    println!("dpm: {} package(s) can be updated — run `dpm update`", list.len());
+    Ok(())
+}
+
+fn cmd_update(ctx: &Ctx, names: &[String], flags: &PlanFlags) -> Result<()> {
+    let known = recipe::load_all(&ctx.recipes)?;
+    let installed = installed_map(ctx)?;
+    for n in names {
+        if !installed.contains_key(n) {
+            bail!("`{n}` is not installed (use `dpm install {n}`)");
+        }
+    }
+    let list: Vec<db::Entry> = installed.values().cloned().collect();
+    let targets: Vec<String> = plan::outdated(&list, &known)
+        .into_iter()
+        .map(|(e, _)| e.name.clone())
+        .filter(|n| names.is_empty() || names.contains(n))
+        .collect();
+    if targets.is_empty() {
+        println!("dpm: everything is up to date");
+        return Ok(());
+    }
+    let plan = plan::install_plan(&targets, &installed, &known, plan::Why::Update, true)?;
+    run_plan(ctx, &plan, flags)
+}
+
+fn cmd_autoremove(ctx: &Ctx, dry_run: bool, yes: bool, build_deps: bool) -> Result<()> {
+    let known = recipe::load_all(&ctx.recipes)?;
+    if known.is_empty() && !build_deps {
+        bail!(
+            "no recipes under {} — cannot tell which dependencies are build tools to keep \
+             (point --recipes at the tree, or pass --build-deps to ignore build tools)",
+            ctx.recipes.display()
+        );
+    }
+    let installed = db::Db::new(&ctx.root).installed()?;
+    let orphans = plan::orphans(&installed, &known, build_deps);
+    if orphans.is_empty() {
+        println!("dpm: nothing to remove");
+        return Ok(());
+    }
+    let order = plan::removal_order(&orphans, &installed);
+    let pal = Palette::auto(Stream::Stdout);
+    println!("dpm: {} unneeded dependency package(s):", order.len());
+    for n in &order {
+        println!("  {}", pal.name(n));
+    }
+    if dry_run {
+        println!("dpm: dry run — nothing was removed");
+        return Ok(());
+    }
+    confirm::confirm(&format!("dpm: remove {} package(s)?", order.len()), yes)?;
+    for (i, n) in order.iter().enumerate() {
+        println!("dpm: [{}/{}] removing {n}", i + 1, order.len());
+        install::remove_with(n, &ctx.root, false)?;
+    }
+    println!("dpm: done — {} package(s) removed", order.len());
+    Ok(())
+}
+
+fn install_archive_file(
     ctx: &Ctx,
     file: &Path,
     force: bool,
@@ -1026,9 +1357,14 @@ fn cmd_remove(ctx: &Ctx, name: &str, force: bool, yes: bool) -> Result<()> {
     install::remove_with(name, &ctx.root, force)
 }
 
-fn cmd_query(ctx: &Ctx, pattern: Option<&str>) -> Result<()> {
+fn cmd_query(ctx: &Ctx, pattern: Option<&str>, explicit: bool, deps: bool) -> Result<()> {
     let db = db::Db::new(&ctx.root);
-    let pkgs = db.installed()?;
+    let mut pkgs = db.installed()?;
+    if explicit {
+        pkgs.retain(|p| p.reason != "dependency");
+    } else if deps {
+        pkgs.retain(|p| p.reason == "dependency");
+    }
     let pal = Palette::auto(Stream::Stdout);
     if pkgs.is_empty() {
         println!("dpm: no packages installed in {}", ctx.root.display());
@@ -1224,16 +1560,18 @@ const COMPLETION_BASH: &str = r#"# bash completion for dpm (generated by `dpm co
 _dpm() {
     local cur prev commands pkgs
     cur="${COMP_WORDS[COMP_CWORD]}"
-    commands="build install deps deps-all search info why query list remove files owner repo-create keygen sign verify trust upgrade rollback service config init completions"
+    commands="build install outdated update autoremove deps deps-all search info why query list remove files owner repo-create keygen sign verify trust upgrade rollback service config init completions"
     pkgs="$(dpm __complete_pkgs 2>/dev/null)"
     if [ "$COMP_CWORD" -eq 1 ]; then
         COMPREPLY=( $(compgen -W "$commands" -- "$cur") )
         return 0
     fi
     case "${COMP_WORDS[1]}" in
-        build|deps|deps-all|info|files|remove|rollback|why)
+        build|deps|deps-all|info|files|remove|rollback|why|update)
             COMPREPLY=( $(compgen -W "$pkgs" -- "$cur") ) ;;
-        install|sign|verify|trust|repo-create)
+        install)
+            COMPREPLY=( $(compgen -W "$pkgs" -- "$cur") $(compgen -f -- "$cur") ) ;;
+        sign|verify|trust|repo-create)
             COMPREPLY=( $(compgen -f -- "$cur") ) ;;
         service)
             if [ "$COMP_CWORD" -eq 2 ]; then
@@ -1259,7 +1597,10 @@ _dpm() {
     local -a cmds
     cmds=(
         'build:Build a package from its recipe'
-        'install:Install a built archive into --root'
+        'install:Install packages by name (with dependencies) or from archives'
+        'outdated:List installed packages with a newer recipe'
+        'update:Rebuild and reinstall outdated packages'
+        'autoremove:Remove dependencies nothing needs any more'
         'search:Search the recipes tree by name or summary'
         'info:Show everything known about a package'
         'why:Show which packages depend on a package'
@@ -1288,8 +1629,11 @@ _dpm() {
         _describe -t commands 'dpm command' cmds
     else
         case $words[2] in
-            build|deps|deps-all|info|files|remove|rollback|why|query|list)
+            build|deps|deps-all|info|files|remove|rollback|why|query|list|update)
                 _describe -t packages 'package' pkgs ;;
+            install)
+                _describe -t packages 'package' pkgs
+                _files ;;
             service)
                 if (( CURRENT == 3 )); then
                     _values 'action' list enable disable status
@@ -1310,7 +1654,10 @@ _dpm "$@"
 const COMPLETION_FISH: &str = r#"# fish completion for dpm (generated by `dpm completions fish`)
 complete -c dpm -f
 complete -c dpm -n '__fish_use_subcommand' -a 'build' -d 'Build a package from its recipe'
-complete -c dpm -n '__fish_use_subcommand' -a 'install' -d 'Install a built archive'
+complete -c dpm -n '__fish_use_subcommand' -a 'install' -d 'Install packages by name or archive'
+complete -c dpm -n '__fish_use_subcommand' -a 'outdated' -d 'List packages with a newer recipe'
+complete -c dpm -n '__fish_use_subcommand' -a 'update' -d 'Rebuild and reinstall outdated packages'
+complete -c dpm -n '__fish_use_subcommand' -a 'autoremove' -d 'Remove unneeded dependencies'
 complete -c dpm -n '__fish_use_subcommand' -a 'search' -d 'Search the recipes tree'
 complete -c dpm -n '__fish_use_subcommand' -a 'info' -d 'Show package details'
 complete -c dpm -n '__fish_use_subcommand' -a 'why' -d 'Show reverse dependencies'
@@ -1320,7 +1667,7 @@ complete -c dpm -n '__fish_use_subcommand' -a 'query list' -d 'List installed pa
 complete -c dpm -n '__fish_use_subcommand' -a 'remove' -d 'Remove an installed package'
 complete -c dpm -n '__fish_use_subcommand' -a 'files owner repo-create keygen sign verify trust upgrade rollback service config init completions'
 # package names, completed dynamically
-set -l pkg_cmds build deps deps-all info files remove rollback why query list
+set -l pkg_cmds build install update deps deps-all info files remove rollback why query list
 complete -c dpm -n "__fish_seen_subcommand_from $pkg_cmds" -a "(dpm __complete_pkgs 2>/dev/null)"
 # service actions
 complete -c dpm -n '__fish_seen_subcommand_from service; and not __fish_seen_subcommand_from list enable disable status' -a 'list enable disable status'
@@ -1363,6 +1710,23 @@ mod tests {
         assert_eq!(format_date(1_700_000_000), "2023-11-14");
         assert_eq!(format_date(1_704_067_200), "2024-01-01");
         assert_eq!(format_date(951_782_400), "2000-02-29"); // leap day
+    }
+
+    #[test]
+    fn duration_formatting() {
+        assert_eq!(format_duration(0), "0s");
+        assert_eq!(format_duration(59), "59s");
+        assert_eq!(format_duration(185), "3m05s");
+        assert_eq!(format_duration(3720), "1h02m");
+    }
+
+    #[test]
+    fn archive_vs_name_arguments() {
+        assert!(is_archive_arg("build/out/a-1-1.dpm.tar.zst"));
+        assert!(is_archive_arg("./a"));
+        assert!(is_archive_arg("a-1-1.dpm.tar.zst"));
+        assert!(!is_archive_arg("gzip"));
+        assert!(!is_archive_arg("libstdc++"));
     }
 
     #[test]

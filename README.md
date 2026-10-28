@@ -50,13 +50,18 @@ Commands (global flags work anywhere on the line — see the config section
 below for making them unnecessary):
 
 ```
-dpm build --install <name>                     # build a recipe AND install it (one step)
-dpm install <archive.dpm.tar.zst>              # install an archive into --root
+dpm install <name>...                          # build + install packages AND all missing dependencies
+dpm install -n <name>                          # show that plan, change nothing (--dry-run)
+dpm outdated                                   # installed packages whose recipe is newer
+dpm update [name...]                           # rebuild + reinstall the outdated ones
+dpm autoremove                                 # remove dependency packages nothing needs
+dpm build --install <name>                     # build ONE recipe and install it (no dependency handling)
+dpm install <archive.dpm.tar.zst>              # install a built archive into --root
 dpm search <term>                              # find recipes by name/summary (--glob for patterns)
 dpm info <name>                                # everything known about a package
 dpm why <name>                                 # who depends on it (--tree also scans recipes)
 dpm deps <name>                                # show dependency order
-dpm list [pattern]                             # installed packages, name-filtered (alias: query)
+dpm list [pattern] [-e|-d]                    # installed packages; -e explicit only, -d dependencies only
 dpm files <name>                               # files owned by package
 dpm owner /usr/bin/foo                         # which package owns file
 dpm remove --yes <name>                        # remove package (--yes skips the confirmation)
@@ -71,6 +76,45 @@ dpm completions bash|zsh|fish                  # shell completion scripts
 
 Any command accepts `--root` so everything can be tested safely against a
 throwaway directory instead of `/`.
+
+### Installing by name
+
+```
+dpm install curl          # shows the plan, asks, then builds + installs
+```
+
+`dpm install <name>` resolves `depends.build` **and** `depends.run`
+transitively, skips whatever is already installed, and prints the order
+before touching anything:
+
+```
+dpm: 3 package(s) to build and install into /:
+    1. zlib                   1.3.1-1       dependency
+    2. openssl                3.3.1-1       dependency
+    3. curl                   8.9.1-1       explicit
+```
+
+Then each step is built and installed in turn (`[2/3] building ...`), the db
+lock is held only around each install, and a failure in the middle says how
+many packages already landed — re-running the same command continues, because
+installed packages are skipped. Packages you named are recorded as `explicit`,
+everything pulled in as `dependency`.
+
+* `-n/--dry-run` prints the plan and stops; `-y/--yes` is required when stdin
+  is not a terminal (same contract as `remove` and `upgrade`)
+* `--no-deps` builds only the named packages
+* `--isolation`, `--use-cache`, `--allow-degraded`, `--force`,
+  `--allow-unsigned` work as for `dpm build` / `dpm install <archive>`
+* a bare word is a package name; anything ending in `.dpm.tar.zst` or
+  containing a `/` is an archive path (the two cannot be mixed in one call)
+
+`dpm outdated` lists installed packages whose recipe has a newer
+`version-rel`; `dpm update` plans and rebuilds exactly those (plus any missing
+dependency they gained), keeping each package's explicit/dependency reason.
+`dpm autoremove` removes `dependency` packages that no explicit package needs
+any more, dependents first. Build-only dependencies of packages you keep
+(compilers, headers) are **kept** unless you pass `--build-deps`, since the next
+rebuild needs them.
 
 ### Configuration (dpm.toml)
 
