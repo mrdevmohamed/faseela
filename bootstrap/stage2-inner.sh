@@ -57,11 +57,14 @@ DPM_BIN="${DPM_BIN:-/usr/bin/dpm}"
 # nogroup; base-files' own group file lands as /etc/group.dpm-new there).
 # util-linux's install runs `chgrp tty .../wall`, which fails with
 # "invalid group: 'tty'". Make sure the groups that install steps chgrp to
-# exist. Idempotent; same gid as base-files.
-for g in tty:5; do
-    name=${g%%:*}; gid=${g##*:}
+# exist. Idempotent; same gid as base-files. (Add more `name:gid` pairs
+# here if a future install step chgrps to another group.)
+while IFS=: read -r name gid; do
+    [ -n "$name" ] || continue
     grep -q "^$name:" /etc/group || echo "$name:x:$gid:" >> /etc/group
-done
+done <<'EOF'
+tty:5
+EOF
 
 # Two-root layout: FINAL_ROOT (default /sysroot, set by stage2.sh) is the clean
 # system every package is installed into IN ADDITION to the build root "/".

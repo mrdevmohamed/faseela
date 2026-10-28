@@ -537,25 +537,35 @@ pub fn build(rec: &Recipe, opts: &BuildOpts) -> Result<BuildResult> {
         opts.isolation.as_str(),
         sde
     );
+    // write to a temp name and rename, so an interrupted build can't leave
+    // a truncated archive in out/ that a stale `.buildid` sidecar would
+    // still bless as a cache hit; the old sidecar is dropped up front
+    let sidecar = buildid_sidecar(&out_path);
+    let _ = std::fs::remove_file(&sidecar);
+    let mut out_tmp = out_path.clone().into_os_string();
+    out_tmp.push(".part");
+    let out_tmp = PathBuf::from(out_tmp);
     if opts.isolation >= Isolation::Env {
         archive::create_normalized(
             &pkg,
             &pkginfo,
             Some(&hooks),
-            &out_path,
+            &out_tmp,
             &archive::Normalize { source_date_epoch: sde },
         )?;
+        std::fs::rename(&out_tmp, &out_path)?;
         // the cache-hit sidecar (--use-cache): the build id this archive
-        // was produced from, next to the archive itself
+        // was produced from, next to the archive itself — only written
+        // once the archive is complete
         let bid = pkginfo
             .split("build_id = ")
             .nth(1)
             .and_then(|s| s.lines().next())
             .unwrap_or("");
-        let sidecar = buildid_sidecar(&out_path);
         let _ = std::fs::write(&sidecar, format!("{bid}\n"));
     } else {
-        archive::create_with_hooks(&pkg, &pkginfo, Some(&hooks), &out_path)?;
+        archive::create_with_hooks(&pkg, &pkginfo, Some(&hooks), &out_tmp)?;
+        std::fs::rename(&out_tmp, &out_path)?;
     }
 
     // v1/v2 assembly cleanup: the extract-per-build root is per-build

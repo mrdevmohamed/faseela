@@ -124,36 +124,6 @@ pub fn download_opt(url: &str, dest: &Path) -> Result<bool> {
     }
 }
 
-/// The URL itself, then equivalent mirrors for well-known GNU hosts, so one
-/// unreachable mirror does not fail the whole build. Content is always
-/// checked against the recipe's pinned sha256, so mirrors need no trust.
-pub fn candidate_urls(url: &str) -> Vec<String> {
-    let mut v = vec![url.to_string()];
-    for prefix in [
-        "https://mirrors.kernel.org/gnu/",
-        "https://ftp.gnu.org/gnu/",
-        "https://ftpmirror.gnu.org/",
-        "https://mirror.us-midwest-1.nexcess.net/gnu/",
-        "https://mirrors.ocf.berkeley.edu/gnu/",
-    ] {
-        if let Some(rest) = url.strip_prefix(prefix) {
-            for alt in [
-                "https://ftpmirror.gnu.org/",
-                "https://ftp.gnu.org/gnu/",
-                "https://mirrors.kernel.org/gnu/",
-                "https://mirrors.ocf.berkeley.edu/gnu/",
-            ] {
-                let u = format!("{alt}{rest}");
-                if !v.contains(&u) {
-                    v.push(u);
-                }
-            }
-            break;
-        }
-    }
-    v
-}
-
 /// Download `url` into `dest` unless a copy is already cached.
 /// With `expect_sha256`, a cached copy is reused only after re-verifying it,
 /// so a corrupted or truncated cache entry is transparently re-downloaded.
@@ -171,30 +141,7 @@ pub fn download_cached(url: &str, dest: &Path, expect_sha256: Option<&str>) -> R
         }
     }
     let tmp = dest.with_extension("part");
-    let mut last_err = None;
-    for cand in candidate_urls(url) {
-        if cand != url {
-            eprintln!("dpm: trying alternate mirror {cand}");
-        }
-        let res = download(&cand, &tmp).and_then(|_| match expect_sha256 {
-            Some(e) => verify_sha256(&tmp, e),
-            None => Ok(()),
-        });
-        match res {
-            Ok(()) => {
-                last_err = None;
-                break;
-            }
-            Err(e) => {
-                eprintln!("dpm: {e}");
-                let _ = std::fs::remove_file(&tmp);
-                last_err = Some(e);
-            }
-        }
-    }
-    if let Some(e) = last_err {
-        return Err(e);
-    }
+    download(url, &tmp)?;
     std::fs::rename(&tmp, dest)
         .with_context(|| format!("activate cached download {}", dest.display()))?;
     Ok(())
@@ -223,14 +170,6 @@ mod tests {
             RepoRef::Remote("http://127.0.0.1:8000".into())
         );
         assert!(RepoRef::parse("ftp://host/repo").is_err());
-    }
-
-    #[test]
-    fn gnu_urls_get_fallbacks() {
-        let v = candidate_urls("https://mirrors.kernel.org/gnu/screen/screen-5.0.0.tar.gz");
-        assert_eq!(v[0], "https://mirrors.kernel.org/gnu/screen/screen-5.0.0.tar.gz");
-        assert!(v.contains(&"https://ftpmirror.gnu.org/screen/screen-5.0.0.tar.gz".to_string()));
-        assert_eq!(candidate_urls("https://example.com/x.tgz").len(), 1);
     }
 
     #[test]

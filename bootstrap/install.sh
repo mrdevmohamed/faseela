@@ -25,7 +25,6 @@
 #   sudo install.sh /dev/vda [--hostname myhost] [--yes] [--no-pkg-cache]
 set -euo pipefail
 
-PROG=install.sh
 MNT="${MNT:-/mnt}"
 DISK=""
 HOSTNAME_ARG=""
@@ -42,11 +41,33 @@ run() {
         "$@"
     fi
 }
+# file writes can't go through `run` (the redirect would happen anyway),
+# so they use this: consume stdin, only write for real when not a dry run
+write_file() {
+    if [ "$DRYRUN" = 1 ]; then
+        echo "+ write $1"
+        cat > /dev/null
+    else
+        cat > "$1"
+    fi
+}
 
-# unmount the target if anything fails after it was mounted
+# unmount the target if anything fails after it was mounted, and TELL the
+# user how far the install got: a failure after partitioning leaves the
+# disk erased, a failure after the copy leaves it half-installed
 MOUNTED=0
+PHASE="start"
 cleanup() {
     local rc=$?
+    if [ "$rc" -ne 0 ] && [ "$PHASE" != "start" ] && [ "$PHASE" != "done" ]; then
+        echo "install: FAILED during phase: $PHASE" >&2
+        case "$PHASE" in
+            partition|mkfs)
+                echo "install: WARNING: $DISK was already erased — it holds no bootable system" >&2 ;;
+            copy|cache|kernel|fstab|bootloader|identity)
+                echo "install: WARNING: $DISK holds a PARTIAL installation and may not boot — re-run the installer" >&2 ;;
+        esac
+    fi
     if [ "$MOUNTED" = 1 ] && [ "$DRYRUN" != 1 ]; then
         sync
         umount -R "$MNT" 2>/dev/null || true
@@ -77,6 +98,10 @@ case "$DISK" in
     /dev/nvme*n*p[0-9]*|/dev/mmcblk*p[0-9]*|/dev/loop*p[0-9]*|/dev/sd*[0-9]|/dev/vd*[0-9]|/dev/xvd*[0-9]|/dev/hd*[0-9])
         die "$DISK looks like a partition — give the whole disk (e.g. /dev/vda, /dev/nvme0n1)" ;;
 esac
+
+# the rsync exclude below anchors on "$MNT"; a root mountpoint would make
+# that exclude everything
+[ "$MNT" != "/" ] || die "MNT=/ would make the copy exclude the whole system — pick another mountpoint"
 
 # never touch a disk that is in use — most importantly the boot medium (/cdrom)
 # or the disk the running system lives on
@@ -120,6 +145,7 @@ if [ "$ASSUME_YES" != 1 ]; then
 fi
 
 # --- 1) partitioning ---------------------------------------------------------
+PHASE="partition"
 log "partitioning $DISK"
 run wipefs -a "$DISK" 2>/dev/null || true
 if [ "$FW" = uefi ]; then
@@ -139,6 +165,7 @@ run partprobe "$DISK"
 command -v udevadm >/dev/null 2>&1 && run udevadm settle || sleep 2
 
 # --- 2) filesystems -----------------------------------------------------------
+PHASE="mkfs"
 log "creating filesystems"
 run mkfs.ext4 -F -q "$PART_ROOT"
 if [ "$FW" = uefi ]; then
@@ -152,13 +179,16 @@ MOUNTED=1
 [ "$FW" = uefi ] && { run mkdir -p "$MNT/boot/efi"; run mount "$PART_ESP" "$MNT/boot/efi"; }
 
 # --- 3) copy the live root ----------------------------------------------------
+PHASE="copy"
 log "copying the system (this is the slow part)"
 # exclude the actual $MNT prefix, not only /mnt — with a custom MNT inside
-# the live tree rsync would otherwise copy the target into itself
+# the live tree rsync would otherwise copy the target into itself. The
+# leading / anchors the pattern to the transfer root: an unanchored `mnt`
+# would also exclude ANY directory named mnt anywhere in the system
 run rsync -aHAX --numeric-ids \
     --exclude=/dev/* --exclude=/proc/* --exclude=/sys/* --exclude=/run/* \
     --exclude=/tmp/* --exclude=/media/* --exclude=/cdrom/* \
-    --exclude="${MNT%/}" --exclude="${MNT%/}"/* \
+    --exclude="/${MNT#/}" --exclude="/${MNT#/}"/* \
     --exclude=/lost+found --exclude=/var/cache/dpm \
     --exclude=/build --exclude=/build3 --exclude=/sources --exclude=/.dpm \
     / "$MNT/"
@@ -169,6 +199,7 @@ run mkdir -p "$MNT"/{proc,sys,dev,run,tmp,cdrom,media,mnt,boot,var/cache/dpm}
 run chmod 1777 "$MNT/tmp"
 
 # --- 3b) package cache (rollback support) --------------------------------------
+PHASE="cache"
 # dpm install keeps every installed archive in /var/cache/dpm so
 # `dpm rollback <pkg>` can restore the previous version offline. The main
 # rsync excludes the cache (it would double the disk usage through the
@@ -189,6 +220,7 @@ will need a repository"
 fi
 
 # --- 4) kernel + initramfs ----------------------------------------------------
+PHASE="kernel"
 # source order: KERNEL_SRC (test hook) > boot media > live /boot
 KERNEL=""
 INITRD=""
@@ -212,23 +244,34 @@ run cp "$KERNEL" "$MNT/boot/$(basename "$KERNEL")"
 run cp "$INITRD" "$MNT/boot/initramfs.img"
 
 # --- 5) fstab -------------------------------------------------------------------
-ROOT_UUID="$(blkid -s UUID -o value "$PART_ROOT" | head -1)"
-[ -n "$ROOT_UUID" ] || die "could not read UUID of $PART_ROOT"
-log "root UUID: $ROOT_UUID"
+PHASE="fstab"
+if [ "$DRYRUN" = 1 ]; then
+    ROOT_UUID="DRYRUN-ROOT-UUID"   # no partition exists to query
+    log "root UUID: (dry run — skipped blkid)"
+else
+    ROOT_UUID="$(blkid -s UUID -o value "$PART_ROOT" | head -1)"
+    [ -n "$ROOT_UUID" ] || die "could not read UUID of $PART_ROOT"
+    log "root UUID: $ROOT_UUID"
+fi
 {
     echo "# generated by mydistro install.sh"
     echo "UUID=$ROOT_UUID  /      ext4  defaults                0 1"
     if [ "$FW" = uefi ]; then
-        ESP_UUID="$(blkid -s UUID -o value "$PART_ESP" | head -1)"
+        if [ "$DRYRUN" = 1 ]; then
+            ESP_UUID="DRYRUN-ESP-UUID"
+        else
+            ESP_UUID="$(blkid -s UUID -o value "$PART_ESP" | head -1)"
+        fi
         echo "UUID=$ESP_UUID  /boot/efi vfat defaults            0 2"
     fi
     # /run must be tmpfs (udevd, runit service state, pidfiles); without these
     # rows runtime state would persist on disk across boots
     echo "tmpfs            /run   tmpfs defaults,mode=0755,nosuid,nodev 0 0"
     echo "tmpfs            /tmp   tmpfs defaults,nosuid            0 0"
-} > "$MNT/etc/fstab"
+} | write_file "$MNT/etc/fstab"
 
 # --- 6) bootloader ---------------------------------------------------------------
+PHASE="bootloader"
 log "installing grub ($FW)"
 if [ "$FW" = uefi ]; then
     run grub-install --target=x86_64-efi \
@@ -239,8 +282,8 @@ else
 fi
 
 KNAME="$(basename "$KERNEL")"
-mkdir -p "$MNT/boot/grub"
-cat > "$MNT/boot/grub/grub.cfg" <<EOF
+run mkdir -p "$MNT/boot/grub"
+cat <<EOF | write_file "$MNT/boot/grub/grub.cfg"
 set default=0
 set timeout=3
 
@@ -256,20 +299,40 @@ menuentry "mydistro (verbose)" {
 EOF
 
 # --- 7) identity ------------------------------------------------------------------
+PHASE="identity"
 if [ -n "$HOSTNAME_ARG" ]; then
-    echo "$HOSTNAME_ARG" > "$MNT/etc/hostname"
-    # make sure the hostname resolves: extend the 127.0.0.1 line when the
-    # stock hosts file is there, otherwise append a fresh entry
-    if grep -qE '^127\.0\.0\.1[[:space:]]' "$MNT/etc/hosts" 2>/dev/null; then
-        sed -i -E "s/^(127\.0\.0\.1[[:space:]]+localhost)/\1 $HOSTNAME_ARG/" "$MNT/etc/hosts"
+    if [ "$DRYRUN" = 1 ]; then
+        echo "+ write $MNT/etc/hostname ($HOSTNAME_ARG)"
+        echo "+ update $MNT/etc/hosts (hostname $HOSTNAME_ARG)"
     else
-        echo "127.0.0.1 localhost $HOSTNAME_ARG" >> "$MNT/etc/hosts"
+        echo "$HOSTNAME_ARG" > "$MNT/etc/hostname"
+        # make sure the hostname resolves: extend the 127.0.0.1 line when the
+        # stock hosts file is there, otherwise append a fresh entry
+        if grep -qE '^127\.0\.0\.1[[:space:]]' "$MNT/etc/hosts" 2>/dev/null; then
+            sed -i -E "s/^(127\.0\.0\.1[[:space:]]+localhost)/\1 $HOSTNAME_ARG/" "$MNT/etc/hosts"
+        else
+            echo "127.0.0.1 localhost $HOSTNAME_ARG" >> "$MNT/etc/hosts"
+        fi
     fi
 fi
 log "setting the root password (chroot)"
-run chroot "$MNT" /usr/bin/passwd root
+if ! run chroot "$MNT" /usr/bin/passwd root; then
+    # never leave a passwordless root behind: the copied live shadow has an
+    # empty root password, so a failed/aborted passwd would hand the disk
+    # over with no login barrier — lock the account instead
+    log "password not set — locking the root account on the target"
+    if [ "$DRYRUN" = 1 ]; then
+        echo "+ lock root account in $MNT/etc/shadow"
+    elif command -v usermod >/dev/null 2>&1; then
+        chroot "$MNT" usermod -L root
+    elif [ -f "$MNT/etc/shadow" ]; then
+        sed -i 's/^root:[^:]*:/root:!:/' "$MNT/etc/shadow"
+    fi
+    exit 1
+fi
 
 # --- teardown -----------------------------------------------------------------------
+PHASE="done"
 run sync
 run umount -R "$MNT" 2>/dev/null || run umount "$MNT"
 MOUNTED=0

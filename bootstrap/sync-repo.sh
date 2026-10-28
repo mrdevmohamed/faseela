@@ -37,9 +37,13 @@ mkdir -p "$LFS/mydistro"
 # shellcheck disable=SC2016  # excludes are tar patterns, not shell globs
 tar -C "$REPO" -cf - \
     --exclude='pkgmgr/target' \
+    --exclude='pkgmgr/build' \
     --exclude='bootstrap/seed' \
     --exclude='bootstrap/.initramfs-build' \
     --exclude='srccache' \
     --exclude='out' \
     pkgmgr recipes profiles bootstrap |
     tar -C "$LFS/mydistro" -xf -
+# note: 'srccache' and 'out' are unanchored on purpose — they are build
+# scratch dirs that may appear at the repo root OR under pkgmgr/; never
+# name a real source directory that way
