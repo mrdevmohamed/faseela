@@ -9,6 +9,21 @@ fn dpm_bin() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_dpm"))
 }
 
+/// A dpm invocation isolated from the ambient configuration: no DPM_* env
+/// and a cwd outside the repository, so the repo's own `dpm.toml` (and the
+/// profile it points at) is never discovered.
+fn dpm() -> Command {
+    let mut c = Command::new(dpm_bin());
+    for k in [
+        "DPM_CONFIG", "DPM_ROOT", "DPM_RECIPES", "DPM_BUILDDIR",
+        "DPM_PROFILES", "DPM_JOBS", "DPM_REPO",
+    ] {
+        c.env_remove(k);
+    }
+    c.current_dir(std::env::temp_dir());
+    c
+}
+
 fn scratch(tag: &str) -> PathBuf {
     let d = std::env::temp_dir().join(format!("dpm-be-{tag}-{}", std::process::id()));
     let _ = fs::remove_dir_all(&d);
@@ -47,7 +62,7 @@ printf '%s|%s|%s' "$CFLAGS" "$LDFLAGS" "$DPM_JOBS" > %{pkgdir}/usr/seen
 }
 
 fn build(dir: &Path, extra_before: &[&str], extra_after: &[&str]) -> Output {
-    let mut c = Command::new(dpm_bin());
+    let mut c = dpm();
     c.env_remove("CFLAGS")
         .env_remove("CXXFLAGS")
         .env_remove("LDFLAGS")

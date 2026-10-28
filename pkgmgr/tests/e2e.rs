@@ -10,6 +10,21 @@ fn dpm_bin() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_dpm"))
 }
 
+/// A dpm invocation isolated from the ambient configuration: no DPM_* env
+/// and a cwd outside the repository, so the repo's own `dpm.toml` (and the
+/// profile it points at) is never discovered.
+fn dpm() -> Command {
+    let mut c = Command::new(dpm_bin());
+    for k in [
+        "DPM_CONFIG", "DPM_ROOT", "DPM_RECIPES", "DPM_BUILDDIR",
+        "DPM_PROFILES", "DPM_JOBS", "DPM_REPO",
+    ] {
+        c.env_remove(k);
+    }
+    c.current_dir(std::env::temp_dir());
+    c
+}
+
 #[test]
 fn build_install_query_remove_roundtrip() {
     let scratch = std::env::temp_dir().join(format!("dpm-e2e-{}", std::process::id()));
@@ -41,7 +56,7 @@ chmod +x %{pkgdir}/usr/bin/hello
     fs::create_dir_all(&root).unwrap();
 
     // build
-    let out = Command::new(dpm_bin())
+    let out = dpm()
         .args([
             "--recipes", recipes.parent().unwrap().to_str().unwrap(),
             "--builddir", scratch.join("build").to_str().unwrap(),
@@ -60,7 +75,7 @@ chmod +x %{pkgdir}/usr/bin/hello
     assert!(archive.exists(), "archive missing: {}", archive.display());
 
     // install
-    let out = Command::new(dpm_bin())
+    let out = dpm()
         .args([
             "--root", root.to_str().unwrap(),
             "install", archive.to_str().unwrap(),
@@ -76,7 +91,7 @@ chmod +x %{pkgdir}/usr/bin/hello
     assert!(root.join("usr/bin/hello").exists());
 
     // query
-    let out = Command::new(dpm_bin())
+    let out = dpm()
         .args(["--root", root.to_str().unwrap(), "query"])
         .output()
         .unwrap();
@@ -84,7 +99,7 @@ chmod +x %{pkgdir}/usr/bin/hello
     assert!(q.contains("hello"), "query output missing hello: {q}");
 
     // owner
-    let out = Command::new(dpm_bin())
+    let out = dpm()
         .args([
             "--root", root.to_str().unwrap(),
             "owner", "/usr/bin/hello",
@@ -94,7 +109,7 @@ chmod +x %{pkgdir}/usr/bin/hello
     assert!(String::from_utf8_lossy(&out.stdout).contains("hello"));
 
     // remove (confirmation is required for non-interactive runs: --yes)
-    let out = Command::new(dpm_bin())
+    let out = dpm()
         .args(["--root", root.to_str().unwrap(), "remove", "--yes", "hello"])
         .output()
         .unwrap();
@@ -248,7 +263,7 @@ fn run<'a>(args: impl IntoIterator<Item = &'a str>) -> std::process::Output {
 }
 
 fn run_raw<'a>(args: impl IntoIterator<Item = &'a str>) -> std::process::Output {
-    Command::new(dpm_bin())
+    dpm()
         .args(args)
         .output()
         .unwrap()
@@ -280,7 +295,7 @@ fn deps_all_skips_installed_unless_include_installed() {
     fs::create_dir_all(&root).unwrap();
 
     // build + install "hello" so the db records it
-    let out = Command::new(dpm_bin())
+    let out = dpm()
         .args([
             "--recipes", recipes.to_str().unwrap(),
             "--builddir", scratch.join("build").to_str().unwrap(),
@@ -294,14 +309,14 @@ fn deps_all_skips_installed_unless_include_installed() {
         String::from_utf8_lossy(&out.stderr)
     );
     let archive = scratch.join("build/out/hello-1.0-1.dpm.tar.zst");
-    let out = Command::new(dpm_bin())
+    let out = dpm()
         .args(["--root", root.to_str().unwrap(), "install", archive.to_str().unwrap()])
         .output()
         .unwrap();
     assert!(out.status.success());
 
     let deps_all = |extra: &str| {
-        let out = Command::new(dpm_bin())
+        let out = dpm()
             .args(["--root", root.to_str().unwrap(), "--recipes", recipes.to_str().unwrap()])
             .args(["deps-all"])
             .args(if extra.is_empty() { vec![] } else { vec![extra] })
@@ -340,7 +355,7 @@ fn build_install_rebuilds_instead_of_reusing_a_stale_archive() {
         .unwrap();
     };
     let go = || {
-        let o = Command::new(dpm_bin())
+        let o = dpm()
             .args([
                 "build", "--install", "demo", "--force",
                 "--recipes", scratch.join("recipes").to_str().unwrap(),
@@ -373,14 +388,14 @@ fn install_missing_archive_suggests_the_near_miss() {
     fs::create_dir_all(scratch.join("out")).unwrap();
     fs::write(scratch.join("out/demo-1.0-1.dpm.tar.zst"), b"x").unwrap();
     let root = scratch.join("rootfs");
-    let o = Command::new(dpm_bin())
+    let o = dpm()
         .args(["install", "--root", root.to_str().unwrap(), "out/demo-1.0-2.dpm.tar.zst"])
         .current_dir(&scratch)
         .output()
         .unwrap();
     assert!(!o.status.success());
     assert!(String::from_utf8_lossy(&o.stderr).contains("did you mean `demo-1.0-1.dpm.tar.zst`"));
-    let o = Command::new(dpm_bin())
+    let o = dpm()
         .args(["install", "--root", root.to_str().unwrap(), "demo-1.0-2.dpm.tar.zst"])
         .current_dir(scratch.join("out"))
         .output()
@@ -392,7 +407,7 @@ fn install_missing_archive_suggests_the_near_miss() {
 /// Regression: `config show` must attribute a value passed as a flag to "flag".
 #[test]
 fn config_show_reports_flag_as_the_source() {
-    let o = Command::new(dpm_bin())
+    let o = dpm()
         .args(["config", "show", "--root", "/xyz"])
         .env_remove("DPM_ROOT")
         .env_remove("DPM_CONFIG")
