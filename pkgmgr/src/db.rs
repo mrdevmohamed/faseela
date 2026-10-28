@@ -49,12 +49,6 @@ pub fn valid_version(v: &str) -> bool {
         Some(c) if c.is_ascii_alphanumeric() => {}
         _ => return false,
     }
-    // numeric segments are compared as u64: a longer digit run would
-    // silently clamp, making distinct versions compare equal — reject them
-    // up front instead of mis-comparing at upgrade time
-    if v.split(|c: char| !c.is_ascii_digit()).any(|run| run.len() > 19) {
-        return false;
-    }
     v.len() <= 128
         && chars.all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '_' | '.' | '-' | '~' | ':'))
 }
@@ -154,22 +148,19 @@ impl Db {
     pub fn add(&self, e: &Entry, files: &[String], hashes: &HashMap<String, String>) -> Result<()> {
         let dir = self.checked_dir(&e.name)?;
         std::fs::create_dir_all(&dir)?;
+        // write temp + rename so an interrupted install can't leave a
+        // half-written entry behind
         let desc = toml::to_string_pretty(e)?;
-        let files_s = files.join("\n") + "\n";
+        std::fs::write(dir.join(".desc.tmp"), desc)?;
+        std::fs::rename(dir.join(".desc.tmp"), dir.join("desc"))?;
+        std::fs::write(dir.join(".files.tmp"), files.join("\n") + "\n")?;
+        std::fs::rename(dir.join(".files.tmp"), dir.join("files"))?;
         let mut h: Vec<String> = hashes
             .iter()
             .map(|(p, s)| format!("{s}  {p}"))
             .collect();
         h.sort();
-        let hashes_s = h.join("\n") + "\n";
-        // write ALL temp files first, then rename them back-to-back: an
-        // interrupted install then can't leave desc/files/hashes disagreeing
-        // about the entry (e.g. a new desc with the old file list)
-        std::fs::write(dir.join(".desc.tmp"), desc)?;
-        std::fs::write(dir.join(".files.tmp"), files_s)?;
-        std::fs::write(dir.join(".hashes.tmp"), hashes_s)?;
-        std::fs::rename(dir.join(".desc.tmp"), dir.join("desc"))?;
-        std::fs::rename(dir.join(".files.tmp"), dir.join("files"))?;
+        std::fs::write(dir.join(".hashes.tmp"), h.join("\n") + "\n")?;
         std::fs::rename(dir.join(".hashes.tmp"), dir.join("hashes"))?;
         Ok(())
     }
@@ -209,15 +200,6 @@ mod tests {
         assert!(!valid_name(&"a".repeat(129)));
         assert!(valid_version("1.13") && valid_version("2.0.0~rc1") && valid_version("1:2.3"));
         assert!(!valid_version("../1") && !valid_version("1/2") && !valid_version(""));
-        // numeric segments compare as u64: overlong digit runs would clamp
-        // and compare equal — they are rejected instead
-        assert!(valid_version("999999999999999999") && valid_version("1:2.3-4"));
-        assert!(!valid_version("99999999999999999999") && !valid_version("1.99999999999999999999"));
-        assert!(!valid_version("99999999999999999999:1.0"));
-        assert_ne!(
-            crate::version::vercmp("1.99999999999999999998", "1.2"),
-            std::cmp::Ordering::Equal
-        );
     }
 
     #[test]

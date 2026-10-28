@@ -13,7 +13,6 @@ version = "1"
 rel = 1
 arch = ["x86_64"]
 summary = "Meta package: the base toolchain every build may use"
-license = ["MIT"]
 
 [depends]
 # installing base-devel pulls the whole base toolchain

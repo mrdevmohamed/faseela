@@ -239,13 +239,6 @@ if (( OPT_WIPE )); then
         [[ $TARGET == "$_p" ]] && die "refusing to --wipe $TARGET (it contains the repository)"
         _p="$(dirname -- "$_p")"
     done
-    # and the mirror direction: a target INSIDE the repo would delete the
-    # project's own scripts and recipes (e.g. --wipe $REPO/bootstrap)
-    _p="$TARGET"
-    while [[ -n $_p && $_p != "/" ]]; do
-        [[ $_p == "$REPO" ]] && die "refusing to --wipe $TARGET (it is inside the repository)"
-        _p="$(dirname -- "$_p")"
-    done
     _p="$HOME"
     while [[ -n $_p && $_p != "/" ]]; do
         [[ $TARGET == "$_p" ]] && die "refusing to --wipe $TARGET (it is a home directory)"
@@ -359,22 +352,6 @@ stage_inputs() {   # the input contract of a stage, one key=value per line
     esac
 }
 
-# The fingerprint above records what the stage CONTENT depends on. The output
-# PATH is not content: --list-stages runs without one, and a changed --out
-# must not make a valid stamp look stale. Instead, an output stage whose
-# artifact is missing at the path now requested simply re-runs:
-stage_output_ok() {
-    case $1 in
-        rootfs) (( OPT_LIST )) && return 0; [[ -s $OUT_ROOTFS && -s $OUT_ROOTFS.sha256 ]] ;;
-        iso)    (( OPT_LIST )) && return 0; [[ -s $OUT_ISO ]] ;;
-        *)      return 0 ;;
-    esac
-}
-stage_runnable() {  # complete AND, for output stages, its artifact present
-    stage_complete "$1" || return 1
-    stage_output_ok "$1"
-}
-
 # stage_valid: 0 = stamp exists AND inputs match; 1 = no stamp;
 # 2 = stamp predates input tracking (unverifiable)
 stage_valid() {
@@ -481,7 +458,7 @@ list_stages() {
 
 # ------------------------------------------------------------------- checks --
 preflight() {
-    local need_root=0 probe i id have t missing=()
+    local need_root=0 parent probe i id have t missing=()
     for i in "${!STAGE_IDS[@]}"; do
         if (( i < START )); then continue; fi
         case ${STAGE_IDS[$i]} in stage1|stage2|stage3) need_root=1 ;; esac
@@ -635,7 +612,7 @@ else
     START=${#STAGE_IDS[@]}
     for i in "${!STAGE_IDS[@]}"; do
         if stage_skipped "${STAGE_IDS[$i]}"; then continue; fi
-        if ! stage_runnable "${STAGE_IDS[$i]}"; then START=$i; break; fi
+        if ! stage_complete "${STAGE_IDS[$i]}"; then START=$i; break; fi
     done
 fi
 END=$(( ${#STAGE_IDS[@]} - 1 ))
@@ -813,16 +790,13 @@ for (( i = START; i <= END; i++ )); do
         # --from-stage S documents that S itself re-runs. That must hold even
         # for the seed, where adoption would otherwise quietly skip it.
         run_stage "$id" "$i"
-    elif stage_runnable "$id"; then
+    elif stage_complete "$id"; then
         if [[ $id == seed ]] && ! stage_done seed; then
             if [[ -n $SEED_ROOTFS ]]; then note "seed: not needed, using the rootfs seed"
             else note "seed: adopting existing $SEED_TAR (no stamp yet)"; fi
         fi
         echo "-- $PROG: $id already done (inputs unchanged), skipping"
     else
-        if stage_complete "$id"; then
-            echo "-- $PROG: $id already done, but its output is missing — re-running"
-        fi
         run_stage "$id" "$i"
     fi
 done

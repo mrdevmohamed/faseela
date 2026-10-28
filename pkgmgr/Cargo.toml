@@ -21,6 +21,26 @@ ed25519-dalek = { version = "2", default-features = false, features = ["fast"] }
 # vendored bootstrap of `dpm` keeps working unchanged
 libc = "0.2"
 
+# native HTTP client (replaces shelling out to curl): rustls TLS with the
+# bundled webpki roots (works inside chroots with no /etc/ssl), gzip
+# content-encoding, and automatic proxy discovery from the environment.
+ureq = { version = "2.12", default-features = false, features = [
+    "tls",
+    "gzip",
+    "proxy-from-env",
+] }
+url = "2" # redirect-target resolution (already in the ureq dependency tree)
+# source-tarball decompression, all linked in-process (replaces the external
+# `tar` binary which silently depended on host gzip/xz/bzip2 being installed):
+flate2 = { version = "1", default-features = false, features = [
+    "rust_backend",
+] } # .tar.gz — pure-Rust miniz_oxide backend
+lzma-rs = { version = "0.3", default-features = false } # .tar.xz — pure Rust
+bzip2 = { version = "0.4", default-features = false, features = [
+    "static",
+] } # .tar.bz2 — vendored C, statically linked
+filetime = "0.2" # timestamp-preserving local copies (cp -a parity)
+
 [[bin]]
 name = "dpm"
 path = "src/main.rs"

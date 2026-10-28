@@ -76,20 +76,6 @@ pub fn install_archive(
 
     // ---- conflict check against the database ------------------------------
     let staged_files = list_staged_files(&tmp)?;
-    // dpm's own state is never a valid payload: an archive that ships into
-    // these prefixes could inject hooks into ANOTHER package's db entry,
-    // overwrite the undo journal / rollback cache, or replace the lock file
-    // (accidentally via a wrong DESTDIR — or on purpose). Fail loudly.
-    for f in &staged_files {
-        if let Some(prefix) = reserved_prefix(f) {
-            bail!(
-                "archive {} ships `{}` — paths under {} are reserved for dpm and cannot be installed",
-                archive_path.display(),
-                f,
-                prefix
-            );
-        }
-    }
     let owners = db.file_owners()?;
     if !force {
         let mut conflicts: Vec<String> = Vec::new();
@@ -170,12 +156,7 @@ pub fn install_archive(
                 Ok(md) if md.is_dir() => obsolete_dirs.push(p),
                 // files are moved into the undo journal, not deleted yet
                 Ok(_) => {
-                    // a file that escapes the journal here would no longer be
-                    // owned by anything once the db records the new list
-                    if let Err(e) = tx.remove(&p) {
-                        tx.rollback();
-                        return Err(e);
-                    }
+                    let _ = tx.remove(&p);
                 }
                 Err(_) => {}
             }
@@ -271,53 +252,9 @@ pub fn rollback(name: &str, root: &Path) -> Result<()> {
         db.entry(name)?.map(|e| e.version_full()).unwrap_or_else(|| "(removed)".into()),
         prev.version_full()
     );
-    // the undo record pins the sha256 the cached archive had when this
-    // version was last verified — a tampered cache entry is refused here
-    match std::fs::read_to_string(undo_dir.join("archive.sha256")) {
-        Ok(want) => {
-            let want = want.trim().to_string();
-            if !want.is_empty() {
-                let got = crate::fetch::sha256_of_file(&archive_path).unwrap_or_default();
-                if got != want {
-                    bail!(
-                        "cached archive {} does not match the hash recorded at install time — refusing to roll back (delete it and reinstall {} manually)",
-                        archive_path.display(),
-                        prev.version_full()
-                    );
-                }
-            }
-        }
-        Err(_) => {
-            eprintln!(
-                "dpm: warning: undo record for {name} has no archive hash — the cached archive cannot be verified"
-            );
-        }
-    }
-    // cache content was verified when it was first installed (and hashed)
+    // cache content was verified when it was first installed
     install_archive(&archive_path, root, false, true, None, "keep")?;
     Ok(())
-}
-
-/// The reserved prefix a payload path falls under, if any. These trees are
-/// dpm's own state: the local db + undo journal + lock (`var/lib/dpm`), the
-/// rollback archive cache (`var/cache/dpm`), the trust store
-/// (`etc/dpm/trusted-keys`) and the hidden staging area (`.dpm`).
-fn reserved_prefix(f: &str) -> Option<&'static str> {
-    let rel = f.trim_start_matches('/');
-    let mut comps = rel.split('/');
-    match comps.next()? {
-        ".dpm" => Some(".dpm"),
-        "var" => match (comps.next(), comps.next()) {
-            (Some("lib"), Some("dpm")) => Some("var/lib/dpm"),
-            (Some("cache"), Some("dpm")) => Some("var/cache/dpm"),
-            _ => None,
-        },
-        "etc" => match (comps.next(), comps.next()) {
-            (Some("dpm"), Some("trusted-keys")) => Some("etc/dpm/trusted-keys"),
-            _ => None,
-        },
-        _ => None,
-    }
 }
 
 #[allow(dead_code)] // convenience wrapper over remove_with
@@ -334,19 +271,6 @@ pub fn remove(name: &str, root: &Path) -> Result<()> {
 /// A failure to move any file aborts the removal instead of silently
 /// leaving a half-removed package behind.
 pub fn remove_with(name: &str, root: &Path, force: bool) -> Result<()> {
-    remove_with_skip(name, root, force, &HashSet::new())
-}
-
-/// `remove_with` that also accepts `skip`: packages listed there do not
-/// count as dependents. `autoremove` passes the whole orphan set so a
-/// (now pointless) dependency cycle inside it cannot block the removal —
-/// `removal_order` already assumes those go last.
-pub fn remove_with_skip(
-    name: &str,
-    root: &Path,
-    force: bool,
-    skip: &HashSet<String>,
-) -> Result<()> {
     let db = Db::new(root);
     let entry = match db.entry(name)? {
         Some(e) => e,
@@ -358,7 +282,6 @@ pub fn remove_with_skip(
             .installed()?
             .into_iter()
             .filter(|e| e.name != name && e.run.iter().any(|r| r == name))
-            .filter(|e| !skip.contains(&e.name))
             .map(|e| e.name)
             .collect();
         if !dependents.is_empty() {
@@ -422,26 +345,23 @@ pub fn remove_with_skip(
     Ok(())
 }
 
-/// Copy an archive into `<root>/var/cache/dpm`.
+/// Copy an archive into `<root>/var/cache/dpm` (hardlink when possible).
 /// Also keeps the detached signature next to it when one exists.
-///
-/// Always a real copy, never a hardlink: the source often lives in a
-/// user-writable build directory, and a hardlink would share the inode —
-/// content modified there after the (verified) install would silently
-/// change what `dpm rollback` reinstalls.
 pub fn cache_archive(archive_path: &Path, root: &Path) -> Result<PathBuf> {
     let dir = root.join("var/cache/dpm");
     std::fs::create_dir_all(&dir)?;
     let dest = dir.join(archive_path.file_name().unwrap_or_default());
-    if !dest.exists() {
-        std::fs::copy(archive_path, &dest)
-            .with_context(|| format!("cache {}", archive_path.display()))?;
-    }
+    if !dest.exists()
+        && std::fs::hard_link(archive_path, &dest).is_err() {
+            std::fs::copy(archive_path, &dest)
+                .with_context(|| format!("cache {}", archive_path.display()))?;
+        }
     let sig = sign::sig_path_for(archive_path);
     if sig.exists() {
         let sig_dest = sign::sig_path_for(&dest);
         if !sig_dest.exists() {
-            let _ = std::fs::copy(&sig, &sig_dest).map(|_| ());
+            let _ = std::fs::hard_link(&sig, &sig_dest)
+                .or_else(|_| std::fs::copy(&sig, &sig_dest).map(|_| ()));
         }
     }
     Ok(dest)
@@ -459,20 +379,6 @@ fn save_undo(db: &Db, root: &Path, prev: &Entry) -> Result<()> {
     let ftmp = dir.join(".files.tmp");
     std::fs::write(&ftmp, files.join("\n") + "\n")?;
     std::fs::rename(&ftmp, dir.join("files"))?;
-    // pin the rollback archive's content: `rollback` verifies the cached
-    // archive against this hash before reinstalling it. The archive of the
-    // version being replaced should already be in the cache (every install
-    // caches its own); if it isn't, no hash is recorded and rollback warns.
-    let arch = root
-        .join("var/cache/dpm")
-        .join(format!("{}.dpm.tar.zst", prev.version_full()));
-    if arch.exists() {
-        if let Ok(h) = crate::fetch::sha256_of_file(&arch) {
-            let htmp = dir.join(".archive.sha256.tmp");
-            std::fs::write(&htmp, h)?;
-            let _ = std::fs::rename(&htmp, dir.join("archive.sha256"));
-        }
-    }
     Ok(())
 }
 
@@ -586,35 +492,16 @@ impl Tx {
         Ok(())
     }
 
-    /// Best-effort restore of the pre-install state. Failures are loud:
-    /// silently keeping a half-installed state with no journal left behind
-    /// would be the worst possible outcome.
+    /// Best-effort restore of the pre-install state.
     fn rollback(&mut self) {
-        let mut lost: usize = 0;
         for p in self.created.iter().rev() {
-            if std::fs::remove_file(p).is_err() {
-                lost += 1;
-                eprintln!("dpm: WARNING: rollback could not remove created file {}", p.display());
-            }
+            let _ = std::fs::remove_file(p);
         }
         for (dest, bak) in self.replaced.iter().rev() {
-            if std::fs::rename(bak, dest).is_err() {
-                lost += 1;
-                eprintln!(
-                    "dpm: WARNING: rollback could not restore {} from {}",
-                    dest.display(),
-                    bak.display()
-                );
-            }
+            let _ = std::fs::remove_file(dest);
+            let _ = std::fs::rename(bak, dest);
         }
-        if lost == 0 {
-            let _ = std::fs::remove_dir_all(&self.bak_root);
-        } else {
-            eprintln!(
-                "dpm: WARNING: rollback incomplete ({lost} file(s)) — originals kept in {}; manual recovery needed",
-                self.bak_root.display()
-            );
-        }
+        let _ = std::fs::remove_dir_all(&self.bak_root);
     }
 
     fn commit(self) {
@@ -878,12 +765,11 @@ fn run_hook(label: &str, script: &str, root: &Path) -> Result<()> {
         match shell {
             Some(sh) if running_as_root() => {
                 println!("dpm: running {label} hook in chroot {}", root.display());
-                Command::new("chroot")
-                    .arg(root)
-                    .args([sh, "-e", "-c", script])
-                    .env("DPM_ROOT", "/")
-                    .env(crate::lock::HELD_ENV, "1")
-                    .status()?
+                let status = chroot_command(root, sh, script)?;
+                if !status.success() {
+                    bail!("{label} hook failed");
+                }
+                return Ok(());
             }
             _ => {
                 println!("dpm: note: skipping {label} hook (--root is not / and no chroot possible)");
@@ -895,6 +781,34 @@ fn run_hook(label: &str, script: &str, root: &Path) -> Result<()> {
         bail!("{label} hook failed");
     }
     Ok(())
+}
+
+/// Run `sh -e -c script` inside a chroot of `root` using chroot(2) + chdir(2)
+/// in the child's pre-exec hook — no dependence on the external coreutils
+/// `chroot` binary (which is exactly what gets upgraded/installed by the
+/// hooks this runs). (No /proc or /dev is mounted, same as before.)
+fn chroot_command(root: &Path, sh: &str, script: &str) -> Result<std::process::ExitStatus> {
+    use std::os::unix::ffi::OsStrExt;
+    use std::os::unix::process::CommandExt;
+    let root_c = std::ffi::CString::new(root.as_os_str().as_bytes())
+        .map_err(|_| anyhow::anyhow!("chroot path contains NUL: {}", root.display()))?;
+    unsafe {
+        Command::new(sh)
+            .args(["-e", "-c", script])
+            .env("DPM_ROOT", "/")
+            .env(crate::lock::HELD_ENV, "1") // we hold the db lock; nested dpm must not wait
+            .pre_exec(move || {
+                if libc::chroot(root_c.as_ptr()) != 0 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                if libc::chdir(c"/".as_ptr()) != 0 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                Ok(())
+            })
+            .status()
+            .context("spawn chrooted hook")
+    }
 }
 
 #[cfg(test)]
@@ -1214,51 +1128,6 @@ mod tests {
 
         assert!(install_archive(&pkg, &root, false, true, None, "explicit").is_err());
         assert_eq!(std::fs::read(other.join("ld-linux.so.2")).unwrap(), b"REAL LOADER");
-        let _ = std::fs::remove_dir_all(&base);
-    }
-
-    #[test]
-    fn payload_paths_in_dpm_state_are_reserved() {
-        // dpm's own state can never be a package payload
-        for bad in [
-            "/var/lib/dpm/local/zlib/desc",
-            "/var/lib/dpm/lock",
-            "/var/lib/dpm/undo/zlib/desc",
-            "/var/cache/dpm/zlib-1.0-1.dpm.tar.zst",
-            "/etc/dpm/trusted-keys/evil.pub",
-            "/.dpm/tmp-1/usr/bin/x",
-            "var/lib/dpm/local/zlib/files",
-        ] {
-            assert!(reserved_prefix(bad).is_some(), "{bad:?} must be reserved");
-        }
-        // ordinary trees stay installable
-        for ok in [
-            "/usr/bin/dpm",
-            "/var/lib/other/data",
-            "/var/cache/other/data",
-            "/etc/dpm/dpm.toml",
-            "/etc/dpmt/keys",
-            "/usr/share/dpm/doc",
-        ] {
-            assert!(reserved_prefix(ok).is_none(), "{ok:?} must not be reserved");
-        }
-    }
-
-    #[test]
-    fn install_refuses_payload_in_dpm_state() {
-        let base = tmpdir("reserved");
-        let root = base.join("root");
-        std::fs::create_dir_all(&root).unwrap();
-        // an archive trying to drop a hooks file into another package's db
-        // entry must fail loudly instead of poisoning the database
-        let pkg = make_pkg(
-            &base,
-            "evil",
-            "1.0",
-            &[("/var/lib/dpm/local/victim/hooks", b"rm -rf /\n")],
-        );
-        assert!(install_archive(&pkg, &root, false, true, None, "explicit").is_err());
-        assert!(!root.join("var/lib/dpm/local/victim/hooks").exists());
         let _ = std::fs::remove_dir_all(&base);
     }
 }

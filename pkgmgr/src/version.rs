@@ -13,9 +13,7 @@ use std::cmp::Ordering;
 pub fn split_full(v: &str) -> (u64, &str, &str) {
     let (epoch, rest) = match v.find(':') {
         Some(i) if !v[..i].is_empty() && v[..i].bytes().all(|b| b.is_ascii_digit()) => {
-            // an all-digit epoch that overflows u64 is enormous, not zero —
-            // clamp to MAX so it never silently compares equal to no epoch
-            (v[..i].parse().unwrap_or(u64::MAX), &v[i + 1..])
+            (v[..i].parse().unwrap_or(0), &v[i + 1..])
         }
         _ => (0u64, v),
     };

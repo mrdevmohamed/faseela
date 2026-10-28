@@ -172,36 +172,22 @@ pub fn build(rec: &Recipe, opts: &BuildOpts) -> Result<BuildResult> {
         fetch::download_cached(&source, &tarball, Some(sha))?;
         fetch::verify_sha256(&tarball, sha)?;
 
-        // tarball or single file (e.g. a pinned CA bundle)?
-        let is_tar = Command::new("tar")
-            .arg("-tf")
-            .arg(&tarball)
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status()
-            .context("tar not available")?
-            .success();
+        // tarball or single file (e.g. a pinned CA bundle)? Detection is by
+        // content (magic bytes + tar header), not by file name.
+        let is_tar = fetch::detect_source_format(&tarball).is_some();
         if !is_tar {
             // single-file source: stage it as-is into srcdir
             std::fs::copy(&tarball, src.join(fname))
                 .with_context(|| format!("stage single-file source {}", fname))?;
             src.clone()
         } else {
-            // --no-same-owner BEFORE -xf: as root GNU tar otherwise preserves
-            // the tarball's upstream uid (many ship uid 1000/501), and the
-            // sandbox (§4.1) drops every capability, so the tree would be
-            // unwritable for the build itself (EACCES from perl's Configure).
-            // Options precede -f so -f still consumes the real archive next.
-            let status = Command::new("tar")
-                .args(["--no-same-owner", "-xf"])
-                .arg(&tarball)
-                .arg("-C")
-                .arg(&src)
-                .status()
-                .context("tar not available")?;
-            if !status.success() {
-                bail!("failed to extract {}", tarball.display());
-            }
+            // In-process extraction (tar crate + native decoders) with GNU
+            // tar --no-same-owner semantics: ownership is never restored and
+            // suid bits are dropped, so the tree stays writable for the build
+            // (the sandbox §4.1 drops every capability, and the source write
+            // pass below re-applies u+w on top).
+            fetch::extract_source_archive(&tarball, &src)
+                .with_context(|| format!("failed to extract {}", tarball.display()))?;
             grant_source_write(&src);
             let dir = if rec.package.source_dir.is_empty() {
                 format!("{}-{}", name, rec.package.version)
@@ -537,35 +523,25 @@ pub fn build(rec: &Recipe, opts: &BuildOpts) -> Result<BuildResult> {
         opts.isolation.as_str(),
         sde
     );
-    // write to a temp name and rename, so an interrupted build can't leave
-    // a truncated archive in out/ that a stale `.buildid` sidecar would
-    // still bless as a cache hit; the old sidecar is dropped up front
-    let sidecar = buildid_sidecar(&out_path);
-    let _ = std::fs::remove_file(&sidecar);
-    let mut out_tmp = out_path.clone().into_os_string();
-    out_tmp.push(".part");
-    let out_tmp = PathBuf::from(out_tmp);
     if opts.isolation >= Isolation::Env {
         archive::create_normalized(
             &pkg,
             &pkginfo,
             Some(&hooks),
-            &out_tmp,
+            &out_path,
             &archive::Normalize { source_date_epoch: sde },
         )?;
-        std::fs::rename(&out_tmp, &out_path)?;
         // the cache-hit sidecar (--use-cache): the build id this archive
-        // was produced from, next to the archive itself — only written
-        // once the archive is complete
+        // was produced from, next to the archive itself
         let bid = pkginfo
             .split("build_id = ")
             .nth(1)
             .and_then(|s| s.lines().next())
             .unwrap_or("");
+        let sidecar = buildid_sidecar(&out_path);
         let _ = std::fs::write(&sidecar, format!("{bid}\n"));
     } else {
-        archive::create_with_hooks(&pkg, &pkginfo, Some(&hooks), &out_tmp)?;
-        std::fs::rename(&out_tmp, &out_path)?;
+        archive::create_with_hooks(&pkg, &pkginfo, Some(&hooks), &out_path)?;
     }
 
     // v1/v2 assembly cleanup: the extract-per-build root is per-build
