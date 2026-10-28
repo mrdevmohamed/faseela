@@ -2,7 +2,7 @@
 [package]
 name = "busybox"
 version = "1.37.0"
-rel = 1
+rel = 2
 arch = ["x86_64"]
 summary = "Single-binary toolbox for initramfs and rescue"
 license = ["GPL-2.0"]
@@ -24,4 +24,10 @@ sed -i -e 's/^CONFIG_TC=y$/# CONFIG_TC is not set/' \
 make oldconfig < /dev/null > /dev/null
 """
 compile = "make -j%{jobs}"
-install = "make CONFIG_PREFIX=%{pkgdir} install && rm -f %{pkgdir}/linuxrc"
+# Ship ONLY the binary. `make install` also plants ~400 applet symlinks
+# (/bin/tar, /bin/sh, /usr/bin/install, ...) that shadow the real GNU tools in
+# the build root from this point on: busybox's built-in xz decoder then fails
+# on large archives ("tar: corrupted data") and dpm silently stages them as
+# single files (seen with the rust tarball). Rescue users get the applets with
+# `busybox --install -s <dir>`; the initramfs builds its own static busybox.
+install = "install -Dm755 busybox %{pkgdir}/usr/bin/busybox"
