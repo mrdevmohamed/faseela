@@ -28,7 +28,15 @@ run = ["gcc", "glibc"]
 
 [build]
 # only the components dpm needs: no docs, clippy, rustfmt, rust-src, ...
+# `bash ./install.sh`: the installer is POSIX sh but its #! line must not matter
+# inside the sandbox. The guard prints the tree if the source dir is not what
+# source_dir expects, instead of a bare "No such file or directory".
 install = """
-./install.sh --prefix=/usr --destdir=%{pkgdir} --disable-ldconfig \\
+if [ ! -f ./install.sh ]; then
+    echo "rust: install.sh not found in $(pwd); contents:" >&2
+    ls -la . >&2
+    exit 1
+fi
+bash ./install.sh --prefix=/usr --destdir=%{pkgdir} --disable-ldconfig \\
     --components=rustc,cargo,rust-std-x86_64-unknown-linux-gnu
 """
