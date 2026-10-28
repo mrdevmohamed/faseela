@@ -313,8 +313,11 @@ fn setup_dir_root(spec: &SandboxSpec) -> Result<()> {
     if unsafe { libc::chdir(root_c.as_ptr()) } != 0 {
         bail!("chdir {}: {}", root.display(), std::io::Error::last_os_error());
     }
+    // NUL-terminated C strings: a Rust `String`'s pointer is NOT, and the
+    // kernel would read past the end of the path (ENOENT / wrong path)
+    let old_c = cstr(&old_s);
     if unsafe {
-        libc::syscall(libc::SYS_pivot_root, root_s.as_ptr(), old_s.as_ptr())
+        libc::syscall(libc::SYS_pivot_root, root_c.as_ptr(), old_c.as_ptr())
     } < 0
     {
         let err = std::io::Error::last_os_error();
@@ -865,7 +868,11 @@ fn exec_build(spec: &SandboxSpec) -> Result<()> {
             bail!("exec {}: {err}", shell);
         }
     }
-    bail!("no bash found at /usr/bin/bash or /bin/bash inside the sandbox root")
+    bail!(
+        "cannot exec bash at /usr/bin/bash or /bin/bash inside the sandbox root \
+         (ENOENT: bash is missing, or its ELF interpreter /lib64/ld-linux-x86-64.so.2 \
+         is — check that the build root has the merged-usr links from base-files)"
+    )
 }
 
 /// After `unshare(CLONE_NEWUSER)`: if the parent did not install a mapping
@@ -1049,12 +1056,13 @@ pub fn probe(op: &str) -> Result<bool> {
                         let _ = std::fs::create_dir_all(d.join("old"));
                         let s = d.to_string_lossy().into_owned();
                         let old = d.join("old").to_string_lossy().into_owned();
+                        let (s_c, old_c) = (cstr(&s), cstr(&old));
                         mbind(&s, &s, false).is_ok()
                             && unsafe {
                                 libc::syscall(
                                     libc::SYS_pivot_root,
-                                    s.as_ptr(),
-                                    old.as_ptr(),
+                                    s_c.as_ptr(),
+                                    old_c.as_ptr(),
                                 )
                             } == 0
                     }
