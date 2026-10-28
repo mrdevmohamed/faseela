@@ -1,5 +1,97 @@
 # Changelog
 
+## 0.8.0 — dependency-aware commands (pkgmgr)
+
+The one thing 0.7 still made you do by hand was walk the dependency list:
+`dpm deps X`, then build and install every entry yourself, in order.
+
+- **`dpm install <name>...`** builds and installs the packages *and every
+  missing dependency* (build + run, transitive) from the recipes. It prints
+  the plan, asks (`--yes` for scripts), shows `[n/total]` progress and a total
+  time, locks the db around each install only, and after a mid-plan failure
+  says how many packages were installed and that re-running continues where it
+  stopped. Named packages are recorded `explicit`, pulled-in ones `dependency`.
+  `-n/--dry-run` shows the plan only; `--no-deps` skips dependencies.
+  `dpm install <archive>` keeps working unchanged (any argument ending in
+  `.dpm.tar.zst` or containing `/` is an archive; several may be given).
+- **`dpm outdated`** / **`dpm update [name...]`** — compare installed versions
+  with the recipes; update rebuilds the outdated ones in dependency order and
+  keeps each package's install reason.
+- **`dpm autoremove`** (`-n`, `-y`, `--build-deps`) — removes dependency
+  packages nothing needs, dependents first. Build tools of kept packages stay
+  unless `--build-deps` is given.
+- **`dpm list -e` / `-d`** — only explicitly installed packages / only
+  dependencies.
+- Shell completions know the new commands; `install` completes package names
+  as well as files.
+- Internals: the planning logic lives in `src/plan.rs` as pure functions with
+  unit tests; `prepare_build` is shared by `build`, `install <name>` and
+  `update`.
+
+## 0.7.0 — DPM UX overhaul (pkgmgr)
+
+### Stop repeating yourself
+- **`dpm.toml` config file**: dpm reads the nearest `dpm.toml` at or above the
+  current directory (like git; `DPM_CONFIG` names one directly). Keys: `root`,
+  `recipes`, `builddir`, `profiles`, `jobs`, `repo`. Per-key precedence:
+  flag > env var > file > default; relative paths in the file anchor at the
+  file's own directory; unknown keys fail loudly. `dpm init` writes a
+  commented template; `dpm config show` prints the effective values with each
+  one's source.
+- **Environment variables**: `DPM_ROOT`, `DPM_RECIPES`, `DPM_BUILDDIR`,
+  `DPM_PROFILES`, `DPM_JOBS`, `DPM_REPO`.
+- **Global flags anywhere**: `--root --recipes --builddir --profiles --jobs`
+  are accepted before or after the subcommand (`dpm install --root /x a.zst`
+  works exactly like the old `dpm --root /x install a.zst`).
+- `dpm upgrade` picks its repository from the config's `repo` key /
+  `DPM_REPO` when `--repo` is absent.
+
+### Explore before you act
+- **`dpm search <term>`** — case-insensitive search over recipe names and
+  summaries, with an installed-marker per hit and `--glob` for `*`/`?`
+  patterns against the name.
+- **`dpm info <name>`** — version, arch, summary, license, source (pinned or
+  not), depends (build/run/check), sandbox policy, recipe path, and the
+  installed state (reason, date, size, file count).
+- **`dpm why <name>`** — reverse dependencies: which installed packages need
+  it (so you know what breaks before removing), `--tree` scans the whole
+  recipes tree too.
+- **`dpm list [pattern]`** — `query` keeps its exact old output when piped,
+  gains an optional name filter and a colored header on a terminal; `list`
+  is an alias.
+
+### One-step builds
+- **`dpm build --install <name>`** — builds the recipe and installs the fresh
+  archive into `--root` in a single command (`--force` passes through to the
+  install). The db lock wraps only the install step, never the build itself.
+
+### Safety and presentation
+- **Confirmations**: `remove` shows version, file count and reverse
+  dependencies before asking `y/N`; `upgrade` shows the plan and asks.
+  Non-interactive runs REQUIRE `--yes` — a piped stdin without it is refused,
+  never silently guessed (install never asks; the bootstrap is unaffected).
+- **Smart colors**: names bold, versions cyan, installed green, warnings
+  yellow — only on a real terminal. Pipes and scripts receive byte-identical
+  plain text. Honors `NO_COLOR` and `DPM_COLOR=always|never|auto`.
+- **Did-you-mean**: unknown package/recipe names get suggestions from the
+  recipe graph (`dpm build gzp` → *did you mean `gmp` or `gzip` or `gcc`?*),
+  both for `deps`/`build` targets and for missing dependency declarations.
+  A missing archive path suggests the closest files that do exist.
+- **Shell completions**: `dpm completions bash|zsh|fish` prints hand-written
+  scripts (no new crates — the offline vendored self-hosting build stays
+  dependency-free); package names complete dynamically via the hidden
+  `dpm __complete_pkgs`.
+
+### Compatibility notes (deliberate breaks, scripts updated in-tree)
+- `dpm remove` and `dpm upgrade` in non-interactive scripts now need `--yes`.
+  `scripts/smoke-v05.sh`, `scripts/smoke-v06.sh` and the bootstrap docs were
+  updated; both smoke suites pass against the release build.
+- 139 tests (was 113): new units cover config precedence/discovery, the
+  suggestion ranking, the color policy, glob matching, date/size formatting
+  and the confirmation contract; new e2e tests cover flags-after-subcommand,
+  search/info/why/list, `build --install`, completions output and the
+  non-interactive refusal.
+
 ## Unreleased
 
 ### Bootstrap audit: input-tracked resume, verified self-hosting, hardened gates

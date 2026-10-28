@@ -46,32 +46,129 @@ cargo build --release
 cargo test
 ```
 
-Commands:
+Commands (global flags work anywhere on the line — see the config section
+below for making them unnecessary):
 
 ```
-dpm --recipes recipes --builddir build build   <name>       # build package from recipe
-dpm --root /tmp/testroot install <archive.dpm.tar.zst>     # install archive into root
-dpm --recipes recipes deps <name>                          # show dependency order
-dpm --root /tmp/testroot query                             # list installed packages
-dpm --root /tmp/testroot files <name>                      # files owned by package
-dpm --root /tmp/testroot owner /usr/bin/foo                # which package owns file
-dpm --root /tmp/testroot remove <name>                     # remove package
+dpm install <name>...                          # build + install packages AND all missing dependencies
+dpm install -n <name>                          # show that plan, change nothing (--dry-run)
+dpm outdated                                   # installed packages whose recipe is newer
+dpm update [name...]                           # rebuild + reinstall the outdated ones
+dpm autoremove                                 # remove dependency packages nothing needs
+dpm build --install <name>                     # build ONE recipe and install it (no dependency handling)
+dpm install <archive.dpm.tar.zst>              # install a built archive into --root
+dpm search <term>                              # find recipes by name/summary (--glob for patterns)
+dpm info <name>                                # everything known about a package
+dpm why <name>                                 # who depends on it (--tree also scans recipes)
+dpm deps <name>                                # show dependency order
+dpm list [pattern] [-e|-d]                    # installed packages; -e explicit only, -d dependencies only
+dpm files <name>                               # files owned by package
+dpm owner /usr/bin/foo                         # which package owns file
+dpm remove --yes <name>                        # remove package (--yes skips the confirmation)
 dpm repo-create <dir-of-archives> --out index.toml --sign  # signed repo index
-dpm --root /tmp/testroot upgrade --repo <dir-or-url>       # upgrade from a repo
-dpm --root /tmp/testroot rollback <name>                   # restore previous version
-dpm --root /tmp/testroot service list                      # runit services
+dpm upgrade --yes --repo <dir-or-url>          # upgrade from a repo (repo also comes from dpm.toml)
+dpm rollback <name>                            # restore previous version
+dpm service list                               # runit services
+dpm config show                                # effective config + where each value came from
+dpm init                                       # write a commented dpm.toml template
+dpm completions bash|zsh|fish                  # shell completion scripts
 ```
 
 Any command accepts `--root` so everything can be tested safely against a
 throwaway directory instead of `/`.
 
+### Installing by name
+
+```
+dpm install curl          # shows the plan, asks, then builds + installs
+```
+
+`dpm install <name>` resolves `depends.build` **and** `depends.run`
+transitively, skips whatever is already installed, and prints the order
+before touching anything:
+
+```
+dpm: 3 package(s) to build and install into /:
+    1. zlib                   1.3.1-1       dependency
+    2. openssl                3.3.1-1       dependency
+    3. curl                   8.9.1-1       explicit
+```
+
+Then each step is built and installed in turn (`[2/3] building ...`), the db
+lock is held only around each install, and a failure in the middle says how
+many packages already landed — re-running the same command continues, because
+installed packages are skipped. Packages you named are recorded as `explicit`,
+everything pulled in as `dependency`.
+
+* `-n/--dry-run` prints the plan and stops; `-y/--yes` is required when stdin
+  is not a terminal (same contract as `remove` and `upgrade`)
+* `--no-deps` builds only the named packages
+* `--isolation`, `--use-cache`, `--allow-degraded`, `--force`,
+  `--allow-unsigned` work as for `dpm build` / `dpm install <archive>`
+* a bare word is a package name; anything ending in `.dpm.tar.zst` or
+  containing a `/` is an archive path (the two cannot be mixed in one call)
+
+`dpm outdated` lists installed packages whose recipe has a newer
+`version-rel`; `dpm update` plans and rebuilds exactly those (plus any missing
+dependency they gained), keeping each package's explicit/dependency reason.
+`dpm autoremove` removes `dependency` packages that no explicit package needs
+any more, dependents first. Build-only dependencies of packages you keep
+(compilers, headers) are **kept** unless you pass `--build-deps`, since the next
+rebuild needs them.
+
+### Configuration (dpm.toml)
+
+dpm reads the nearest `dpm.toml` at or above the current directory (like git;
+`DPM_CONFIG` names one directly) and merges it **under** the command-line
+flags:
+
+```toml
+root      = "/"                                  # env: DPM_ROOT
+recipes   = "recipes"                            # env: DPM_RECIPES
+builddir  = "build"                              # env: DPM_BUILDDIR
+profiles  = "profiles"                           # env: DPM_PROFILES
+jobs      = 8                                    # env: DPM_JOBS
+repo      = "https://mirror.example.com/stable"  # env: DPM_REPO — default for `dpm upgrade`
+```
+
+Precedence per key: **flag > env var > dpm.toml > default**. Relative paths
+inside the file resolve against the file's own directory, so the config means
+the same thing from any subdirectory. `dpm init` writes a commented template;
+`dpm config show` prints the effective values annotated with where each one
+came from.
+
+### Confirmations, colors, suggestions
+
+* `remove` and `upgrade` print exactly what they are about to do and ask
+  `y/N`. Non-interactive runs (scripts, CI) must pass `--yes`; without it a
+  piped stdin is **refused** rather than guessed at. `install` never asks —
+  the bootstrap depends on it.
+* Output is colored only on a real terminal; pipes and scripts get plain,
+  byte-identical text. `NO_COLOR` disables colors, `DPM_COLOR=always|never|auto`
+  overrides the detection.
+* Mistyped package names get suggestions built from the recipe graph:
+  `dpm build gzp` → *did you mean `gmp` or `gzip` or `gcc`?*
+
+### Shell completions
+
+```
+dpm completions bash | sudo tee /etc/bash_completion.d/dpm   # then restart the shell
+dpm completions zsh > "${fpath[1]}/_dpm"                     # zsh
+dpm completions fish > ~/.config/fish/completions/dpm.fish   # fish
+```
+
+Package names complete dynamically — the scripts shell out to
+`dpm __complete_pkgs`, which lists every recipe plus every installed package.
+
 ### Database locking
 
 Every command that touches `<root>/var/lib/dpm` takes an `flock(2)` lock on
 `<root>/var/lib/dpm/lock`: `install`, `remove`, `rollback` and `upgrade`
-exclusively (held for the whole command, hooks included); `query`, `files`,
-`owner`, `deps`, `deps-all` and `upgrade --dry-run` shared, so readers never
-see a half-applied transaction and don't block each other. A second dpm waits
+exclusively (held for the whole command, hooks included); `query`, `list`,
+`files`, `owner`, `info`, `why`, `deps`, `deps-all` and `upgrade --dry-run`
+shared, so readers never see a half-applied transaction and don't block each
+other (`build --install` locks around the install step only, never through
+the build itself). A second dpm waits
 and prints who holds the lock; `DPM_LOCK_TIMEOUT=<seconds>` makes it give up
 instead. The kernel releases the lock when the holder exits for any reason, so
 there are no stale lock files to clean up. Package hooks get `DPM_LOCK_HELD=1`
@@ -330,6 +427,11 @@ See `bootstrap/README.md` for details and host requirements.
 - [x] `dpm service` — runit enable/disable/list/status UX
 - [x] initramfs: USB3/HID (USB keyboards), virtio, and filesystem modules
       staged for live boot
+- [x] DPM v0.7 UX overhaul: `dpm.toml` config file + `DPM_*` env vars,
+      global flags anywhere on the line, `search`/`info`/`why`/`list`,
+      `build --install` in one step, `remove`/`upgrade` confirmations with
+      `--yes` for scripts, smart terminal colors (plain when piped),
+      did-you-mean suggestions for typos, shell completions (bash/zsh/fish)
 - [ ] initramfs: LVM/LUKS (needs cryptsetup/lvm2 recipes — stretch)
 - [ ] Remote repo mirrors list / repo priority
 

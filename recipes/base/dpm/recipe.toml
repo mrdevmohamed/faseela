@@ -2,7 +2,7 @@
 # base recipe: DPM — this distribution's source-based package manager (self-hosting build)
 [package]
 name = "dpm"
-version = "0.6.1"
+version = "0.7.0"
 rel = 1
 arch = ["x86_64"]
 summary = "DPM — this distribution's source-based package manager (self-hosting build)"

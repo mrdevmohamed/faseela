@@ -75,7 +75,7 @@ unavailable but a working installed dpm exists (fail loudly otherwise).
 stage2-inner.sh:144-165 hardcodes a readline rebuild on every resume —
 leftover from the SHLIB_LIBS fix, incomplete by design (dependents are not
 rebuilt) and confusing. **Fix**: remove; document the correct procedures
-(`--from-stage 2` for everything, `dpm remove <pkg>` + re-run for one package).
+(`--from-stage 2` for everything, `dpm remove --yes <pkg>` + re-run for one package).
 
 ### D7 — ~1 GB seed tarball (and seed-root scratch) copied into the chroot at every stage (MED)
 stage1/2/3 `cp -a "$REPO/bootstrap" ...` includes `bootstrap/seed/seed.tar.zst`

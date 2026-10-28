@@ -291,8 +291,9 @@ mkdir -p /build
 # stage2's isolation level, so editing a recipe does NOT rebuild an installed
 # package here. Deliberate procedures (use one):
 #   * rebuild everything from the current recipes:  build-all.sh --from-stage 2
-#   * rebuild ONE package:  dpm --root / remove <pkg> && re-run stage 2
-#     (deps-all then re-orders it, and stage 2's final-root sync picks it up)
+#   * rebuild ONE package:  dpm remove --yes --root / <pkg> && re-run stage 2
+#     (--yes: stage 2 runs non-interactively; deps-all then re-orders it,
+#     and stage 2's final-root sync picks it up)
 # A proper build-id-driven world rebuild is stage3 --isolation closure
 # territory (dpm's build cache already records build ids at `env` and above).
 # --------------------------------------------------------------------------

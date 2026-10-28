@@ -16,4 +16,19 @@ run = ["bzip2", "expat", "gdbm", "libffi", "ncurses", "openssl", "readline", "sq
 [build]
 configure = "cd %{srcdir}/Python-* && ./configure --prefix=/usr --enable-shared --with-system-expat --without-ensurepip --disable-test-modules"
 compile = "cd %{srcdir}/Python-* && make -j%{jobs}"
-install = "cd %{srcdir}/Python-* && make DESTDIR=%{pkgdir} install"
+install = '''
+cd %{srcdir}/Python-* && make DESTDIR=%{pkgdir} install
+
+# CPython records the build tree in its sysconfig data and the config
+# Makefile. dpm lint rightly refuses an archive that names the build
+# machine's paths, so rewrite them to neutral ones (the package stays
+# relocatable; nothing at runtime reads these paths).
+bd=$(dirname %{srcdir})
+for f in %{pkgdir}/usr/lib/python3.*/_sysconfigdata_*.py \
+         %{pkgdir}/usr/lib/python3.*/config-*/Makefile; do
+  [ -f "$f" ] || continue
+  sed -i -e "s#%{pkgdir}##g" -e "s#$bd/src#/usr/src#g" -e "s#$bd#/usr/src#g" "$f"
+done
+# a stale bytecode copy would still carry the old paths
+rm -f %{pkgdir}/usr/lib/python3.*/__pycache__/_sysconfigdata_*
+'''
