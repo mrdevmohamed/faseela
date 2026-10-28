@@ -31,12 +31,13 @@ mydistro/
 | Workflow | Trigger | What it does |
 |----------|---------|--------------|
 | `.github/workflows/ci.yml` | push, pull request | `cargo build`, `clippy -D warnings`, `cargo test`; shell syntax + ShellCheck, recipe validation, the `build-all.sh` mock tests and a dry run |
-| `.github/workflows/release.yml` | tag `v*`, or *Run workflow* | runs CI, then builds the whole distribution (`build-all.sh`) and uploads the ISO + sha256 as an artifact; on a tag it also creates a GitHub Release |
+| `.github/workflows/release.yml` | tag `v*`, or *Run workflow* | runs CI, then builds the whole distribution (`build-all.sh`) and uploads the ISO **and the rootfs** (`mydistro-x86_64-rootfs.tar.zst`) + sha256 files as artifacts; on a tag it also creates a GitHub Release. The rootfs of the previous release is the **seed of the build** (self-hosting; Debian seed only for the first release or with `seed: debian`) |
 
 A full source build takes hours. GitHub-hosted runners stop after 6 h, so for
 a complete ISO set the repository variable `ISO_RUNNER` (Settings > Variables)
 to the label of a self-hosted Linux runner with sudo and >= 30 GB free disk.
-Release assets are limited to 2 GiB; a bigger ISO stays as the workflow artifact.
+Release assets are limited to 2 GiB; a bigger ISO or rootfs stays as the workflow artifact
+(and a release without the rootfs cannot seed the next build).
 
 ## DPM — the package manager
 
@@ -367,8 +368,9 @@ option list, the stage contracts and the seed trust boundary.
 | 1 — Chroot | `bootstrap/stage1.sh`       | verify the seed (zstd + sha256), unpack, chroot; seed toolchain verified (it IS the temporary toolchain) |
 | 2 — Core   | `bootstrap/stage2.sh`       | Build & install core system with DPM from recipes (into the build root and the clean final root) |
 | 3 — Self   | `bootstrap/stage3.sh`       | Rebuild the toolchain (or world) with the distro's own toolchain, remove the seed, PROVE self-hosting (compile+run test, db ownership, ELF /opt scan) |
-| 4 — ISO    | `bootstrap/mkiso.sh`        | squashfs + initramfs + grub → hybrid ISO, structurally validated (boot-critical members verified IN the image) |
-| 5 — Disk   | `bootstrap/install.sh`      | run in the live system: partition, copy, grub → installed disk |
+| 4 — Rootfs | `bootstrap/mkrootfs.sh`     | final root → `mydistro-x86_64-rootfs.tar.zst` (+ `.sha256`, `.packages`), validated; published with the ISO and used as the seed of the next build (`build-all.sh --seed-rootfs`, `bootstrap/seed-from-rootfs.sh`) |
+| 5 — ISO    | `bootstrap/mkiso.sh`        | squashfs + initramfs + grub → hybrid ISO, structurally validated (boot-critical members verified IN the image) |
+| 6 — Disk   | `bootstrap/install.sh`      | run in the live system: partition, copy, grub → installed disk |
 
 See `bootstrap/README.md` for details and host requirements.
 

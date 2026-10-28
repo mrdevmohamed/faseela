@@ -1,8 +1,15 @@
 name: Build ISO (CD)
 
-# Builds the whole distribution from source and publishes the bootable ISO.
-#   * push a tag `v*`            -> build + GitHub Release with the ISO
+# Builds the whole distribution from source and publishes the bootable ISO
+# TOGETHER WITH its rootfs (mydistro-x86_64-rootfs.tar.zst + .sha256).
+#   * push a tag `v*`            -> build + GitHub Release with ISO and rootfs
 #   * Actions > Run workflow     -> build + downloadable artifact only
+#
+# Self-hosting: the rootfs of a release is the SEED of the next build. Each run
+# looks for the newest release that carries a rootfs, verifies its checksum and
+# builds with it (build-all.sh --seed-rootfs) instead of the Debian-based seed,
+# so the distribution is built by its own previous release. The very first run
+# (no release yet) and `seed: debian` bootstrap from the Debian seed.
 #
 # A full source build is long. GitHub-hosted runners stop a job after 6 hours
 # and have limited disk, so for a complete build set the repository variable
@@ -31,6 +38,11 @@ on:
         description: "Resume from the cached build target of the previous run (uncheck for a clean start)"
         type: boolean
         default: true
+      seed:
+        description: "Build seed: auto = previous release's rootfs if there is one, else Debian; rootfs = require it; debian = always start from the Debian seed"
+        type: choice
+        options: [auto, rootfs, debian]
+        default: auto
 
 permissions:
   contents: read
@@ -53,8 +65,46 @@ jobs:
     env:
       TARGET: /mnt/mydistro
       ISOLATION: ${{ inputs.isolation || 'env' }}
+      ISO_NAME: mydistro-x86_64.iso
+      ROOTFS_ASSET: mydistro-x86_64-rootfs.tar.zst
     steps:
       - uses: actions/checkout@v4
+
+      # Seed selection, BEFORE the Debian-seed cache so a rootfs seed does not
+      # restore (and later save) a ~330 MB seed it will not use. The download
+      # is verified against the release's .sha256 inside the script; a
+      # mismatch or a gh failure fails the job (never a silent fallback to a
+      # different seed). Needs the gh CLI (preinstalled on hosted runners).
+      - name: Choose the seed (previous release's rootfs, else Debian)
+        id: rootfsseed
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          SEED_MODE: ${{ inputs.seed || 'auto' }}
+        run: |
+          if [[ "$SEED_MODE" == debian ]]; then
+            echo "seed: Debian (requested)"
+            echo "### Seed: Debian-based (requested)" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          rc=0
+          path="$(bash scripts/fetch-rootfs-seed.sh "$RUNNER_TEMP/rootfs-seed")" || rc=$?
+          case "$rc" in
+            0)
+              echo "path=$path" >> "$GITHUB_OUTPUT"
+              echo "### Seed: previous release's rootfs (self-hosting)" >> "$GITHUB_STEP_SUMMARY"
+              echo "sha256: $(cut -d' ' -f1 "$path.sha256")" >> "$GITHUB_STEP_SUMMARY" ;;
+            3)
+              if [[ "$SEED_MODE" == rootfs ]]; then
+                echo "::error::seed=rootfs, but no release carries $ROOTFS_ASSET"
+                exit 1
+              fi
+              echo "::notice::no published rootfs yet - bootstrapping from the Debian seed"
+              echo "### Seed: Debian-based (no release carries a rootfs yet)" >> "$GITHUB_STEP_SUMMARY" ;;
+            *)
+              echo "::error::could not fetch/verify the rootfs seed (fetch-rootfs-seed.sh exit $rc)"
+              exit "$rc" ;;
+          esac
 
       # The hosted runner already has ~100 GB free; removing dotnet/android/ghc
       # cost ~52 s per run. Opt in with the repository variable FREE_DISK=true.
@@ -74,6 +124,7 @@ jobs:
       # survived -> the next resume died with "stage1: seed missing".
       - name: Restore the bootstrap seed
         id: seedcache
+        if: ${{ steps.rootfsseed.outputs.path == '' }}
         uses: actions/cache/restore@v4
         with:
           path: |
@@ -121,10 +172,16 @@ jobs:
       - name: Build the distribution (seed -> stage1 -> stage2 -> stage3 -> ISO)
         id: build
         timeout-minutes: 320 # leaves ~35 min of the 355 for saving the cache and logs
+        env:
+          ROOTFS_SEED: ${{ steps.rootfsseed.outputs.path }}
         run: |
-          args=(--isolation "$ISOLATION" --out "$GITHUB_WORKSPACE/out/mydistro-x86_64.iso")
+          args=(--isolation "$ISOLATION"
+                --out "$GITHUB_WORKSPACE/out/$ISO_NAME"
+                --rootfs-out "$GITHUB_WORKSPACE/out/$ROOTFS_ASSET")
           [[ "${{ inputs.with_gui }}" == "true" ]]     && args+=(--with-gui)
           [[ "${{ inputs.stage3_world }}" == "true" ]] && args+=(--stage3-world)
+          # self-hosting: the previous release's rootfs replaces the Debian seed
+          [[ -n "$ROOTFS_SEED" ]]                      && args+=(--seed-rootfs "$ROOTFS_SEED")
           sudo -E ./bootstrap/build-all.sh "${args[@]}" "$TARGET"
 
       - name: Save the bootstrap seed (also on failure)
@@ -163,16 +220,29 @@ jobs:
           # hand them to the runner user before writing the .sha256 next to it.
           sudo chown -R "$(id -u):$(id -g)" out
           cd out
-          sha256sum mydistro-x86_64.iso | tee mydistro-x86_64.iso.sha256
-          echo "size=$(stat -c %s mydistro-x86_64.iso)" >> "$GITHUB_OUTPUT"
+          sha256sum "$ISO_NAME" | tee "$ISO_NAME.sha256"
+          echo "size=$(stat -c %s "$ISO_NAME")" >> "$GITHUB_OUTPUT"
+          # the rootfs checksum was written by mkrootfs.sh; re-verify it here,
+          # because the NEXT build trusts exactly this file as its seed
+          sha256sum -c "$ROOTFS_ASSET.sha256"
+          echo "rootfs_size=$(stat -c %s "$ROOTFS_ASSET")" >> "$GITHUB_OUTPUT"
 
-      - name: Upload the ISO as a workflow artifact
+      - name: Upload the ISO and the rootfs as workflow artifacts
         uses: actions/upload-artifact@v4
         with:
           name: mydistro-x86_64-iso
           path: |
             out/mydistro-x86_64.iso
             out/mydistro-x86_64.iso.sha256
+          retention-days: 14
+          compression-level: 0
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mydistro-x86_64-rootfs
+          path: |
+            out/mydistro-x86_64-rootfs.tar.zst
+            out/mydistro-x86_64-rootfs.tar.zst.sha256
+            out/mydistro-x86_64-rootfs.packages
           retention-days: 14
           compression-level: 0
 
@@ -191,13 +261,23 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
-      # A release asset is limited to 2 GiB. Bigger ISOs stay as the artifact
-      # above and the release carries only the checksum file.
+      # A release asset is limited to 2 GiB. Bigger files stay as the artifacts
+      # above and the release carries only the checksum files. The rootfs and
+      # its .sha256 are what the NEXT build downloads as its seed
+      # (scripts/fetch-rootfs-seed.sh): a release without them is skipped there.
       - name: Publish the GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
+          body: |
+            Contains the bootable ISO and the **rootfs** (`mydistro-x86_64-rootfs.tar.zst`).
+            The rootfs is the seed of the next build (`bootstrap/build-all.sh --seed-rootfs`),
+            so the distribution is built by its own previous release.
+            This release was built from: ${{ steps.rootfsseed.outputs.path != '' && 'the previous release rootfs (self-hosting)' || 'the Debian-based bootstrap seed' }}.
           files: |
             out/mydistro-x86_64.iso.sha256
+            out/mydistro-x86_64-rootfs.tar.zst.sha256
+            out/mydistro-x86_64-rootfs.packages
             ${{ steps.sum.outputs.size < 2147483648 && 'out/mydistro-x86_64.iso' || '' }}
+            ${{ steps.sum.outputs.rootfs_size < 2147483648 && 'out/mydistro-x86_64-rootfs.tar.zst' || '' }}

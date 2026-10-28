@@ -9,10 +9,14 @@ stage 0  seed/build-seed.sh   assemble prebuilt toolchain (gcc, glibc, rustc)
 stage 1  stage1.sh            chroot + verify the seed toolchain (it is the temporary toolchain)
 stage 2  stage2.sh            DPM builds the FULL recipe graph into the target
 stage 3  stage3.sh            self-hosting rebuild (toolchain, or STAGE3_WORLD=1 for all)
-stage 4  mkiso.sh             squashfs + initramfs + grub -> bootable live ISO
+stage 4  mkrootfs.sh          final root -> mydistro-x86_64-rootfs.tar.zst (+ .sha256, .packages)
+stage 5  mkiso.sh             squashfs + initramfs + grub -> bootable live ISO
 ```
 
-## Boot flow (stage 4 output)
+The stage-4 rootfs is published next to the ISO and is the **seed of the next
+build** — see "Self-hosting: the rootfs as the next seed" below.
+
+## Boot flow (stage 5 output)
 
 ```
 grub (hybrid BIOS+UEFI)
@@ -27,8 +31,9 @@ grub (hybrid BIOS+UEFI)
 
 ## Host requirements
 
-* root for chroot + bind mounts (stages 1-3); stage 4 works as non-root
-* stage 4 tools: `squashfs-tools`, `grub-pc-bin`, `grub-efi-amd64-bin`,
+* root for chroot + bind mounts (stages 1-3); stages 4-5 work as non-root
+  (the rootfs is best packed as root so ownership is recorded faithfully)
+* stage 5 (ISO) tools: `squashfs-tools`, `grub-pc-bin`, `grub-efi-amd64-bin`,
   `xorriso`, `mtools` (Debian names) + gcc/make for the initramfs busybox
 * ~10 GB free disk, decent network
 
@@ -97,8 +102,9 @@ changed recipe tree, as a release build should.
 * **`--from-stage S`** forces a restart point (stamps from S onward are
   invalidated — S itself re-runs, even the seed when adoptable);
   `--fresh` redoes everything, `--wipe` also deletes a previous target,
-  `--dry-run` previews (writes nothing, invalidates nothing), `--no-iso`
-  stops after stage 3
+  `--dry-run` previews (writes nothing, invalidates nothing), `--no-iso` /
+  `--no-rootfs` switch the ISO / rootfs stage off (both: stop after stage 3).
+  Stage numbers: `seed|0, 1, 2, 3, rootfs|4, iso|5`
 * **`--wipe` safety**: refuses FHS top-level system paths and their
   interiors, the repository itself and every ancestor of it (the target
   would swallow the repo), `$HOME`, mountpoints, and a target with
@@ -178,13 +184,54 @@ the Ubuntu seed:
 * Stage 2 and 3 install each archive into `/` **and** `dpm --root /sysroot`.
   At the end of each stage the final root is synced (resume-safe), its ld.so
   cache is regenerated, and it is checked for seed/build leaks.
-* The ISO (stage 4) is packed from the **final root**; the build root is
-  never shipped. Validate the result with `scripts/validate-install.sh`.
+* The rootfs (stage 4) and the ISO (stage 5) are packed from the **final
+  root**; the build root is never shipped. Validate the result with `scripts/validate-install.sh`.
 * `--single-root` restores the old behaviour (one root, ISO from `TARGET`).
   Switching layouts between runs invalidates stage 2 onward automatically
   (recorded in `<state>/layout`).
 * Extra disk: the final root adds roughly the size of the installed system
   (a few GB) on top of the build root.
+
+## Self-hosting: the rootfs as the next seed
+
+Stage 4 (`mkrootfs.sh`) packs the finished final root — the exact tree the ISO
+squashes — into `mydistro-x86_64-rootfs.tar.zst`, with a `sha256sum -c`
+compatible `.sha256` and a `.packages` inventory. Pseudo-fs content, build
+scratch and seed leftovers are excluded, and a root that fails the sanity checks
+(missing `bash`/`dpm`/`gcc`/libc/db, or `/opt/seed`, `/build`, ... leaked in) is
+refused. The archive is re-read after writing and must contain what a consumer
+needs.
+
+The next build can use it instead of the Debian-based seed:
+
+```bash
+sudo ./build-all.sh --seed-rootfs out/mydistro-x86_64-rootfs.tar.zst \
+                    [--seed-rootfs-sha256 <hash from the release notes>] /mnt/mydistro
+```
+
+* stage 0 is not needed (the Debian seed is neither built nor used);
+* stage 1 verifies the file (zstd frame, `.sha256` sidecar, optional pin),
+  unpacks it with numeric ids/xattrs and runs `seed-from-rootfs.sh`, which
+  checks the toolchain is really there (gcc, make, python, perl, curl,
+  rustc/cargo, ...), **parks the dpm database** (`/var/lib/dpm/seed-local`;
+  without that, stage 2 would see every package as installed and build
+  nothing), drops stale rollback records, and writes `/opt/seed/env.sh` +
+  `/opt/seed/manifest.txt` (which rootfs seeded this build);
+* stage 2 then rebuilds the whole graph with the previous build's own
+  toolchain and stage 3 proves it again (db ownership of `gcc`/`dpm`, compile +
+  run test, ELF scan) — the files left over from the seed are exactly the ones
+  *no package owns*, as with the Debian seed;
+* the seed's identity (its checksum) is part of stage 1's input fingerprint:
+  a different rootfs invalidates stage 1 and everything after it, the same file
+  re-downloaded does not.
+
+In CI (`release.yml`) this is automatic: the rootfs is uploaded with every
+release, and each run looks for the newest release that carries one
+(`scripts/fetch-rootfs-seed.sh`: both assets required, checksum verified, a
+mismatch fails the job), falling back to the Debian seed only when no release
+has a rootfs yet. `seed: debian` in *Run workflow* breaks the chain on purpose
+(e.g. to rebuild from the independent seed); `seed: rootfs` fails instead of
+falling back.
 
 ## The seed trust boundary (read this before trusting the result)
 
@@ -199,6 +246,13 @@ extracted verbatim with `dpkg -x` (gcc, glibc, binutils, make, ...) plus a
   independence (see the stage contract above) — but the toolchain that
   built the toolchain was still the seed. A trusted bootstrap would require
   a source-built seed (future work, LFS-style stages 0/1).
+* A rootfs seed does not remove that boundary, it **moves** it: the first
+  release is built from the Debian seed, every later one from the previous
+  release's rootfs. The chain is only as trustworthy as the first link and
+  every published rootfs (a compromised rootfs would reproduce itself into the
+  next one — the classic "trusting trust" problem). Publish the checksums,
+  pin them with `--seed-rootfs-sha256`, and rebuild from the Debian seed
+  (`seed: debian`) now and then to compare.
 * What IS verified today: the seed tarball's integrity (zstd frame + sha256
   sidecar) before it is unpacked; its content manifest
   (`opt/seed/manifest.txt`: exact `.deb` file names, rustc version, host,
