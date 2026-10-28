@@ -8,7 +8,7 @@ arch = ["x86_64"]
 summary = "OpenType text shaping engine"
 license = ["MIT"]
 source = "https://github.com/harfbuzz/harfbuzz/releases/download/%{version}/harfbuzz-%{version}.tar.xz"
-sha256 = "5a8e728d26aa83ebc24b6ecf4dcf6935a923aae63313a4cc3bd295bd7bb654d3"
+sha256 = "b2cb13bd351904cb9038f907dc0dee0ae07127061242fe3556b2795c4e9748fc"
 
 [depends]
 build = ["meson", "ninja", "pkgconf", "freetype"]
