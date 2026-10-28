@@ -86,6 +86,20 @@ if [ "$ISOLATION" = "closure" ]; then
         *" base-devel "*) ;;
         *) ORDER="base-devel $ORDER"; COUNT=$((COUNT+1)) ;;
     esac
+
+    # `closure` assembles each build root from archives in <builddir>/out, and
+    # stage 3 builds in /build3 while stage 2 produced the archive set in
+    # /build. Seed /build3/out with it (a real copy, never a hardlink: stage 3
+    # rewrites same-named archives as it rebuilds, which must not touch
+    # stage 2's files; -n keeps anything stage 3 already built on a resume).
+    if ! compgen -G "/build/out/*.dpm.tar.zst" >/dev/null; then
+        echo "stage3: closure needs stage 2's archives in /build/out — none found" >&2
+        echo "stage3: re-run from stage 2: build-all.sh --from-stage 2 ..." >&2
+        exit 1
+    fi
+    mkdir -p /build3/out
+    cp -an --reflink=auto /build/out/. /build3/out/
+    echo "== stage3: seeded /build3/out with stage 2's archives ($(ls /build3/out/*.dpm.tar.zst | wc -l))"
 fi
 
 i=0

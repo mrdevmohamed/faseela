@@ -52,7 +52,16 @@ pub fn closure_of(
 /// The packages whose archives make up the build root for `target`
 /// (§5.1). `with_check` adds `depends.check` (built with `--check`).
 pub fn buildroot(target: &Recipe, known: &BTreeMap<String, Recipe>, with_check: bool) -> Result<Vec<String>> {
-    let mut seeds: Vec<String> = vec![BASE_DEVEL.to_string()];
+    let mut seeds: Vec<String> = Vec::new();
+    if target.package.name == BASE_DEVEL {
+        // base-devel DEFINES the base layer, so its own build root cannot
+        // contain base-devel: that archive is the very thing being built
+        // (a chicken-and-egg `dependency archive ... not found`). Use the
+        // toolchain set it names (its run deps) as the base instead.
+        seeds.extend(target.depends.run.iter().cloned());
+    } else {
+        seeds.push(BASE_DEVEL.to_string());
+    }
     seeds.extend(target.depends.build.iter().cloned());
     if with_check {
         seeds.extend(target.depends.check.iter().cloned());
@@ -384,6 +393,32 @@ mod tests {
         let with = buildroot(&target, &known, true).unwrap();
         assert!(with.contains(&"dejagnu".to_string()));
         assert_eq!(with.len(), 4);
+    }
+
+    #[test]
+    fn base_devel_build_root_excludes_itself() {
+        let target: Recipe = toml::from_str(
+            r#"
+            [package]
+            name = "base-devel"
+            version = "1"
+
+            [depends]
+            run = ["gcc", "zlib"]
+
+            [build]
+            install = "true"
+            "#,
+        )
+        .unwrap();
+        let known = map(vec![
+            rec("base-devel", &[], &["gcc", "zlib"]),
+            rec("gcc", &[], &["gmp"]),
+            rec("gmp", &[], &[]),
+            rec("zlib", &[], &[]),
+        ]);
+        let root = buildroot(&target, &known, false).unwrap();
+        assert_eq!(root, vec!["gcc", "gmp", "zlib"]);
     }
 
     #[test]
