@@ -283,8 +283,17 @@ fn setup_live_root(spec: &SandboxSpec) -> Result<()> {
 /// uses — and pivot_root into a read-only tree is refused by the kernel).
 fn setup_dir_root(spec: &SandboxSpec) -> Result<()> {
     let root = PathBuf::from(&spec.root.dir);
-    if !root.is_dir() {
-        bail!("sandbox build root {} does not exist", root.display());
+    match std::fs::metadata(&root) {
+        Ok(m) if m.is_dir() => {}
+        Ok(_) => bail!("sandbox build root {} is not a directory", root.display()),
+        Err(e) => bail!(
+            "sandbox build root {} is not reachable from inside the sandbox: {e}\n\
+             (when dpm runs as root the sandbox maps only uid 0 and 100000.., so a \
+             parent directory owned by another user with mode 750 — e.g. a default \
+             /home/<user> — cannot be traversed there. Use a --builddir outside \
+             your home, e.g. /var/tmp/dpm or /build)",
+            root.display()
+        ),
     }
     mount_rprivate("/")?;
 
@@ -372,9 +381,13 @@ fn mount_layers(spec: &SandboxSpec, root: &Path) -> Result<()> {
             bail!("path {} cannot be used in an overlayfs mount (, or :)", p);
         }
     }
+    // `userxattr`: inside a user namespace the kernel cannot set trusted.overlay.*
+    // xattrs ("failed to set xattr on upper"); it must use user.overlay.* (>= 5.11).
     let data = format!(
-        "lowerdir={},upperdir={},workdir={}",
-        lower.join(":"),
+        "lowerdir={},upperdir={},workdir={},userxattr",
+        // overlayfs: the FIRST lowerdir is the TOPMOST; `layers` is bottom-most
+        // first (later members win conflicts, like extract-per-build), so reverse
+        lower.iter().rev().cloned().collect::<Vec<_>>().join(":"),
         upper.display(),
         work.display()
     );
@@ -1120,14 +1133,21 @@ fn mount_layers_overlay_probe(
     upper: &Path,
     work: &Path,
 ) -> Result<()> {
+    // upperdir/workdir must exist before the mount (the real mount_layers
+    // creates them too); otherwise overlayfs fails with ENOENT and the probe
+    // reports "no overlay" on kernels that do support it.
     std::fs::create_dir_all(merged)?;
+    std::fs::create_dir_all(upper)?;
+    std::fs::create_dir_all(work)?;
     let lower = layers
         .iter()
         .map(|p| p.to_string_lossy().trim_end_matches('/').to_string())
         .collect::<Vec<_>>()
         .join(":");
+    // `userxattr`: inside a user namespace the kernel cannot set trusted.overlay.*
+    // xattrs ("failed to set xattr on upper"); it must use user.overlay.* (>= 5.11).
     let data = format!(
-        "lowerdir={},upperdir={},workdir={}",
+        "lowerdir={},upperdir={},workdir={},userxattr",
         lower,
         upper.display(),
         work.display()
