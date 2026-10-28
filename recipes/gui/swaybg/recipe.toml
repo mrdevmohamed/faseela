@@ -8,7 +8,7 @@ arch = ["x86_64"]
 summary = "Wallpaper tool for Wayland compositors"
 license = ["MIT"]
 source = "https://github.com/swaywm/swaybg/releases/download/v%{version}/swaybg-%{version}.tar.gz"
-sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+sha256 = "6af1fdf0e57b1cc5345febed786b761fea0e170943a82639f94cfaed7df84f8f"
 
 [depends]
 build = ["meson", "ninja", "pkgconf", "wayland", "wayland-protocols", "cairo"]
