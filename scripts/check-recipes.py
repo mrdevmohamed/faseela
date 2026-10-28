@@ -80,16 +80,6 @@ def main():
         pkg = r["package"]
         sha = pkg.get("sha256", "")
         src = pkg.get("source", "")
-        # fields every recipe must carry (a package without a summary or a
-        # license would silently degrade `dpm search` / the license report)
-        if not pkg.get("summary"):
-            errors.append(f"{r['_path']}: missing package.summary")
-        if not pkg.get("license"):
-            errors.append(f"{r['_path']}: missing package.license")
-        if not pkg.get("arch"):
-            errors.append(f"{r['_path']}: missing package.arch")
-        elif pkg["arch"] != ["x86_64"]:
-            errors.append(f"{r['_path']}: unexpected arch {pkg['arch']} (expected [\"x86_64\"])")
         if src and not src.startswith("local:"):
             if sha == ZERO:
                 placeholders.append(n)

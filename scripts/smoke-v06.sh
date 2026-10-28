@@ -43,7 +43,7 @@ fi
 echo "== 2. serve over HTTP; upgrade from the remote URL =="
 ( cd "$REPO" && exec python3 -m http.server "$PORT" --bind 127.0.0.1 ) >/dev/null 2>&1 &
 SRV_PID=$!
-for _ in $(seq 1 50); do
+for i in $(seq 1 50); do
     curl -fs -o /dev/null "http://127.0.0.1:$PORT/index.toml" 2>/dev/null && break
     sleep 0.1
 done
@@ -66,7 +66,7 @@ grep -q "up to date" <<< "$OUT"
 echo "== 5. dry-run against a fresh remote version over HTTP =="
 ( cd "$REPO" && exec python3 -m http.server "$PORT" --bind 127.0.0.1 ) >/dev/null 2>&1 &
 SRV_PID=$!
-for _ in $(seq 1 50); do
+for i in $(seq 1 50); do
     curl -fs -o /dev/null "http://127.0.0.1:$PORT/index.toml" 2>/dev/null && break
     sleep 0.1
 done

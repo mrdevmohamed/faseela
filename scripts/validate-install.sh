@@ -116,7 +116,7 @@ ls "$WORK/mnt/var/cache/dpm" >/dev/null 2>&1 && echo "  ok: cache dir created on
 # ============================================================ BIOS path ====
 echo "== BIOS install =="
 : > "$CMDLOG"
-rm -rf "${WORK:?}/mnt"; mkdir -p "${WORK:?}/mnt/etc"
+rm -rf "$WORK/mnt"; mkdir -p "$WORK/mnt/etc"
 printf '127.0.0.1 localhost mydistro\n' > "$WORK/mnt/etc/hosts"
 run_install bios
 
@@ -140,7 +140,7 @@ echo "== safety checks =="
 # ==================================================== --no-pkg-cache =======
 echo "== no-pkg-cache path =="
 : > "$CMDLOG"
-rm -rf "${WORK:?}/mnt"; mkdir -p "${WORK:?}/mnt/etc"
+rm -rf "$WORK/mnt"; mkdir -p "$WORK/mnt/etc"
 ( cd "$WORK" && DPM_INSTALL_TEST=1 \
   MNT="$WORK/mnt" KERNEL_SRC="$KSRC" FW_FORCE=bios \
   bash "$HERE/bootstrap/install.sh" /dev/vda --yes --no-pkg-cache )

@@ -394,15 +394,14 @@ See `bootstrap/README.md` for details and host requirements.
       pre-flight checks, exclusive per-target lock, failure markers,
       `--dry-run`/`--from-stage`/`--fresh`/`--wipe` (with protected-path
       refusals)/`--no-iso`
-- [x] Base recipes (39): zlib, bzip2, file, ncurses, readline, pcre2, libffi,
+- [x] Base recipes (35): zlib, bzip2, file, ncurses, readline, pcre2, libffi,
       expat, gdbm, gperf, coreutils, bash, tar, gzip, xz, zstd, grep, gawk,
       sed, flex, bison, bc, diffutils, findutils, gettext, texinfo,
       util-linux, perl, python, openssl, sqlite, libunistring, libidn2, less,
-      dpm (self-hosting build), rust (vendored crates), elfutils, base-files,
-      base-devel (the `closure` build-toolchain meta package)
-- [x] System recipes (19): libpsl, curl, git, shadow, procps-ng, psmisc,
+      dpm (self-hosting build)
+- [x] System recipes (17): libpsl, curl, git, shadow, procps-ng, psmisc,
       eudev, kmod, e2fsprogs, libpipeline, groff, man-db, libmnl, iproute2,
-      dhcpcd, sysklogd, runit, runit-services, libxcrypt
+      dhcpcd, sysklogd, runit
 - [x] Boot recipes (3): linux (6.10 defconfig), grub, busybox
 - [x] Extra recipes (47): dev/build (autoconf, automake, libtool, patch,
       ninja, meson, cmake, lz4, libarchive, zip, unzip, pigz, brotli,
@@ -427,6 +426,11 @@ See `bootstrap/README.md` for details and host requirements.
       UUID fstab, static grub.cfg, root=UUID disk boot in the initramfs
 - [x] Remote repos: `dpm upgrade --repo https://…` with signature checks,
       per-URL archive cache and offline fallback
+- [x] Native fetch/extract in dpm: HTTP through `ureq` (rustls, bundled
+      roots, https-only redirects, retries), source tarballs unpacked by the
+      tar crate with in-process gzip/xz/bzip2/zstd decoders, pure-Rust
+      `cp -a` for `local:` sources, `chroot(2)` hooks — dpm needs no
+      external curl/tar/cp/chroot binaries
 - [x] `dpm service` — runit enable/disable/list/status UX
 - [x] initramfs: USB3/HID (USB keyboards), virtio, and filesystem modules
       staged for live boot
@@ -438,14 +442,13 @@ See `bootstrap/README.md` for details and host requirements.
 - [ ] initramfs: LVM/LUKS (needs cryptsetup/lvm2 recipes — stretch)
 - [ ] Remote repo mirrors list / repo priority
 
-Every recipe carries a sha256 computed from the actual upstream tarball (no
-copied-and-pasted hashes; `scripts/fill-sha256.py` pins one, and a recipe
-whose source is still unpinned fails loudly at source verification instead of
-being built silently). Full graph sanity check: `dpm --recipes recipes
-deps-all` — all 152 packages resolve in topological order (base-files #5,
-runit-services right after runit), and `python3 scripts/check-recipes.py`
-re-checks the whole tree (names, deps, cycles, hashes, required fields)
-offline.
+Every recipe outside `recipes/gui` carries a sha256 computed from the actual
+upstream tarball (no copied-and-pasted hashes). The 32 GUI recipes ship a
+zero placeholder instead and fail loudly at source verification until
+`scripts/fill-sha256.py` pins them — an unpinned source is never silently
+built. Full graph sanity check: `dpm --recipes recipes deps-all` — all 148
+packages resolve in topological order (base-files #5, runit-services right
+after runit).
 
 ## Booting the ISO
 

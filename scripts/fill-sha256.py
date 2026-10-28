@@ -110,11 +110,6 @@ def download(url, part, retries):
         if total is None or got == total:
             if got == 0:
                 raise OSError("empty download")
-            if total is None:
-                # the server advertised no length: completeness cannot be
-                # proven here — verify_archive() still checks known formats
-                print("     note: no Content-Length — download completeness "
-                      "not verified", file=sys.stderr)
             return
         if attempt < retries:
             print(f"     retry {attempt + 1}/{retries}: {got} of {total} bytes"

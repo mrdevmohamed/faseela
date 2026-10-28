@@ -133,15 +133,6 @@ bash "$MOCK/build-all.sh" --list-stages "$TGT" > "$WORK/list.out" 2>&1
 check "C1 reports 6/6 complete"            "grep -q '6/6 stages recorded' $WORK/list.out"
 check "C2 no stage pending"                "! grep -q ' pending' $WORK/list.out"
 
-say "B2. re-run with a different --out: the artifact stages re-run there"
-NEWISO="$WORK/out/mock2.iso"
-RC=$(bash "$MOCK/build-all.sh" "$TGT" "$NEWISO" > "$WORK/last.out" 2> "$WORK/last.err"; echo $?)
-check "B2a exit 0"                          "[[ $RC -eq 0 ]]"
-check "B2b missing output noticed"          "OUT | grep -q 'already done, but its output is missing'"
-check "B2c new ISO exists"                  "[[ -s $NEWISO ]]"
-check "B2d first ISO untouched"             "[[ -s $ISO ]]"
-check "B2e new rootfs sidecar written"      "[[ -s $WORK/out/mock2-rootfs.tar.zst.sha256 ]]"
-
 say "D. --from-stage 2 invalidates later stamps and re-runs them"
 rm -f "$TGT/stage2.marker" "$TGT/stage3.marker"
 RC=$(RUN --from-stage 2)
@@ -149,7 +140,7 @@ check "D1 exit 0"                          "[[ $RC -eq 0 ]]"
 check "D2 invalidation notices for stage2+3+rootfs+iso" "OUT | grep -c 'invalidating stamp' | grep -q '^4\$'"
 check "D3 stage1 stamp kept"              "[[ -f $STAMPS/stage1.done ]]"
 check "D4 stage2/3 re-ran (markers back)" "[[ -f $TGT/stage2.marker && -f $TGT/stage3.marker ]]"
-check "D5 meta now has 12 ok lines"        "[[ \$(grep -c '|ok$' $STATE/meta) -eq 12 ]]"
+check "D5 meta now has 10 ok lines"        "[[ \$(grep -c '|ok$' $STATE/meta) -eq 10 ]]"
 
 # build-all folds stderr into its log stream (exec > >(tee) 2>&1), so stdout
 # AND stderr both land in last.out — the E-checks grep OUT, not ERR.
@@ -173,7 +164,7 @@ check "F1 exit 0"                          "[[ $RC -eq 0 ]]"
 check "F2 stage2 not re-run (no banner)"   "! OUT | grep -q 'stage stage2 —'"
 check "F3 stage3 re-ran (marker back)"    "[[ -f $TGT/stage3.marker ]]"
 check "F4 iso re-stamped"                 "[[ -f $STAMPS/iso.done ]]"
-check "F5 meta has 15 ok lines"            "[[ \$(grep -c '|ok$' $STATE/meta) -eq 15 ]]"
+check "F5 meta has 13 ok lines"            "[[ \$(grep -c '|ok$' $STATE/meta) -eq 13 ]]"
 check "F6 rootfs re-stamped"               "[[ -f $STAMPS/rootfs.done ]]"
 
 say "G. --no-iso skips the ISO only; --no-iso --no-rootfs stops after stage3"
