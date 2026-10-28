@@ -65,8 +65,9 @@ check "A4 sha256 sidecar verifies"         "(cd $WORK/out && sha256sum -c --quie
 check "A5 sidecar uses the bare file name" "grep -q ' mydistro-x86_64-rootfs.tar.zst\$' $OUTA.sha256"
 check "A6 package inventory lists the db"  "grep -qx 'glibc-2.40' $WORK/out/mydistro-x86_64-rootfs.packages && [[ \$(wc -l < $WORK/out/mydistro-x86_64-rootfs.packages) -eq 4 ]]"
 zstd -dc "$OUTA" | tar -t > "$WORK/a.list"
+zstd -dc "$OUTA" | tar -tv > "$WORK/a.vlist"   # verbose list (grep it from a file: grep -q on a pipe + pipefail = SIGPIPE race)
 check "A7 system files are inside"         "grep -qxF ./usr/bin/bash $WORK/a.list && grep -qxF ./var/lib/dpm/local/gcc-15.1/desc $WORK/a.list && grep -qxF ./boot/vmlinuz-6.10 $WORK/a.list"
-check "A8 merged-usr symlinks kept"        "zstd -dc $OUTA | tar -tv | grep -q 'lib64 -> usr/lib64'"
+check "A8 merged-usr symlinks kept"        "grep -q 'lib64 -> usr/lib64' $WORK/a.vlist"
 check "A9 /proc content NOT archived"      "! grep -q 'proc/cpuinfo' $WORK/a.list"
 check "A10 /dev, /run, /tmp content NOT archived" "! grep -qE 'dev/null.fake|run/pid|tmp/scratch' $WORK/a.list"
 check "A11 mountpoint dirs ARE archived"   "grep -qxF ./proc/ $WORK/a.list && grep -qxF ./tmp/ $WORK/a.list"
