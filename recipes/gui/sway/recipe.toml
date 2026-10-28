@@ -3,7 +3,7 @@
 [package]
 name = "sway"
 version = "1.10.1"
-rel = 1
+rel = 2
 arch = ["x86_64"]
 summary = "i3-compatible Wayland compositor"
 license = ["MIT"]
@@ -17,4 +17,13 @@ run = ["wlroots", "json-c", "pango", "cairo", "pcre2", "libxkbcommon", "libinput
 [build]
 configure = "meson setup build --prefix=/usr --libdir=lib --buildtype=release -D man-pages=disabled -D tray=disabled -D gdk-pixbuf=disabled -D default-wallpaper=false -D zsh-completions=false -D bash-completions=false -D fish-completions=false"
 compile = "ninja -C build"
-install = "DESTDIR=%{pkgdir} meson install -C build"
+install = '''
+DESTDIR=%{pkgdir} meson install -C build
+# default-wallpaper=false does not touch the stock config: it still has
+# `output * bg <wallpaper> fill`, which errors on every start ("Unable to access
+# background file") and needs swaybg (not packaged). Comment it out.
+cfg=%{pkgdir}/etc/sway/config
+if [ -f "$cfg" ]; then
+    sed -i 's|^output \* bg .*|# &   # disabled: no wallpaper/swaybg package|' "$cfg"
+fi
+'''
