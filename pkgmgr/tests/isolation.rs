@@ -504,6 +504,14 @@ echo x > %{pkgdir}/usr/bin/probe
             so.contains("layer cache hit") || so.contains("(new layer)"),
             "the layered run must report layer activity: {so}"
         );
+        // the second build uses its own builddir, so give it the dependency
+        // archive built into the first one
+        fs::create_dir_all(d.join("build2/out")).unwrap();
+        fs::copy(
+            d.join("build/out/base-devel-1-1.dpm.tar.zst"),
+            d.join("build2/out/base-devel-1-1.dpm.tar.zst"),
+        )
+        .unwrap();
         // second build: the layer is already cached
         let o = dpm()
             .env_remove("CFLAGS").env_remove("CXXFLAGS").env_remove("LDFLAGS")
