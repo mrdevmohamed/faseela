@@ -364,8 +364,21 @@ fn mount_layers(spec: &SandboxSpec, root: &Path) -> Result<()> {
         .map(|l| l.trim_end_matches('/').to_string())
         .collect();
     for l in &lower {
-        if !Path::new(l).is_dir() {
-            bail!("overlay layer {} is missing", l);
+        match std::fs::metadata(l) {
+            Ok(_) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                bail!("overlay layer {} is missing", l);
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => bail!(
+                "overlay layer {} is not reachable by the sandbox's mapped \
+                 identity ({}) — a parent directory belongs to a uid the \
+                 sandbox does not map (e.g. a home directory with mode 700, \
+                 §4.3); the builder is supposed to fall back to \
+                 extract-per-build assembly before choosing layers",
+                l,
+                e
+            ),
+            Err(e) => bail!("overlay layer {}: {}", l, e),
         }
     }
     let scratch = PathBuf::from(&spec.build.scratch);
@@ -1013,6 +1026,68 @@ pub fn parent_sync(child: &std::process::Child, sock: std::os::unix::net::UnixSt
 }
 
 // ---------------------------------------------------------------------------
+// §4.3 identity emulation (used by the build engine)
+// ---------------------------------------------------------------------------
+
+/// What the §4.3 mapping does to a *host* owner id, as seen from inside the
+/// sandbox: the caller's own id becomes 0; real root additionally maps
+/// inside 1..65535 to the subordinate range 100000..165534 (`parent_sync`);
+/// anything else is unmapped (reads back as 65534 = nobody).
+///
+/// The mount that assembles a layered build root happens **inside** the
+/// sandbox (`run_pid1` → `mount_layers`), so overlay lowerdirs are resolved
+/// by the sandbox's mapped identity — not by whoever ran dpm. A layer cache
+/// the user dpm reads happily (a `sudo` run against a `--root` under a
+/// mode-700 home directory is the common case) can therefore still be
+/// unreachable from the build.
+pub fn first_untraversable_ancestor(path: &Path) -> Option<PathBuf> {
+    use std::os::unix::fs::MetadataExt;
+
+    let euid = unsafe { libc::geteuid() };
+    let egid = unsafe { libc::getegid() };
+    let mapped = |x: u32, own: u32| {
+        if x == own {
+            Some(0)
+        } else if euid == 0 && (100000..165535).contains(&x) {
+            Some(x - 100000 + 1)
+        } else {
+            None
+        }
+    };
+    let start = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        let cwd = std::env::current_dir().ok()?;
+        cwd.join(path)
+    };
+    // from the deepest component up to "/" — the FIRST offending ancestor is
+    // the most useful report. The path itself may not exist yet (a cache dir
+    // is created later), but its parents must, and a stat failure here is
+    // itself the answer (owning trees the map cannot read).
+    for a in start.ancestors() {
+        let st = match std::fs::metadata(a) {
+            Ok(st) => st,
+            Err(_) => return Some(a.to_path_buf()),
+        };
+        // permission follows the matched class: owner (by the mapped view of
+        // the ids — the user namespace's own check does the same) then group
+        // then other. Inside uid/gid are both 0 (§4.3).
+        let (uid, gid, bits) = (st.uid(), st.gid(), st.mode() & 0o777);
+        let x_needed = if mapped(uid, euid) == Some(0) {
+            0o100
+        } else if mapped(gid, egid) == Some(0) {
+            0o010
+        } else {
+            0o001
+        };
+        if bits & x_needed == 0 {
+            return Some(a.to_path_buf());
+        }
+    }
+    None
+}
+
+// ---------------------------------------------------------------------------
 // Probe (`dpm sandbox-probe`)
 // ---------------------------------------------------------------------------
 
@@ -1207,6 +1282,7 @@ fn cstr(s: &str) -> std::ffi::CString {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::os::unix::fs::PermissionsExt;
 
     #[test]
     fn spec_parses_layers_for_dir_roots() {
@@ -1265,6 +1341,53 @@ scratch = "/w/sb"
         )
         .unwrap();
         assert!(spec.root.layers.is_empty());
+    }
+
+    #[test]
+    fn reachable_tree_is_accepted() {
+        // every component owned by the current identity: the §4.3 map sends
+        // it to 0, so owner bits speak — a normal 700 tree traverses; the
+        // build engine passes an *existing* cache dir (layer_cache_dir has
+        // just created it), so use `tmp` itself
+        let tmp = std::env::temp_dir().join(format!("dpm-reach-{}-ok", std::process::id()));
+        std::fs::create_dir_all(&tmp).unwrap();
+        std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o700)).unwrap();
+        assert_eq!(first_untraversable_ancestor(&tmp), None);
+        std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o755)).unwrap();
+        std::fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    #[test]
+    fn untraversable_component_is_reported() {
+        // a directory with NO execute bits for anyone (even its owner) can
+        // never be traversed by the mapped identity — owner, group, other: 0
+        let tmp = std::env::temp_dir().join(format!("dpm-reach-{}-denied", std::process::id()));
+        let inner = tmp.join("layers");
+        std::fs::create_dir_all(&inner).unwrap();
+        std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o000)).unwrap();
+        let block = first_untraversable_ancestor(&inner);
+        std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o755)).unwrap();
+        std::fs::remove_dir_all(&inner).unwrap();
+        let block = block.expect("a mode-000 directory must be reported");
+        // stat itself already fails for non-root (EACCES at `inner`); root
+        // walks further and flags the mode-000 directory by its bits —
+        // either way something in the tree is reported
+        assert!(
+            block.starts_with(&tmp) || block == inner,
+            "unexpected report {block:?}"
+        );
+    }
+
+    #[test]
+    fn missing_parents_are_reported() {
+        // a cache is created later: not-yet-existing parents cannot be
+        // traversed by anyone
+        let p = std::env::temp_dir()
+            .join(format!("dpm-reach-{}-gone", std::process::id()))
+            .join("layers");
+        let _ = std::fs::remove_dir_all(&p);
+        assert_eq!(first_untraversable_ancestor(&p), Some(p.clone()));
+        // nobody created anything — nothing to clean up
     }
 
     #[test]
