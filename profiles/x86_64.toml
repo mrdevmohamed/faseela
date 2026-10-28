@@ -24,6 +24,6 @@ min_kernel = "5.4"
 # `none` until the whole tree has been rebuilt cleanly at each level; then
 # flip it. `dpm build --isolation <level>` overrides per build, and the
 # bootstrap stages accept STAGE2_ISOLATION / STAGE3_ISOLATION.
-[build]
-isolation = "sandbox"     # none | env | sandbox | closure
+#[build]
+#isolation = "sandbox"     # none | env | sandbox | closure
 # timeout = 14400          # per-section wall clock (sandbox levels)
