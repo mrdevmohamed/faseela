@@ -1033,9 +1033,13 @@ fn cmd_autoremove(ctx: &Ctx, dry_run: bool, yes: bool, build_deps: bool) -> Resu
         return Ok(());
     }
     confirm::confirm(&format!("dpm: remove {} package(s)?", order.len()), yes)?;
+    // dependents inside the orphan set don't block: a (now pointless)
+    // dependency cycle between two unneeded packages would otherwise
+    // make autoremove fail forever
+    let orphan_set: HashSet<String> = order.iter().cloned().collect();
     for (i, n) in order.iter().enumerate() {
         println!("dpm: [{}/{}] removing {n}", i + 1, order.len());
-        install::remove_with(n, &ctx.root, false)?;
+        install::remove_with_skip(n, &ctx.root, false, &orphan_set)?;
     }
     println!("dpm: done — {} package(s) removed", order.len());
     Ok(())

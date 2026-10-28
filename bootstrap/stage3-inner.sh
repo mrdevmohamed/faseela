@@ -70,7 +70,9 @@ mkdir -p /build3
 # two-root: make sure the final root already holds every installed package
 # (e.g. `--from-stage 3` after a build made before the two-root layout)
 if final_root_enabled; then
-    SYNC_ORDER=$("$DPM_BIN" --recipes "$REPO/recipes" deps-all --include-installed) || SYNC_ORDER=""
+    # fail loudly: a swallowed failure here would silently sync nothing and
+    # seal an incomplete final root (stage2-inner treats this as fatal too)
+    SYNC_ORDER=$("$DPM_BIN" --recipes "$REPO/recipes" deps-all --include-installed)
     if [[ "${WITH_GUI:-0}" != "1" && -d "$REPO/recipes/gui" ]]; then
         GUI_PKGS=" $(ls "$REPO/recipes/gui" | tr '\n' ' ') "
         SYNC_ORDER=$(for p in $SYNC_ORDER; do [[ "$GUI_PKGS" == *" $p "* ]] || echo "$p"; done)

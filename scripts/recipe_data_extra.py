@@ -1,5 +1,6 @@
 """Recipe data for the extra/ set (v0.3.0) — 47 packages.
-All sha256 values computed from the exact URLs below (see scripts/fetch-extra.sh).
+All sha256 values were computed from the exact URLs below at pinning time
+(re-run scripts/fill-sha256.py to refresh one).
 sub: extra1 = dev+archive tools, extra2 = networking+editors, extra3 = misc+libs+hw.
 """
 

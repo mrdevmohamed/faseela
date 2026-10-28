@@ -97,7 +97,12 @@ echo "initramfs: compiling static busybox (-j$JOBS)"
 make -C "$BBDIR" -j"$JOBS" >/dev/null
 "$BBDIR/busybox" echo "initramfs: busybox smoke test OK"
 if ldd "$BBDIR/busybox" >/dev/null 2>&1; then
-    echo "initramfs: WARNING busybox is dynamically linked" >&2
+    # PID 1 of the initramfs is /bin/busybox — a dynamic binary cannot exec
+    # there (no loader on the cpio) and the ISO would boot to a kernel panic.
+    # The defconfig patch above normally forces CONFIG_STATIC=y; if this ever
+    # stops working, fail the build instead of shipping an unbootable image.
+    echo "initramfs: FATAL busybox is dynamically linked (CONFIG_STATIC patch failed)" >&2
+    exit 1
 fi
 
 # ---------------------------------------------------------------------------
@@ -236,7 +241,7 @@ fi
 rootdev=""
 for arg in $(cat /proc/cmdline); do
     case "$arg" in
-        root=UUID=*) rootdev="$(findfs "$arg" 2>/dev/null || true)" ;;
+        root=UUID=*) rootdev="$(findfs "${arg#root=}" 2>/dev/null || true)" ;;
         root=/dev/*) rootdev="${arg#root=}" ;;
     esac
 done

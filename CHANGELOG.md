@@ -1,5 +1,92 @@
 # Changelog
 
+## Unreleased — deep review fixes: boot path, install/rollback trust, orchestration
+
+Found by a full-repo review (every source file re-read; all CI checks plus the
+offline test suites re-run green afterwards: cargo build/clippy/test,
+shellcheck, check-recipes.py, the build-all/rootfs/final-root/mkiso/install
+mock suites and the v0.5/v0.6 smoke tests).
+
+- `bootstrap/initramfs.sh` (CRITICAL, disk boot): the `/init` cmdline parser
+  passed the whole `root=UUID=...` token to busybox `findfs`, which only
+  understands `UUID=...` specs — `findfs` always failed, every system
+  installed with `install.sh` fell through to the live-media scan and dropped
+  to the rescue shell without the install stick. The prefix is now stripped
+  (`findfs "${arg#root=}"`), matching the `root=/dev/*` branch.
+- `bootstrap/initramfs.sh`: a dynamically linked busybox (defconfig patch
+  drift) used to be only *warned* about and shipped anyway — PID 1 could not
+  exec and the ISO was unbootable. That condition is now fatal.
+- `pkgmgr/src/install.rs` (security): package payloads may no longer contain
+  dpm's own state — paths under `var/lib/dpm`, `var/cache/dpm`,
+  `etc/dpm/trusted-keys` and `.dpm` are refused at install time. An archive
+  could previously inject a `hooks` file into ANOTHER package's db entry
+  (root code execution on its next remove), overwrite `desc`/`files`/`hashes`
+  of other packages, or replace the lock file. Covered by new unit tests.
+- `pkgmgr/src/install.rs` (security): the rollback package cache is now a
+  real copy instead of a hardlink (a hardlink shared its inode with the
+  user-writable build output), and `save_undo` pins the cached archive's
+  sha256 — `dpm rollback` verifies the cache against that hash and refuses
+  tampered content (older undo records without a hash warn instead).
+- `pkgmgr/src/install.rs`: `Tx::rollback` no longer silently discards restore
+  failures — it warns loudly per file and only deletes the backup journal
+  when everything was restored; obsolete-file removal failures during
+  upgrades abort the install (journal restored) instead of leaving untracked
+  files behind.
+- `pkgmgr/src/install.rs`: `remove_with_skip` lets `dpm autoremove` remove a
+  (now pointless) dependency cycle inside the orphan set — previously such a
+  cycle made autoremove fail forever without `--force`.
+- `pkgmgr/src/db.rs`: `Db::add` writes all three temp files first, then
+  renames them back-to-back — an interrupted install can no longer leave
+  desc/files/hashes disagreeing; `valid_version` rejects digit runs longer
+  than 19 chars so distinct over-long versions can no longer clamp to
+  u64::MAX and compare equal (vercmp's epoch overflow now clamps to MAX, not
+  0).
+- `pkgmgr/src/build.rs`: the built archive is written to `<out>.part` and
+  renamed, and a stale `.buildid` sidecar is deleted before the build — an
+  interrupted build can no longer leave a truncated archive that `--use-cache`
+  would bless as a cache hit.
+- `bootstrap/install.sh`: failures now report the phase they happened in and
+  what state the disk is in (erased / partial install) instead of exiting
+  silently; a failed/aborted `passwd` locks the root account on the target
+  instead of leaving the copied empty-password shadow; the rsync exclude for
+  the mountpoint is anchored (`/${MNT#/}`) so a directory named `mnt`
+  anywhere else in the system is no longer silently dropped from the copy;
+  `DPM_INSTALL_DRYRUN=1` no longer writes fstab/grub.cfg/hostname into the
+  live system or dies on a missing blkid partition.
+- `bootstrap/build-all.sh`: `--wipe` refuses targets INSIDE the repository
+  (mirror of the existing ancestor check — `--wipe $REPO/bootstrap` would
+  have deleted the project's own sources); a rootfs/iso stage whose artifact
+  is missing at the requested output path (deleted, or a different `--out`)
+  re-runs instead of the run completing with "nothing to run" and no file;
+  `--list-stages` still reports stamp status only. Covered by new mock test
+  block B2.
+- `bootstrap/stage3-inner.sh`: a `deps-all --include-installed` failure in the
+  final-root top-up is fatal again (the swallowed `|| SYNC_ORDER=""` could
+  seal an incomplete final root on `--from-stage 3` resumes).
+- `bootstrap/umount-chroot.sh`: tries every mountpoint even when one refuses,
+  verifies with `mountpoint` at the end and exits non-zero — a partial
+  teardown is no longer reported as done.
+- `bootstrap/sync-repo.sh`: also excludes `pkgmgr/build` (host build
+  artifacts no longer leak into the chroot); documents that the `srccache`/
+  `out` excludes are intentionally unanchored.
+- `bootstrap/stage2-inner.sh`: the single-iteration `for g in tty:5` became a
+  data-driven `while read` list (silences shellcheck SC2043, same behavior).
+- `scripts/gen-recipes-extra.py`: derives the recipes/ root from its own
+  location instead of a hard-coded absolute path that wrote the generated
+  recipes OUTSIDE the repo, and escapes TOML strings properly — the
+  `zip`/`unzip` entries used to regenerate as invalid TOML (all 47 outputs
+  now parse).
+- `scripts/check-recipes.py`: also enforces `package.summary`,
+  `package.license` and `arch == ["x86_64"]` on every recipe;
+  `recipes/base/base-devel` gained the missing `license` field.
+- `scripts/fill-sha256.py`: warns when a server sends no Content-Length
+  (download completeness cannot be proven in that case).
+- `scripts/validate-install.sh`: `rm -rf "${WORK:?}/mnt"` guards (SC2115).
+- `README.md`: stale numbers corrected (base 35→39 incl. rust/elfutils/
+  base-files/base-devel, system 17→19 incl. libxcrypt/runit-services, 148→152
+  packages, GUI placeholder paragraph now reflects that every recipe is
+  pinned) and check-recipes.py documented.
+
 ## Unreleased — the layer cache survives `sudo` runs (§4.3 reachability)
 
 - `recipes/base/base-files` rel 3: create `/usr/bin/sh -> bash`. Nothing in

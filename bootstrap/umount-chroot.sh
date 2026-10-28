@@ -9,9 +9,24 @@ LFS="${1:?usage: umount-chroot.sh /mnt/mydistro}"
 [[ $EUID -eq 0 ]] || { echo "umount-chroot: must run as root"; exit 1; }
 [[ "$(realpath -m "$LFS")" != "/" ]] || { echo "umount-chroot: refusing /"; exit 1; }
 
+# try every mountpoint even when one refuses to unmount — aborting on the
+# first failure would leave the rest mounted while callers believe teardown
+# happened (mirrors ensure-chroot-mounts.sh, which verifies on the mount side)
+failed=0
 for m in dev/pts dev proc sys run; do
     if mountpoint -q "$LFS/$m"; then
-        umount -v "$LFS/$m" || umount -lv "$LFS/$m"
+        if ! umount -v "$LFS/$m" 2>/dev/null && ! umount -lv "$LFS/$m" 2>/dev/null; then
+            echo "umount-chroot: could not unmount $LFS/$m" >&2
+            failed=1
+        fi
     fi
 done
+# verify instead of assuming: a failed lazy unmount above can still resolve
+for m in dev/pts dev proc sys run; do
+    if mountpoint -q "$LFS/$m" 2>/dev/null; then
+        echo "umount-chroot: still mounted: $LFS/$m" >&2
+        failed=1
+    fi
+done
+(( failed )) && exit 1
 echo "umount-chroot: done"
