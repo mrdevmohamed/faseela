@@ -10,7 +10,7 @@
 [package]
 name = "base-devel"
 version = "1"
-rel = 2
+rel = 1
 arch = ["x86_64"]
 summary = "Meta package: the base toolchain every build may use"
 
