@@ -2,7 +2,7 @@
 [package]
 name = "libffi"
 version = "3.5.2"
-rel = 2
+rel = 1
 arch = ["x86_64"]
 summary = "Portable foreign-function-interface library"
 license = ["MIT"]
