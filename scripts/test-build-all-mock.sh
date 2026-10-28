@@ -48,7 +48,7 @@ echo "mock: assembling seed"
 EOF
 cat > "$MOCK/stage1.sh" <<'EOF'
 set -e
-echo "mock: stage1 into $1"
+echo "mock: stage1 into $1 (SEED_ROOTFS=${SEED_ROOTFS:-unset} SHA=${SEED_ROOTFS_SHA256:-unset})"
 mkdir -p "$1/usr/bin" "$1/dev" "$1/proc"
 echo ok > "$1/usr/bin/env"
 EOF
@@ -62,6 +62,15 @@ cat > "$MOCK/stage3.sh" <<'EOF'
 set -e
 echo "mock: stage3 self-host"
 echo rebuilt > "$1/stage3.marker"
+EOF
+cat > "$MOCK/mkrootfs.sh" <<'EOF'
+set -e
+ROOT="$1"; OUT="$2"
+echo "mock: mkrootfs $ROOT -> $OUT"
+mkdir -p "$(dirname "$OUT")"
+echo "$ROOT" > "$(dirname "$OUT")/mkrootfs.root"
+echo rootfsdata > "$OUT"
+( cd "$(dirname "$OUT")" && sha256sum "$(basename "$OUT")" > "$(basename "$OUT").sha256" )
 EOF
 cat > "$MOCK/mkiso.sh" <<'EOF'
 set -e
@@ -87,14 +96,15 @@ OUT() { cat "$WORK/last.out"; }
 ERR() { cat "$WORK/last.err"; }
 
 # ------------------------------------------------------------------- tests ---
-say "A. full run from scratch (all five stages)"
+say "A. full run from scratch (all six stages)"
 RC=$(RUN)
 check "A1 exit 0"                          "[[ $RC -eq 0 ]]"
-check "A2 five stamps written"             "[[ \$(ls $STAMPS/*.done | wc -l) -eq 5 ]]"
-check "A2b five input sidecars written"    "[[ \$(ls $STAMPS/*.inputs | wc -l) -eq 5 ]]"
+check "A2 six stamps written"              "[[ \$(ls $STAMPS/*.done | wc -l) -eq 6 ]]"
+check "A2b six input sidecars written"     "[[ \$(ls $STAMPS/*.inputs | wc -l) -eq 6 ]]"
+check "A2c rootfs stamp exists"            "[[ -f $STAMPS/rootfs.done ]]"
 check "A3 seed stamp exists"               "[[ -f $STAMPS/seed.done ]]"
 check "A4 iso stamp exists"                "[[ -f $STAMPS/iso.done ]]"
-check "A5 meta has 5 ok lines"             "[[ \$(grep -c '|ok$' $STATE/meta) -eq 5 ]]"
+check "A5 meta has 6 ok lines"             "[[ \$(grep -c '|ok$' $STATE/meta) -eq 6 ]]"
 check "A6 one log file created"            "[[ \$(ls $STATE/logs | wc -l) -eq 1 ]]"
 check "A7 ISO ready in output"             "OUT | grep -q 'ISO ready.*mock.iso'"
 check "A8 ISO file non-empty"               "[[ -s $ISO ]]"
@@ -103,6 +113,13 @@ check "A10 next steps mentioned"           "OUT | grep -q 'validate-install.sh'"
 check "A11 ISO is made from the FINAL root" "[[ \$(cat $WORK/out/mkiso.root) == $TGT/sysroot ]]"
 check "A12 layout recorded as two-root"    "[[ \$(cat $STATE/layout) == two-root ]]"
 check "A13 final root dir created by stage2" "[[ -d $TGT/sysroot ]]"
+check "A14 rootfs ready in output"         "OUT | grep -q 'rootfs ready.*mock-rootfs.tar.zst'"
+check "A15 rootfs path derived from the ISO path" "[[ -s $WORK/out/mock-rootfs.tar.zst ]]"
+check "A16 rootfs sidecar written"         "[[ -s $WORK/out/mock-rootfs.tar.zst.sha256 ]]"
+check "A17 rootfs is made from the FINAL root" "[[ \$(cat $WORK/out/mkrootfs.root) == $TGT/sysroot ]]"
+check "A18 rootfs runs BEFORE the iso"     "[[ \$(grep -n 'stage rootfs' $WORK/last.out | head -1 | cut -d: -f1) -lt \$(grep -n 'stage iso' $WORK/last.out | head -1 | cut -d: -f1) ]]"
+check "A19 Debian seed: stage1 saw no rootfs seed" "OUT | grep -q 'SEED_ROOTFS=unset'"
+check "A20 next-build hint names --seed-rootfs" "OUT | grep -q -- '--seed-rootfs'"
 
 say "B. re-run: everything skipped"
 RC=$(RUN)
@@ -111,19 +128,19 @@ check "B2 'nothing to run' notice"         "OUT | grep -q 'nothing to run'"
 check "B3 no new log file"                 "[[ \$(ls $STATE/logs | wc -l) -eq 2 ]]"
 check "B4 ISO still reported"              "OUT | grep -q 'ISO from a previous run'"
 
-say "C. --list-stages shows 5/5"
+say "C. --list-stages shows 6/6"
 bash "$MOCK/build-all.sh" --list-stages "$TGT" > "$WORK/list.out" 2>&1
-check "C1 reports 5/5 complete"            "grep -q '5/5 stages recorded' $WORK/list.out"
+check "C1 reports 6/6 complete"            "grep -q '6/6 stages recorded' $WORK/list.out"
 check "C2 no stage pending"                "! grep -q ' pending' $WORK/list.out"
 
 say "D. --from-stage 2 invalidates later stamps and re-runs them"
 rm -f "$TGT/stage2.marker" "$TGT/stage3.marker"
 RC=$(RUN --from-stage 2)
 check "D1 exit 0"                          "[[ $RC -eq 0 ]]"
-check "D2 invalidation notices for stage2+3+iso" "OUT | grep -c 'invalidating stamp' | grep -q '^3\$'"
+check "D2 invalidation notices for stage2+3+rootfs+iso" "OUT | grep -c 'invalidating stamp' | grep -q '^4\$'"
 check "D3 stage1 stamp kept"              "[[ -f $STAMPS/stage1.done ]]"
 check "D4 stage2/3 re-ran (markers back)" "[[ -f $TGT/stage2.marker && -f $TGT/stage3.marker ]]"
-check "D5 meta now has 8 ok lines"         "[[ \$(grep -c '|ok$' $STATE/meta) -eq 8 ]]"
+check "D5 meta now has 10 ok lines"        "[[ \$(grep -c '|ok$' $STATE/meta) -eq 10 ]]"
 
 # build-all folds stderr into its log stream (exec > >(tee) 2>&1), so stdout
 # AND stderr both land in last.out — the E-checks grep OUT, not ERR.
@@ -138,6 +155,7 @@ check "E4 umount hint present"             "OUT | grep -q 'umount-chroot.sh'"
 check "E5 log path in failure message"     "OUT | grep -q 'full log'"
 check "E6 stage3 stamp NOT written"       "[[ ! -f $STAMPS/stage3.done ]]"
 check "E7 iso stamp invalidated"          "[[ ! -f $STAMPS/iso.done ]]"
+check "E8 rootfs stamp invalidated"       "[[ ! -f $STAMPS/rootfs.done ]]"
 sed -i 's/^exit 1$/echo rebuilt > "$1\/stage3.marker"/' "$MOCK/stage3.sh"  # restore
 
 say "F. resume after failure: only the broken stages run"
@@ -146,14 +164,25 @@ check "F1 exit 0"                          "[[ $RC -eq 0 ]]"
 check "F2 stage2 not re-run (no banner)"   "! OUT | grep -q 'stage stage2 —'"
 check "F3 stage3 re-ran (marker back)"    "[[ -f $TGT/stage3.marker ]]"
 check "F4 iso re-stamped"                 "[[ -f $STAMPS/iso.done ]]"
-check "F5 meta has 10 ok lines"            "[[ \$(grep -c '|ok$' $STATE/meta) -eq 10 ]]"
+check "F5 meta has 13 ok lines"            "[[ \$(grep -c '|ok$' $STATE/meta) -eq 13 ]]"
+check "F6 rootfs re-stamped"               "[[ -f $STAMPS/rootfs.done ]]"
 
-say "G. --no-iso stops after stage3"
+say "G. --no-iso skips the ISO only; --no-iso --no-rootfs stops after stage3"
 rm -rf "$WORK/tgt2" "$WORK/.tgt2.build"
 RC=$(bash "$MOCK/build-all.sh" --no-iso "$WORK/tgt2" > "$WORK/last.out" 2>"$WORK/last.err"; echo $?)
 check "G1 exit 0"                          "[[ $RC -eq 0 ]]"
 check "G2 no iso stamp"                    "[[ ! -f $WORK/.tgt2.build/stamps/iso.done ]]"
 check "G3 hint for later ISO"             "OUT | grep -q -- '--from-stage iso'"
+check "G4 rootfs still built"              "[[ -f $WORK/.tgt2.build/stamps/rootfs.done ]]"
+rm -rf "$WORK/tgt2b" "$WORK/.tgt2b.build"
+RC=$(bash "$MOCK/build-all.sh" --no-iso --no-rootfs "$WORK/tgt2b" > "$WORK/last.out" 2>"$WORK/last.err"; echo $?)
+check "G5 --no-iso --no-rootfs exit 0"     "[[ $RC -eq 0 ]]"
+check "G6 neither stamp written"           "[[ ! -f $WORK/.tgt2b.build/stamps/iso.done && ! -f $WORK/.tgt2b.build/stamps/rootfs.done ]]"
+check "G7 stage3 stamp written"            "[[ -f $WORK/.tgt2b.build/stamps/stage3.done ]]"
+RC=$(bash "$MOCK/build-all.sh" --no-iso --no-rootfs "$WORK/tgt2b" > "$WORK/last.out" 2>"$WORK/last.err"; echo $?)
+check "G8 re-run: nothing to run"          "[[ $RC -eq 0 ]] && OUT | grep -q 'nothing to run'"
+bash "$MOCK/build-all.sh" --no-iso --no-rootfs --list-stages "$WORK/tgt2b" > "$WORK/last.out" 2>&1
+check "G9 list marks both as skipped"      "OUT | grep -q 'rootfs.*skipped (--no-rootfs)' && OUT | grep -q 'iso.*skipped (--no-iso)'"
 
 say "H. non-empty target without state is refused"
 mkdir -p "$WORK/tgt3"; echo data > "$WORK/tgt3/precious.txt"
@@ -173,7 +202,7 @@ rm -rf "$WORK/tgt4" "$WORK/.tgt4.build"
 unshare_unused() { :; }
 bash "$MOCK/build-all.sh" --dry-run "$WORK/tgt4" > "$WORK/last.out" 2>&1
 check "J1 no state dir created"           "[[ ! -e $WORK/.tgt4.build ]]"
-check "J2 five dry-run commands listed"   "[[ \$(OUT | grep -c 'would run:') -eq 5 ]]"
+check "J2 six dry-run commands listed"    "[[ \$(OUT | grep -c 'would run:') -eq 6 ]]"
 check "J3 nothing executed (no target)"   "[[ ! -e $WORK/tgt4 ]]"
 
 say "K. adopt a hand-built seed (no stamp yet)"
@@ -185,10 +214,11 @@ check "K2 adoption notice"                "OUT | grep -q 'adopting existing'"
 check "K3 seed stage not re-run"          "! OUT | grep -q 'mock: assembling seed'"
 rm -f "$MOCK/seed/seed.tar.zst"
 
-say "L. --single-root: layout switch invalidates stage2+3+iso, ISO from TARGET"
+say "L. --single-root: layout switch invalidates stage2+3+rootfs+iso, ISO from TARGET"
 RC=$(RUN --single-root)
 check "L1 exit 0"                          "[[ $RC -eq 0 ]]"
-check "L2 layout-switch notices (x3)"      "OUT | grep -c 'layout two-root -> single-root' | grep -q '^3\$'"
+check "L2 layout-switch notices (x4)"      "OUT | grep -c 'layout two-root -> single-root' | grep -q '^4\$'"
+check "L2b rootfs made from TARGET itself" "[[ \$(cat $WORK/out/mkrootfs.root) == $TGT ]]"
 check "L3 ISO made from TARGET itself"     "[[ \$(cat $WORK/out/mkiso.root) == $TGT ]]"
 check "L4 stage2 saw SINGLE_ROOT=1"        "OUT | grep -q 'SINGLE_ROOT=1'"
 check "L5 layout recorded as single-root"  "[[ \$(cat $STATE/layout) == single-root ]]"
@@ -232,7 +262,7 @@ check "P1 full build exits 0"              "[[ $RC -eq 0 ]]"
 RC=$(RUNT "$WORK/tgtP" --with-gui)
 check "P2 --with-gui exits 0"              "[[ $RC -eq 0 ]]"
 check "P3 stage2 invalidated, gui named"   "OUT | grep -q 'invalidating stamp: stage2 (inputs changed: gui)'"
-check "P4 stage2/3/iso re-ran"             "OUT | grep -q 'mock: stage2 graph' && OUT | grep -q 'mock: mkiso'"
+check "P4 stage2/3/rootfs/iso re-ran"      "OUT | grep -q 'mock: stage2 graph' && OUT | grep -q 'mock: mkrootfs' && OUT | grep -q 'mock: mkiso'"
 check "P5 seed/stage1 stamps kept"         "[[ -f $PST/seed.done && -f $PST/stage1.done ]]"
 check "P6 stage3/iso re-stamped"           "[[ -f $PST/stage3.done && -f $PST/iso.done ]]"
 RC=$(RUNT "$WORK/tgtP" --with-gui)
@@ -245,7 +275,7 @@ RC=$(RUNT "$WORK/tgtP")
 check "P11 gui off re-runs stage2+"        "OUT | grep -q 'mock: stage2 graph' && OUT | grep -q 'mock: mkiso'"
 check "P12 seed/stage1 still kept"         "[[ -f $PST/seed.done && -f $PST/stage1.done ]]"
 RC=$(RUNT "$WORK/tgtP" --vol-id CUSTOM)
-check "P13 --vol-id re-runs only iso"      "OUT | grep -q 'invalidating stamp: iso (inputs changed: volid)'"
+check "P13 --vol-id re-runs only iso"      "OUT | grep -q 'invalidating stamp: iso (inputs changed: volid)' && ! OUT | grep -q 'mock: mkrootfs'"
 check "P14 stage2/3 skipped"               "! OUT | grep -q 'mock: stage2 graph' && ! OUT | grep -q 'mock: stage3'"
 check "P15 stage2/3 stamps kept"           "[[ -f $PST/stage2.done && -f $PST/stage3.done ]]"
 RC=$(RUNT "$WORK/tgtP" --vol-id CUSTOM --squash-comp zstd)
@@ -285,10 +315,10 @@ RC=$(RUNT "$WORK/tgtS")
 check "S1 full build exits 0"              "[[ $RC -eq 0 ]]"
 rm -f "$SST/"*.inputs
 bash "$MOCK/build-all.sh" --list-stages "$WORK/tgtS" > "$WORK/last.out" 2>&1
-check "S2 list shows all five stale"       "[[ \$(OUT | grep -c 'stale (inputs not recorded)') -eq 5 ]]"
+check "S2 list shows all six stale"        "[[ \$(OUT | grep -c 'stale (inputs not recorded)') -eq 6 ]]"
 check "S3 list summary counts stale"       "OUT | grep -q 'stale (inputs changed/unknown'"
 RC=$(RUNT "$WORK/tgtS")
-check "S4 all five invalidation notices"   "[[ \$(OUT | grep -c 'pre-dates input tracking') -eq 5 ]]"
+check "S4 all six invalidation notices"    "[[ \$(OUT | grep -c 'pre-dates input tracking') -eq 6 ]]"
 check "S5 seed re-ran too"                 "OUT | grep -q 'mock: assembling seed'"
 
 say "T. a failed stage is marked; --list-stages reports it; success clears it"
@@ -309,7 +339,7 @@ check "T6 resume after fix exits 0"        "[[ $RC -eq 0 ]]"
 check "T7 marker cleared on success"       "[[ ! -e $TSTATE/failed-stage2 ]]"
 check "T8 stage3/iso re-stamped"           "[[ -f $TST/stage3.done && -f $TST/iso.done ]]"
 bash "$MOCK/build-all.sh" --list-stages "$WORK/tgtT" > "$WORK/last.out" 2>&1
-check "T9 list is clean again"             "OUT | grep -q '5/5 stages recorded' && ! OUT | grep -q FAILED"
+check "T9 list is clean again"             "OUT | grep -q '6/6 stages recorded' && ! OUT | grep -q FAILED"
 
 say "U. a concurrent build against the same target is rejected (state lock)"
 ( exec 9>>"$TSTATE/lock"; flock -x 9; sleep 10 ) &
@@ -367,11 +397,58 @@ say "Y. --dry-run changes nothing even when stamps are stale"
 printf '# mock recipe, edited again\n' >> "$WORK/repo/recipes/testpkg/recipe.toml"
 Y_BEFORE="$(ls "$TST" | sort | tr '\n' ' ')"
 bash "$MOCK/build-all.sh" --dry-run "$WORK/tgtT" > "$WORK/last.out" 2>&1
-check "Y1 dry-run lists the three stale stages" "[[ \$(OUT | grep -c 'would run:') -eq 3 ]]"
+check "Y1 dry-run lists the four stale stages" "[[ \$(OUT | grep -c 'would run:') -eq 4 ]]"
 check "Y2 dry-run touched no stamp files"  "[[ \$(ls $TST | sort | tr '\n' ' ') == '$Y_BEFORE' ]]"
 check "Y3 dry-run printed no invalidation" "! OUT | grep -q 'invalidating stamp'"
 RC=$(RUNT "$WORK/tgtT")
 check "Y4 the real run then rebuilds them" "OUT | grep -q 'invalidating stamp: stage2 (inputs changed: recipes)'"
+
+say "Z. rootfs seed (--seed-rootfs): the distro builds itself from a previous rootfs"
+ZSEED="$WORK/prev-rootfs.tar.zst"
+echo previous-release-rootfs > "$ZSEED"
+( cd "$WORK" && sha256sum prev-rootfs.tar.zst > prev-rootfs.tar.zst.sha256 )
+rm -rf "$WORK/tgtZ" "$WORK/.tgtZ.build"
+ZST="$(STAMPS_OF "$WORK/tgtZ")"
+RC=$(RUNT "$WORK/tgtZ" --seed-rootfs "$ZSEED")
+check "Z1 exit 0"                          "[[ $RC -eq 0 ]]"
+check "Z2 Debian seed stage NOT run"       "! OUT | grep -q 'mock: assembling seed'"
+check "Z3 stage1 received the rootfs seed" "OUT | grep -q \"SEED_ROOTFS=$ZSEED\""
+check "Z4 no seed stamp (stage 0 not needed)" "[[ ! -f $ZST/seed.done ]]"
+check "Z5 every later stage ran"           "[[ -f $ZST/stage1.done && -f $ZST/stage3.done && -f $ZST/rootfs.done && -f $ZST/iso.done ]]"
+check "Z6 banner names the rootfs seed"    "OUT | grep -q 'seed:       ROOTFS'"
+bash "$MOCK/build-all.sh" --seed-rootfs "$ZSEED" --list-stages "$WORK/tgtZ" > "$WORK/last.out" 2>&1
+check "Z7 list: seed 'not needed'"         "OUT | grep -q 'seed.*not needed (rootfs seed: prev-rootfs.tar.zst)'"
+check "Z8 list: 6/6"                       "OUT | grep -q '6/6 stages recorded'"
+RC=$(RUNT "$WORK/tgtZ" --seed-rootfs "$ZSEED")
+check "Z9 same seed again: nothing to run" "OUT | grep -q 'nothing to run'"
+# a NEW seed (the next release) invalidates stage 1 and everything after
+echo next-release-rootfs > "$ZSEED"
+( cd "$WORK" && sha256sum prev-rootfs.tar.zst > prev-rootfs.tar.zst.sha256 )
+RC=$(RUNT "$WORK/tgtZ" --seed-rootfs "$ZSEED")
+check "Z10 changed seed invalidates stage1 (seed named)" "OUT | grep -q 'invalidating stamp: stage1 (inputs changed: seed)'"
+check "Z11 stages 1-iso re-ran"            "OUT | grep -q 'mock: stage1 into' && OUT | grep -q 'mock: mkrootfs' && OUT | grep -q 'mock: mkiso'"
+# pin is passed down and validated
+ZHASH="$(sha256sum "$ZSEED" | cut -d' ' -f1)"
+RC=$(RUNT "$WORK/tgtZ" --seed-rootfs "$ZSEED" --seed-rootfs-sha256 "$ZHASH" --from-stage 1)
+check "Z12 pinned hash reaches stage1"     "OUT | grep -q \"SHA=$ZHASH\""
+RC=$(RUNT "$WORK/tgtZ" --seed-rootfs "$ZSEED" --seed-rootfs-sha256 nothex)
+check "Z13 malformed pin refused (exit 2)" "[[ $RC -eq 2 ]] && ERR | grep -q '64 hex digits'"
+RC=$(RUNT "$WORK/tgtZ" --seed-rootfs "$WORK/does-not-exist.tar.zst")
+check "Z14 missing seed file refused"      "[[ $RC -eq 2 ]] && ERR | grep -q 'does not exist'"
+RC=$(RUNT "$WORK/tgtZ" --seed-rootfs-sha256 "$ZHASH")
+check "Z15 pin without a seed refused"     "[[ $RC -eq 2 ]] && ERR | grep -q 'needs --seed-rootfs'"
+RC=$(RUNT "$WORK/tgtZ" --seed-rootfs "$ZSEED" --from-stage seed)
+check "Z16 --from-stage seed refused"      "[[ $RC -eq 2 ]] && ERR | grep -q 'meaningless with --seed-rootfs'"
+RC=$(RUNT "$WORK/tgtZ" --seed-rootfs "$ZSEED" --rootfs-out "$ZSEED")
+check "Z17 seed == rootfs output refused"  "[[ $RC -eq 2 ]] && ERR | grep -q 'same file'"
+RC=$(RUNT "$WORK/tgtZ" --rootfs-out "$WORK/out/custom.tar.zst" --from-stage rootfs)
+check "Z18 --rootfs-out honoured"          "[[ $RC -eq 0 && -s $WORK/out/custom.tar.zst ]]"
+RC=$(RUNT "$WORK/tgtZ" --rootfs-out "$WORK/out/custom.tgz")
+check "Z19 bad rootfs extension refused"   "[[ $RC -eq 2 ]] && ERR | grep -q 'must end in .tar.zst'"
+RC=$(RUNT "$WORK/tgtZ" --from-stage 4 --no-iso)
+check "Z20 --from-stage 4 is the rootfs stage" "OUT | grep -q 'stage rootfs —'"
+RC=$(RUNT "$WORK/tgtZ" --from-stage 5)
+check "Z21 --from-stage 5 is the iso stage"    "OUT | grep -q 'stage iso —' && ! OUT | grep -q 'stage rootfs —'"
 
 # ------------------------------------------------------------------ summary --
 echo

@@ -1,5 +1,25 @@
 # Changelog
 
+## Unreleased — the rootfs is a build artifact and the next build's seed
+
+- New stage 4 `rootfs` (`bootstrap/mkrootfs.sh`): the finished final root is
+  packed into `mydistro-x86_64-rootfs.tar.zst` with a `.sha256` and a
+  `.packages` inventory, validated after writing, and refused when it is not
+  a clean finished root. The ISO stage is now stage 5 (`--from-stage iso` is
+  unchanged; `--from-stage 4` now means the rootfs stage).
+- `build-all.sh --seed-rootfs FILE [--seed-rootfs-sha256 HASH]`: build with a
+  previous build's rootfs instead of the Debian seed (stage 0 is not needed).
+  Stage 1 verifies and unpacks it and `bootstrap/seed-from-rootfs.sh` turns it
+  into a seed (toolchain check, dpm db parked so stage 2 rebuilds everything,
+  `/opt/seed/{env.sh,manifest.txt}`). The seed's checksum is part of stage 1's
+  input fingerprint. New options `--no-rootfs`, `--rootfs-out`.
+- `release.yml`: uploads the rootfs next to the ISO (workflow artifact and
+  release asset) and builds each release from the previous release's rootfs
+  (`scripts/fetch-rootfs-seed.sh`, checksum-verified; new input `seed:
+  auto|rootfs|debian`). The first release still bootstraps from the Debian seed.
+- Tests: `scripts/test-rootfs.sh` (new, run by CI) and an extended
+  `scripts/test-build-all-mock.sh` (six stages, rootfs seed scenarios).
+
 ## Unreleased — dpm builds with the distro's own Rust
 
 - Fixed the stage 2 failure `cargo: command not found` (exit 127) while

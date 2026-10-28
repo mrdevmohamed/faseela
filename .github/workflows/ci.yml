@@ -64,5 +64,7 @@ jobs:
         run: python3 -I scripts/check-recipes.py
       - name: build-all.sh mock pipeline tests
         run: bash scripts/test-build-all-mock.sh
+      - name: rootfs artifact + self-hosting seed tests
+        run: bash scripts/test-rootfs.sh
       - name: build-all.sh dry run
         run: bash bootstrap/build-all.sh --dry-run --isolation closure /tmp/mydistro-dry
