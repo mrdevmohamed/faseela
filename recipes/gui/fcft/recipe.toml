@@ -16,6 +16,6 @@ build = ["meson", "ninja", "pkgconf", "tllist", "freetype", "fontconfig", "pixma
 run = ["freetype", "fontconfig", "pixman"]
 
 [build]
-configure = "meson setup build --prefix=/usr --libdir=lib --buildtype=release -D svg-backends=none -D grapheme-shaping=disabled -D run-shaping=disabled -D test-text-shaping=false -D docs=disabled"
+configure = "meson setup build --prefix=/usr --libdir=lib --buildtype=release -D grapheme-shaping=disabled -D run-shaping=disabled -D test-text-shaping=false -D docs=disabled"
 compile = "ninja -C build"
 install = "DESTDIR=%{pkgdir} meson install -C build"
