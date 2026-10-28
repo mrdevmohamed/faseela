@@ -39,4 +39,15 @@ if [ ! -f ./install.sh ]; then
 fi
 bash ./install.sh --prefix=/usr --destdir=%{pkgdir} --disable-ldconfig \\
     --components=rustc,cargo,rust-std-x86_64-unknown-linux-gnu
+
+# install.sh records the build machine's paths (%{pkgdir}, the source dir) in
+# its log and component manifests; dpm lint refuses an archive that names them.
+# The log is useless in a package, and so is rust's own uninstall.sh (it would
+# bypass dpm's database); the manifests only need their destdir stripped.
+rl=%{pkgdir}/usr/lib/rustlib
+rm -f "$rl/install.log" "$rl/uninstall.sh"
+for f in "$rl"/manifest-*; do
+    [ -f "$f" ] || continue
+    sed -i "s#%{pkgdir}##g" "$f"
+done
 """
