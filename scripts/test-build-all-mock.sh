@@ -117,7 +117,7 @@ check "A14 rootfs ready in output"         "OUT | grep -q 'rootfs ready.*mock-ro
 check "A15 rootfs path derived from the ISO path" "[[ -s $WORK/out/mock-rootfs.tar.zst ]]"
 check "A16 rootfs sidecar written"         "[[ -s $WORK/out/mock-rootfs.tar.zst.sha256 ]]"
 check "A17 rootfs is made from the FINAL root" "[[ \$(cat $WORK/out/mkrootfs.root) == $TGT/sysroot ]]"
-check "A18 rootfs runs BEFORE the iso"     "[[ \$(grep -n 'stage rootfs' $WORK/last.out | head -1 | cut -d: -f1) -lt \$(grep -n 'stage iso' $WORK/last.out | head -1 | cut -d: -f1) ]]"
+check "A18 rootfs runs BEFORE the iso"     "[[ \$(grep -n '^== .*: stage rootfs ' $WORK/last.out | head -1 | cut -d: -f1) -lt \$(grep -n '^== .*: stage iso ' $WORK/last.out | head -1 | cut -d: -f1) ]]"
 check "A19 Debian seed: stage1 saw no rootfs seed" "OUT | grep -q 'SEED_ROOTFS=unset'"
 check "A20 next-build hint names --seed-rootfs" "OUT | grep -q -- '--seed-rootfs'"
 
