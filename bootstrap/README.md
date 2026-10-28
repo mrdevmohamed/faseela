@@ -257,6 +257,6 @@ and by the author's VM runs.
 * Stage 2 does not rebuild packages whose recipes changed after install
   (the db records names, not build ids); deliberate procedures:
   `build-all.sh --from-stage 2` for everything, or
-  `dpm --root / remove <pkg>` + re-run for one package.
+  `dpm remove --yes --root / <pkg>` + re-run for one package.
 * A seed adopted without a sidecar is trusted by size only (legacy path,
   announced in the log).

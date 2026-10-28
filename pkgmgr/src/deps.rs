@@ -9,6 +9,7 @@ use crate::recipe::Recipe;
 
 /// Resolve build order for `targets` given the set of installed packages.
 /// Returns recipes in dependency order (deps first, targets last).
+/// Unknown names get a "did you mean" hint built from the known graph.
 pub fn resolve(
     targets: &[String],
     installed: &HashSet<String>,
@@ -20,7 +21,11 @@ pub fn resolve(
 
     for t in targets {
         if !known.contains_key(t) && !installed.contains(t) {
-            bail!("unknown package: `{}`", t);
+            bail!(
+                "unknown package: `{}`{}",
+                t,
+                crate::suggest::hint(t, &known.keys().cloned().collect::<Vec<_>>())
+            );
         }
         visit(t, known, &mut done, &mut visiting, &mut order)?;
     }
@@ -43,8 +48,9 @@ fn visit(
     let rec = match known.get(name) {
         Some(r) => r,
         None => bail!(
-            "dependency `{}` is neither installed nor has a recipe",
-            name
+            "dependency `{}` is neither installed nor has a recipe{}",
+            name,
+            crate::suggest::hint(name, &known.keys().cloned().collect::<Vec<_>>())
         ),
     };
     for dep in &rec.depends.build {

@@ -195,7 +195,15 @@ pub fn load_all(root: &Path) -> Result<BTreeMap<String, Recipe>> {
 }
 
 /// Load one recipe by package name, searching `recipes/**/recipe.toml`.
+/// A miss suggests close recipe names — "did you mean `gzip`?" beats a bare
+/// "not found" every time.
 pub fn load_by_name(root: &Path, name: &str) -> Result<Recipe> {
+    Ok(locate(root, name)?.0)
+}
+
+/// Load one recipe by name and also report where its `recipe.toml` lives
+/// (single walk — `load_by_name` and `find_recipe_path` share this).
+pub fn locate(root: &Path, name: &str) -> Result<(Recipe, PathBuf)> {
     for entry in walkdir::WalkDir::new(root)
         .into_iter()
         .filter_map(|e| e.ok())
@@ -203,10 +211,25 @@ pub fn load_by_name(root: &Path, name: &str) -> Result<Recipe> {
     {
         let rec = Recipe::load(entry.path())?;
         if rec.package.name == name {
-            return Ok(rec);
+            return Ok((rec, entry.path().to_path_buf()));
         }
     }
-    bail!("recipe not found: `{}` (searched {})", name, root.display())
+    // miss: offer the closest names we know about (best effort — a tree that
+    // fails to parse still reports the plain "not found" below)
+    let names: Vec<String> = load_all(root)
+        .map(|m| m.into_keys().collect())
+        .unwrap_or_default();
+    bail!(
+        "recipe not found: `{}` (searched {}){}",
+        name,
+        root.display(),
+        crate::suggest::hint(name, &names)
+    )
+}
+
+/// Where a package's `recipe.toml` lives, for `dpm info`.
+pub fn find_recipe_path(root: &Path, name: &str) -> Result<PathBuf> {
+    Ok(locate(root, name)?.1)
 }
 
 #[cfg(test)]

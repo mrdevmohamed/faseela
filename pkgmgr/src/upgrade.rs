@@ -26,6 +26,9 @@ pub struct UpgradeOpts {
     pub dry_run: bool,
     pub force: bool,
     pub allow_unsigned: bool,
+    /// skip the interactive confirmation (non-interactive callers must
+    /// pass it — a piped stdin otherwise refuses, never silently proceeds)
+    pub yes: bool,
 }
 
 pub fn upgrade(
@@ -163,17 +166,28 @@ pub fn upgrade(
         }
     };
 
+    let pal = crate::color::Palette::auto(crate::color::Stream::Stdout);
     println!("dpm: {} package(s) to upgrade:", plan.len());
     for name in &ordered {
         let (_, new) = plan.iter().find(|(r, _)| &r.name == name).unwrap();
         let cur = db.entry(name)?.map(|e| e.version_full()).unwrap_or_default();
-        println!("  {:<24} {} -> {}", name, cur, new);
+        println!(
+            "  {} {} {} {}",
+            pal.name(&format!("{name:<24}")),
+            pal.ver(&cur),
+            pal.dim("->"),
+            pal.ok(new),
+        );
     }
 
     if opts.dry_run {
         println!("dpm: dry run — no changes made");
         return Ok(());
     }
+
+    // the plan is on the table; a real run needs an explicit go-ahead
+    // (scripts pass --yes; a piped stdin without it is refused, not guessed)
+    crate::confirm::confirm("dpm: proceed with the upgrade?", opts.yes)?;
 
     // ---- apply ----------------------------------------------------------------
     let mut done = 0usize;
@@ -455,13 +469,13 @@ mod tests {
 
         // dry run changes nothing
         upgrade(&root, &RepoRef::Local(repo.clone()), &base.join("no-recipes"), &UpgradeOpts {
-            dry_run: true, force: false, allow_unsigned: true,
+            dry_run: true, force: false, allow_unsigned: true, yes: true,
         }).unwrap();
         assert_eq!(std::fs::read(root.join("bin")).unwrap(), b"one");
 
         // real upgrade
         upgrade(&root, &RepoRef::Local(repo.clone()), &base.join("no-recipes"), &UpgradeOpts {
-            dry_run: false, force: false, allow_unsigned: true,
+            dry_run: false, force: false, allow_unsigned: true, yes: true,
         }).unwrap();
         assert_eq!(std::fs::read(root.join("bin")).unwrap(), b"two");
         let db = Db::new(&root);
@@ -469,7 +483,7 @@ mod tests {
 
         // second run: up to date
         upgrade(&root, &RepoRef::Local(repo.clone()), &base.join("no-recipes"), &UpgradeOpts {
-            dry_run: false, force: false, allow_unsigned: true,
+            dry_run: false, force: false, allow_unsigned: true, yes: true,
         }).unwrap();
 
         // rollback to the pre-upgrade version
@@ -492,7 +506,7 @@ mod tests {
         std::fs::write(&target, b"corrupted").unwrap();
 
         let err = upgrade(&root, &RepoRef::Local(repo.clone()), &base.join("no-recipes"), &UpgradeOpts {
-            dry_run: false, force: false, allow_unsigned: true,
+            dry_run: false, force: false, allow_unsigned: true, yes: true,
         });
         assert!(err.is_err(), "tampered archive must not install");
         // system still intact at 1.0
@@ -609,7 +623,7 @@ mod tests {
         }
 
         upgrade(&root, &RepoRef::Local(repo), &recipes, &UpgradeOpts {
-            dry_run: false, force: false, allow_unsigned: true,
+            dry_run: false, force: false, allow_unsigned: true, yes: true,
         })
         .unwrap();
         assert_eq!(std::fs::read(root.join("bin")).unwrap(), b"two");
@@ -652,7 +666,7 @@ mod tests {
             &empty,
             &RepoRef::Remote("http://127.0.0.1:1/x".into()),
             Path::new("recipes"),
-            &UpgradeOpts { dry_run: true, force: false, allow_unsigned: false },
+            &UpgradeOpts { dry_run: true, force: false, allow_unsigned: false, yes: true },
         );
         assert!(r.unwrap_err().to_string().contains("no trusted keys"));
         let _ = std::fs::remove_dir_all(&base);
