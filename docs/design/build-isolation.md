@@ -20,10 +20,18 @@ Implementation notes that refine the text below:
 * **Layer cache (Phase 5, implemented):** `closure::assemble_cached` keeps
   one extracted directory per archive under
   `<cache>/layers/<archive-sha256>/` (`DPM_LAYER_CACHE` overrides the
-  location, default `<root>/var/cache/dpm/layers`; `DPM_NO_LAYER_CACHE=1`
-  disables the feature). The build root is mounted as an **overlayfs**
+  location, default `<root>/var/cache/dpm`, so the layers land at
+  `<root>/var/cache/dpm/layers/<sha>`; `DPM_NO_LAYER_CACHE=1` disables
+  the feature). The build root is mounted as an **overlayfs**
   (lowerdirs = layers, throw-away upper/work under the sandbox scratch)
-  instead of being extracted per build. The archive is signature-verified
+  instead of being extracted per build. Because the overlay mount happens
+  *inside* the sandbox, its lowerdirs must be traversable by the §4.3
+  mapped identity, not by whoever ran dpm: `dpm build` checks
+  `sandbox::first_untraversable_ancestor` before choosing the layered
+  strategy and falls back to extract-per-build with a note when the cache
+  sits under a tree the map cannot reach (e.g. a mode-700 `$HOME` in a
+  `sudo` run — keep the rootfs under the build dir, or point
+  `DPM_LAYER_CACHE` at a reachable path). The archive is signature-verified
   on *every* assembly — cache hits included — so the trust guarantee is
   identical to `dpm install`. The extract-per-build fallback never touches
   the cache. Paths containing `,` or

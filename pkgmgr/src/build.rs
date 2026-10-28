@@ -275,7 +275,39 @@ pub fn build(rec: &Recipe, opts: &BuildOpts) -> Result<BuildResult> {
         // Phase 5 (§5.3 v2): assemble from cached layers + one overlayfs
         // mount when the kernel allows overlayfs in a user namespace; fall
         // back to extract-per-build (v1) otherwise — same result, slower.
-        let layer_cache = layer_cache_dir(opts);
+        // The layer cache must also be traversable by the sandbox's mapped
+        // identity (§4.3): the overlayfs lowerdirs are resolved by mount(2)
+        // *inside* the sandbox, where a home directory with mode 700 owned
+        // by an unmapped uid blocks dpm's own caches (`sudo dpm` with the
+        // rootfs under $HOME is the common case). Filtering here keeps an
+        // unreachable cache from failing the build after extraction.
+        let layer_cache = layer_cache_dir(opts).and_then(|dir| {
+            // `layer_cache_dir` has created `dir`; everything below it
+            // (`layers/<sha>`) is created inside `assemble_cached` under the
+            // same parents, so the cache root is the right check target
+            // (then a brand-new cache is not read as "unreachable").
+            match crate::sandbox::first_untraversable_ancestor(&dir) {
+                None => Some(dir),
+                Some(blocker) => {
+                    eprintln!(
+                        "dpm: closure: note: the layer cache {} is not \
+                         reachable from inside the sandbox, because {} is \
+                         not traversable by the sandbox's mapped identity \
+                         (§4.3 maps only the caller's own id — a home \
+                         directory with mode 700 blocks `sudo` runs). \
+                         Using extract-per-build assembly; to use the \
+                         layer cache, keep the rootfs under the build dir \
+                         (or otherwise outside such trees), point \
+                         DPM_LAYER_CACHE at a reachable path, or run dpm \
+                         as a normal user (rootless runs map their own \
+                         identity)",
+                        dir.display(),
+                        blocker.display()
+                    );
+                    None
+                }
+            }
+        });
         let layered = layer_cache.is_some()
             && layer_paths_are_mountable(&members, &known, &opts.outdir, &work)
             && {
@@ -658,17 +690,18 @@ fn try_cache_hit(
     Ok(Some(BuildResult { archive: out_path, pkginfo }))
 }
 
-/// The layer cache directory (§5.3 v2): `DPM_LAYER_CACHE` or
-/// `<root>/var/cache/dpm/layers`. `None` when it cannot exist (unwritable
-/// root, or the user disabled it with `DPM_NO_LAYER_CACHE=1`) — the build
-/// then falls back to extract-per-build assembly.
+/// The layer cache root (§5.3 v2): `DPM_LAYER_CACHE` or `<root>/var/cache/dpm`;
+/// one extracted directory per archive goes under it at `<cache>/layers/<sha>`
+/// (`assemble_cached`). `None` when it cannot exist (unwritable root, or the
+/// user disabled it with `DPM_NO_LAYER_CACHE=1`) — the build then falls back
+/// to extract-per-build assembly.
 fn layer_cache_dir(opts: &BuildOpts) -> Option<PathBuf> {
     if std::env::var_os("DPM_NO_LAYER_CACHE").is_some() {
         return None;
     }
     let dir = std::env::var_os("DPM_LAYER_CACHE")
         .map(PathBuf::from)
-        .unwrap_or_else(|| opts.root.join("var/cache/dpm/layers"));
+        .unwrap_or_else(|| opts.root.join("var/cache/dpm"));
     match std::fs::create_dir_all(&dir) {
         Ok(()) => Some(dir),
         Err(e) => {

@@ -1,5 +1,49 @@
 # Changelog
 
+## Unreleased — the layer cache survives `sudo` runs (§4.3 reachability)
+
+- `recipes/base/base-files` rel 3: create `/usr/bin/sh -> bash`. Nothing in
+  the package base ever created a `sh` (`dash`/`busybox` are not in the
+  world either), so every `./configure` died with `bad interpreter: No such
+  file or directory` the moment a build really used the assembled root
+  (closure), and `bootstrap/seed-from-rootfs.sh` — which requires
+  `/usr/bin/sh` — could never have accepted this rootfs as a seed. Stage
+  builds never noticed: the Debian seed chroots always had a `/bin/sh`.
+  bash is the `sh` on purpose: the stage2 scripts use bash constructs, so
+  dash would break them.
+- `recipes/base/ncurses` rel 2: with this configure set the term library is
+  merged into `libncursesw` and upstream never installs a separate
+  `libtinfo.so.6`, but binaries built elsewhere (or against seed hosts)
+  load with `NEEDED libtinfo.so.6` — bash's package bash could not load
+  inside a closure build root (`bash: error while loading shared
+  libraries: libtinfo.so.6`, configure exit 127) and the finished rootfs'
+  own `/usr/bin/bash` was equally dead. The recipe now installs
+  `libtinfo.so.6` / `.so` as symlinks to the merged `libncursesw`
+  (every tinfo entry point is exported by it). After this, rebuild ncurses
+  (`dpm build ncurses --isolation sandbox`), then bash — the closure build
+  root finds the symlink and the old bash layer loads again.
+- Fixed the closure build failure
+  `sandbox: overlay layer <rootfs>/var/cache/dpm/layers/layers/<sha> is
+  missing` (exit 125) for `sudo dpm build` with `--root` under `$HOME`: the
+  layer cache is reachable for dpm but the overlayfs lowerdirs are resolved
+  *inside* the sandbox, whose §4.3 map covers only the caller's id — a home
+  directory with mode 700 owned by that unmapped uid blocks every stat of
+  the layers. `dpm build` now checks the cache's reachability up front
+  (`sandbox::first_untraversable_ancestor`) and, when it cannot work,
+  says so and falls back to extract-per-build instead of failing
+  mid-configure; `mount_layers` reports `PermissionDenied` as "not
+  reachable by the sandbox's mapped identity" instead of "is missing".
+  The cache default was also fixed so the layers stop doubling:
+  `<root>/var/cache/dpm` is the cache *root* (`DPM_LAYER_CACHE` overrides
+  it) and the per-archive layers land at `<root>/var/cache/dpm/layers/<sha>`
+  — previously the default passed the `layers` dir as the root, producing
+  `.../dpm/layers/layers/<sha>` on disk. Existing doubled caches are simply
+  stale (delete `layers/layers`); new layers are written to the documented
+  layout.
+  To keep the layer cache for root runs, keep the rootfs/builddir outside
+  such trees (`DPM_LAYER_CACHE=/var/tmp/dpm/cache` is one way), or build
+  as a normal user (rootless runs map their own identity).
+
 ## Unreleased — the rootfs is a build artifact and the next build's seed
 
 - New stage 4 `rootfs` (`bootstrap/mkrootfs.sh`): the finished final root is

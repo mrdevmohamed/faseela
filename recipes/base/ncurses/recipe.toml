@@ -2,7 +2,7 @@
 [package]
 name = "ncurses"
 version = "6.6"
-rel = 1
+rel = 2
 arch = ["x86_64"]
 summary = "Terminal handling library (wide-character ABI)"
 license = ["MIT", "X11"]
@@ -24,4 +24,14 @@ do
   ln -sfv ${lib}w.pc %{pkgdir}/usr/lib/pkgconfig/${lib}.pc
 done
 ln -sfv libncursesw.so %{pkgdir}/usr/lib/libcurses.so
+# this configure set merges the term library into libncursesw (not
+# --with-termlib), so there is no separate libtinfo.so.6 — while binaries
+# built on hosts that ship one (or older package builds) load with
+# NEEDED libtinfo.so.6 (bash did exactly that and could neither run inside
+# the closure/extracted build root nor load off the finished rootfs).
+# Every tinfo entry point (tgetent, tparm, tputs, setupterm, ...) is
+# exported by libncursesw.so.6, so the symlink resolves those references
+# without duplication.
+ln -sfv libncursesw.so.6 %{pkgdir}/usr/lib/libtinfo.so.6
+ln -sfv libncursesw.so %{pkgdir}/usr/lib/libtinfo.so
 """

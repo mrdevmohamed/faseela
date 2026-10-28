@@ -5,7 +5,7 @@
 [package]
 name = "base-files"
 version = "0.4"
-rel = 2
+rel = 3
 arch = ["x86_64"]
 summary = "FHS skeleton, merged-usr symlinks and core /etc files"
 license = ["MIT"]
@@ -32,6 +32,11 @@ ln -s usr/lib %{pkgdir}/lib
 # from (build chroot vs /sysroot) and makes installs write into the wrong tree
 ln -s usr/lib64 %{pkgdir}/lib64
 ln -s /proc/mounts %{pkgdir}/etc/mtab
+
+# /bin/sh: shebang scripts (every ./configure, init/runit services) resolve
+# here, and the seed flow demands it when this rootfs is a build seed (§: the
+# stage2 scripts use bash constructs, so bash — not dash — is the sh)
+ln -sfv bash %{pkgdir}/usr/bin/sh
 
 # users and groups (LFS 12.2 chapter 6 equivalent)
 cat > %{pkgdir}/etc/passwd <<'EOF'
