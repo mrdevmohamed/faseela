@@ -10,13 +10,17 @@
 [package]
 name = "base-devel"
 version = "1"
-rel = 1
+rel = 2
 arch = ["x86_64"]
 summary = "Meta package: the base toolchain every build may use"
 
 [depends]
 # installing base-devel pulls the whole base toolchain
 run = [
+    # first: the skeleton (merged-usr /bin /lib /lib64 links, /etc, mount
+    # points). Without it a closure build root has no /lib64 and every
+    # dynamic binary — bash included — fails to exec with ENOENT.
+    "base-files",
     "binutils", "gcc", "glibc", "linux-headers",
     "make", "bash", "coreutils", "sed", "grep", "gawk", "findutils",
     "diffutils", "tar", "gzip", "xz", "zstd",
@@ -27,7 +31,7 @@ run = [
 # meta package: no sources, ships the manifest so the set is introspectable
 install = """
 mkdir -p %{pkgdir}/usr/share/dpm
-for p in binutils gcc glibc linux-headers make bash coreutils sed grep \\
+for p in base-files binutils gcc glibc linux-headers make bash coreutils sed grep \\
          gawk findutils diffutils tar gzip xz zstd patch pkgconf file perl python; do
     echo "$p"
 done > %{pkgdir}/usr/share/dpm/base-devel.list
