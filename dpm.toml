@@ -1,0 +1,19 @@
+# dpm.toml — DPM configuration
+# dpm reads the nearest dpm.toml at or above the current directory
+# (or the file named by $DPM_CONFIG). Every key is optional.
+# Precedence: command-line flag > environment variable > this file > default.
+# Relative paths here resolve against this file's directory.
+
+# Target root filesystem (env: DPM_ROOT)
+root = "/home/mohamed/rootfs"
+
+# Recipes tree, scratch dir, build profiles (env: DPM_RECIPES / DPM_BUILDDIR / DPM_PROFILES)
+recipes = "recipes"
+builddir = "build"
+profiles = "profiles"
+
+# Default parallel build jobs (env: DPM_JOBS)
+jobs = 8
+
+# Default repository for `dpm upgrade` (env: DPM_REPO) — local dir or http(s) URL
+#repo = "https://mirror.example.com/mydistro/stable"
