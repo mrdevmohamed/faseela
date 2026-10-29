@@ -10,7 +10,14 @@ source = "https://mirrors.kernel.org/gnu/bc/bc-1.08.2.tar.gz"
 sha256 = "ae470fec429775653e042015edc928d07c8c3b2fc59765172a330d3d87785f86"
 
 [depends]
-build = ["readline"]
+# bc 1.08.2's configure hard-errors with "readline works only with flex" when
+# readline is enabled but no flex lexer generator is in the build root. flex
+# is NOT part of base-devel, so it must be declared here explicitly; under
+# `--isolation closure` the seed's flex is gone and an undeclared tool fails
+# the build ("missing declaration" by design, docs/design/build-isolation.md
+# §5.1). flex in turn execs m4 at runtime — pulled transitively via flex's
+# own run deps.
+build = ["readline", "flex"]
 run = ["readline"]
 
 [build]
