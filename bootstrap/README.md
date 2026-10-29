@@ -114,9 +114,11 @@ changed recipe tree, as a release build should.
   `stale (inputs not recorded)` / `FAILED` / `pending` / `done (adopted)` /
   `skipped (--no-iso)`
 * **pre-flight**: root check, ~10 GB free space, host tools for the stages
-  that will actually run (zstd/unshare/pivot_root/mount for stages 1-3;
-  mksquashfs/grub-mkrescue/xorriso/gcc/make for the ISO) — so a missing
-  xorriso cannot waste hours of gcc
+  that will actually run — stages switched off with `--no-iso` /
+  `--no-rootfs` are not checked (zstd/unshare/pivot_root/mount for stages
+  1-3; mksquashfs/grub-mkrescue/xorriso/gcc/make for the ISO) — so a
+  missing xorriso cannot waste hours of gcc, and a `--no-iso` build works
+  on a host without the ISO tools
 * every log starts with an **audit header**: args, host, bash/tar/zstd
   versions, seed identity, git commit when the repo is a checkout
 * a failed stage records a failure marker (shown by `--list-stages`, cleared

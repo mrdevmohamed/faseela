@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased — fix: --no-iso builds died in pre-flight ("iso stage misses host tool(s): xorriso")
+
+- The release workflow's `core` job builds `build-all.sh --no-iso` on hosts
+  that install no ISO tools ("No ISO host tools here: the ISOs are made by
+  the matrix jobs"), but the pre-flight host-tool check still ran for the
+  (switched-off) ISO stage, so the job died with exit 2 before stage 0 —
+  `tar: mydistro: Cannot stat` in the later "pack" step was only the cascade.
+- `preflight()` now skips stages disabled with `--no-iso` / `--no-rootfs`
+  (`stage_skipped`) exactly like the start-point computation and the
+  pipeline loop already did; the tool check still fires for every stage
+  that will actually run, so a plain `build-all.sh` still fails fast when
+  xorriso is missing.
+- Regression tests (`scripts/test-build-all-mock.sh`, section G2): a
+  `--no-iso` build must succeed with the ISO tools removed from PATH
+  (mirrors the CI core job), while a full build on that PATH must still
+  fail with `iso stage misses host tool` (negative control, vacuously
+  skipped on hosts that happen to have all five ISO tools).
+
 ## Unreleased — fix: stage2 died at xz ("./configure: No such file or directory")
 
 - `xz-5.8.1.tar.xz` is compressed with `--check=sha256`, which `lzma-rs` 0.3.0
