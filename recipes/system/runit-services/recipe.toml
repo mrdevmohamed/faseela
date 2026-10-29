@@ -5,7 +5,7 @@
 [package]
 name = "runit-services"
 version = "0.4"
-rel = 6
+rel = 7
 arch = ["x86_64"]
 summary = "runit stage scripts and supervised service tree"
 license = ["MIT"]
@@ -53,6 +53,13 @@ udevadm settle 2>/dev/null || true
 find /tmp -xdev -mindepth 1 -delete 2>/dev/null || true
 chmod 1777 /tmp
 
+# serial console: a getty on ttyS0 ONLY when the kernel was booted with
+# console=ttyS0 (the live ISO's grub entries pass it; QEMU/CI and servers use
+# it). Without it nothing changes on real hardware.
+case "$(cat /proc/cmdline 2>/dev/null)" in
+    *console=ttyS0*) ln -sf /etc/sv/getty-ttyS0 /etc/runit/runsvdir/default/getty-ttyS0 ;;
+esac
+
 dmesg > /var/log/boot.dmesg 2>/dev/null || true
 EOF
 cat > %{pkgdir}/etc/runit/2 <<'EOF'
@@ -92,6 +99,11 @@ for tty in 1 2 3 4; do
     printf '#!/bin/sh\nexec setsid -w agetty --noclear tty%s 38400 linux\n' "$tty" > %{pkgdir}/etc/sv/getty-tty$tty/run
     chmod 755 %{pkgdir}/etc/sv/getty-tty$tty/run
 done
+
+# serial getty (not in the default runsvdir: runit/1 links it on console=ttyS0)
+install -d -m755 %{pkgdir}/etc/sv/getty-ttyS0
+printf '#!/bin/sh\nexec setsid -w agetty --noclear -L ttyS0 115200 vt100\n' > %{pkgdir}/etc/sv/getty-ttyS0/run
+chmod 755 %{pkgdir}/etc/sv/getty-ttyS0/run
 
 install -d -m755 %{pkgdir}/etc/sv/udevd
 cat > %{pkgdir}/etc/sv/udevd/run <<'EOF'
