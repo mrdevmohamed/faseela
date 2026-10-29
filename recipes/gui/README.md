@@ -62,7 +62,9 @@ start-sway                               # from a text console
 ```
 
 `start-sway` sets `XDG_RUNTIME_DIR`, `LIBSEAT_BACKEND=seatd` and
-`WLR_RENDERER_ALLOW_SOFTWARE=1` (see limitations). The kernel recipe enables
+`WLR_RENDERER_ALLOW_SOFTWARE=1` (see limitations). The same variables are
+exported for every login shell by `/etc/profile.d/gui-session.sh`, so a plain
+`sway` works too. The kernel recipe enables
 DRM (virtio-gpu, bochs, simpledrm) and evdev/HID input; to try it in QEMU use
 `-device virtio-vga` (or `-vga std`) and a USB/PS2 keyboard and mouse.
 

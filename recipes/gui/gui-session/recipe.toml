@@ -3,7 +3,7 @@
 [package]
 name = "gui-session"
 version = "0.1"
-rel = 2
+rel = 3
 arch = ["x86_64"]
 summary = "Wayland desktop session: seatd service, start-sway, default fonts/terminal/wallpaper"
 license = ["MIT"]
@@ -89,6 +89,36 @@ export WLR_RENDERER_ALLOW_SOFTWARE
 exec sway "$@"
 EOF
 chmod 755 %{pkgdir}/usr/bin/start-sway
+
+# --- /etc/profile.d: make a plain `sway` work from a login shell ------------
+#     (without XDG_RUNTIME_DIR sway aborts immediately)
+install -d -m755 %{pkgdir}/etc/profile.d
+cat > %{pkgdir}/etc/profile.d/gui-session.sh <<'EOF'
+# /etc/profile.d/gui-session.sh — environment for running sway from a tty
+if [ -z "$XDG_RUNTIME_DIR" ]; then
+    _uid=$(id -u)
+    if [ -d "/run/user/$_uid" ] && [ -O "/run/user/$_uid" ]; then
+        XDG_RUNTIME_DIR=/run/user/$_uid
+    elif [ "$_uid" = 0 ]; then
+        XDG_RUNTIME_DIR=/run/user/0
+        mkdir -p "$XDG_RUNTIME_DIR" 2>/dev/null && chmod 700 "$XDG_RUNTIME_DIR"
+    else
+        XDG_RUNTIME_DIR=/tmp/runtime-$_uid
+        mkdir -p "$XDG_RUNTIME_DIR" 2>/dev/null && chmod 700 "$XDG_RUNTIME_DIR"
+    fi
+    if [ -d "$XDG_RUNTIME_DIR" ] && [ -O "$XDG_RUNTIME_DIR" ]; then
+        export XDG_RUNTIME_DIR
+    else
+        unset XDG_RUNTIME_DIR
+    fi
+    unset _uid
+fi
+export LIBSEAT_BACKEND=seatd
+# mesa here only ships software (softpipe) and virgl drivers
+: "${WLR_RENDERER_ALLOW_SOFTWARE:=1}"
+export WLR_RENDERER_ALLOW_SOFTWARE
+EOF
+chmod 644 %{pkgdir}/etc/profile.d/gui-session.sh
 '''
 
 [hooks]
