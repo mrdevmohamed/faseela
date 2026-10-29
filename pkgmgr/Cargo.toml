@@ -2,7 +2,7 @@
 name = "dpm"
 version = "0.8.0"
 edition = "2021"
-rust-version = "1.77"
+rust-version = "1.82"
 description = "DPM — source-based package manager for a from-scratch Linux distribution"
 license = "GPL-3.0"
 
@@ -35,7 +35,10 @@ url = "2" # redirect-target resolution (already in the ureq dependency tree)
 flate2 = { version = "1", default-features = false, features = [
     "rust_backend",
 ] } # .tar.gz — pure-Rust miniz_oxide backend
-lzma-rs = { version = "0.3", default-features = false } # .tar.xz — pure Rust
+# .tar.xz — pure Rust, streaming `Read` adapter, supports every xz check type
+# (CRC32/CRC64/SHA-256; xz-utils >= 5.8 tarballs use SHA-256, which lzma-rs 0.3
+# rejected). 0.15.x is the last line on sha2 0.10, matching the dep above.
+lzma-rust2 = { version = "0.15.8", default-features = false, features = ["std", "xz"] }
 bzip2 = { version = "0.4", default-features = false, features = [
     "static",
 ] } # .tar.bz2 — vendored C, statically linked
@@ -44,3 +47,7 @@ filetime = "0.2" # timestamp-preserving local copies (cp -a parity)
 [[bin]]
 name = "dpm"
 path = "src/main.rs"
+
+[dev-dependencies]
+# xz *encoder* for building test archives only (not linked into dpm itself)
+lzma-rust2 = { version = "0.15.8", default-features = false, features = ["std", "xz", "encoder"] }

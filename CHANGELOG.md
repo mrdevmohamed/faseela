@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased — fix: stage2 died at xz ("./configure: No such file or directory")
+
+- `xz-5.8.1.tar.xz` is compressed with `--check=sha256`, which `lzma-rs` 0.3.0
+  refused to decode. `detect_source_format` swallowed that error and answered
+  "not a tarball", so build.rs staged the `.xz` as a single-file source and
+  `./configure` was never extracted. Fixed twice over:
+  - `lzma-rs` is replaced by `lzma-rust2` 0.15.8 (all xz check types incl.
+    SHA-256; streaming `Read` adapter, so the socketpair + worker-thread
+    shim is gone; still on `sha2` 0.10). `vendor/` was regenerated with
+    `cargo vendor`: only `lzma-rs`, `byteorder`, `crc`, `crc-catalog` left
+    and `lzma-rust2` came in. MSRV 1.77 -> 1.82 (lzma-rust2's requirement);
+  - `detect_source_format` claims `TarXz` when the xz decoder fails before
+    producing a tar header, so extraction surfaces the real error.
+  Regression tests: `tar_xz_with_sha256_check_extracts`,
+  `corrupt_xz_is_an_extraction_error_not_a_single_file`.
+
 ## Unreleased — dpm fetches and extracts without external commands
 
 - dpm no longer shells out to `curl`, `tar`, `cp` or `chroot`; all of these
