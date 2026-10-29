@@ -11,7 +11,13 @@ sha256 = "e87aae032bf07c26f85ac0ed3250998c37621d95f8bd748b31f15b33c45ee995"
 
 [depends]
 build = ["m4", "texinfo"]
-run = []
+# flex execs m4 at RUNTIME to expand its skeleton when generating scanners
+# (same packaging as Debian/Arch/Fedora: flex Depends/Requires m4). An empty
+# run list made every flex-using build depend on the seed's m4 leaking in:
+# under `--isolation closure` (build root = base-devel + declared deps only)
+# linux/grub/mesa/bc would invoke a flex whose m4 is absent. Declaring it
+# here pulls m4 into each closure transitively (closure_of walks run deps).
+run = ["m4"]
 
 [build]
 configure = "./configure --prefix=/usr --disable-static --docdir=/usr/share/doc/flex-%{version}"

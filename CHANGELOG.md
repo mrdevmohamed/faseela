@@ -1,5 +1,32 @@
 # Changelog
 
+## Unreleased — fix: stage3 closure rebuild died at bc ("readline works only with flex")
+
+- First real `--isolation closure` run (after the pre-flight fix the build now
+  gets past stages 0-2 and the sandbox world build): the hermetic pass rebuilt
+  m4, perl, autoconf, automake, bash, ncurses, readline cleanly, then
+  `bc-1.08.2` failed at configure —
+  `configure: error: readline works only with flex.`
+- Root cause is a missing declaration, and closure isolation is designed to
+  surface exactly those (docs/design/build-isolation.md §5.1: "a missing
+  declaration fails the build ... instead of silently linking against
+  whatever happens to be installed"). bc 1.08.2's configure hard-errors when
+  readline is on but the lexer generator is flex-less; the sandbox pass had
+  passed only because the Debian seed's flex leaked in (stage1-inner verifies
+  `flex` among the seed tools).
+- `bc` now declares `flex` in `depends.build` (flex is not part of
+  base-devel), which also pins the build order (flex is closure-rebuilt
+  before its dependent instead of whenever the world list happens to reach
+  it).
+- Latent bug fixed in the same class: `flex` execs `m4` at runtime to expand
+  its skeleton (Debian/Arch/Fedora all mark flex as depending on m4), but
+  `flex` declared `run = []`. Every flex-using build relied on the seed's
+  m4; under closure, linux/grub/mesa/bc would have invoked a flex whose m4
+  is absent. `flex` now declares `run = ["m4"]`, which `closure_of` pulls
+  transitively into every build root that contains flex.
+- Validated by the repo's own gates: `scripts/check-recipes.py` (parse,
+  unique names, existing deps, no cycles) and TOML parsing.
+
 ## Unreleased — fix: --no-iso builds died in pre-flight ("iso stage misses host tool(s): xorriso")
 
 - The release workflow's `core` job builds `build-all.sh --no-iso` on hosts
