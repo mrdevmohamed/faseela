@@ -18,7 +18,7 @@
 # Pipeline (see README.md for what each stage does):
 #   seed    seed/build-seed.sh   assemble the prebuilt toolchain
 #   stage1  stage1.sh            unpack seed, chroot, verify toolchain
-#   stage2  stage2.sh            DPM builds the full recipe graph
+#   stage2  stage2.sh            nawa builds the full recipe graph
 #   stage3  stage3.sh            self-hosting rebuild (seed removed)
 #   rootfs  mkrootfs.sh          final root -> <name>-rootfs.tar.zst (+ .sha256)
 #   iso     mkiso.sh             initramfs + squashfs + grub -> bootable ISO
@@ -39,7 +39,7 @@
 #   ./build-all.sh --dry-run /mnt/mydistro
 #
 # Env knobs (same as the underlying stage scripts):
-#   DPM_JOBS=<n>  WITH_GUI=1  STAGE3_WORLD=1  VOL_ID=<name>  SQUASH_COMP=gzip|xz|zstd
+#   NAWA_JOBS=<n>  WITH_GUI=1  STAGE3_WORLD=1  VOL_ID=<name>  SQUASH_COMP=gzip|xz|zstd
 set -Eeuo pipefail
 
 ORIG_ARGS=("$@")   # captured before the arg loop shifts them — used by the
@@ -54,7 +54,7 @@ STAGE_IDS=(seed stage1 stage2 stage3 rootfs iso)
 declare -A STAGE_DESC=(
     [seed]="assemble the prebuilt toolchain (seed.tar.zst)"
     [stage1]="unpack seed, mount, chroot, verify toolchain"
-    [stage2]="DPM builds the full recipe graph"
+    [stage2]="nawa builds the full recipe graph"
     [stage3]="self-hosting rebuild (seed removed)"
     [rootfs]="final root -> rootfs.tar.zst (also the next build's seed)"
     [iso]="initramfs + squashfs + grub -> bootable ISO"
@@ -138,7 +138,7 @@ TARGET="" OUT_ISO="" FROM_STAGE="" OUT_ROOTFS="" SEED_ROOTFS="" SEED_ROOTFS_SHA2
 OPT_FRESH=0 OPT_WIPE=0 OPT_NO_ISO=0 OPT_NO_ROOTFS=0 OPT_KEEP_MOUNTS=0
 OPT_WORLD=0 OPT_GUI=0 OPT_LIST=0 OPT_DRYRUN=0 OPT_SINGLE=0
 OPT_ISOLATION="${STAGE2_ISOLATION:-none}"
-JOBS="${DPM_JOBS:-}"
+JOBS="${NAWA_JOBS:-}"
 VOL_ID="${VOL_ID:-MYDISTRO}"
 SQUASH_COMP="${SQUASH_COMP:-gzip}"
 
@@ -654,7 +654,7 @@ if (( ! OPT_DRYRUN )); then
 fi
 
 # pass the knobs down to the stage scripts (they read them from the env)
-export DPM_JOBS="$JOBS"
+export NAWA_JOBS="$JOBS"
 export WITH_GUI="$OPT_GUI"
 # STAGE2_ISO/STAGE3_ISO were computed above (input tracking needs them
 # before any stamp is compared); stage2 cannot do closure — see there

@@ -1,5 +1,5 @@
 # base recipe: base-devel — the meta package defining the base build toolchain
-# (docs/design/build-isolation.md §5.1).
+# (nawa/docs/build-isolation.md §5.1).
 #
 # After this exists, `depends.build` in every recipe means "libraries, headers
 # and tools BEYOND this set" — the "seed tools are implicit" era ends. The
@@ -30,9 +30,9 @@ run = [
 [build]
 # meta package: no sources, ships the manifest so the set is introspectable
 install = """
-mkdir -p %{pkgdir}/usr/share/dpm
+mkdir -p %{pkgdir}/usr/share/nawa
 for p in base-files binutils gcc glibc linux-headers make bash coreutils sed grep \\
          gawk findutils diffutils tar gzip xz zstd patch pkgconf file perl python; do
     echo "$p"
-done > %{pkgdir}/usr/share/dpm/base-devel.list
+done > %{pkgdir}/usr/share/nawa/base-devel.list
 """

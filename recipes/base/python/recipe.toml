@@ -20,7 +20,7 @@ install = '''
 cd %{srcdir}/Python-* && make DESTDIR=%{pkgdir} install
 
 # CPython records the build tree in its sysconfig data and the config
-# Makefile. dpm lint rightly refuses an archive that names the build
+# Makefile. nawa lint rightly refuses an archive that names the build
 # machine's paths, so rewrite them to neutral ones (the package stays
 # relocatable; nothing at runtime reads these paths).
 bd=$(dirname %{srcdir})

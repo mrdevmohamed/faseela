@@ -6,7 +6,7 @@
 set -euo pipefail
 
 export PATH=/usr/bin:/bin:/usr/sbin:/sbin
-DPM_BIN="${DPM_BIN:-/usr/bin/dpm}"
+NAWA_BIN="${NAWA_BIN:-/usr/bin/nawa}"
 ORDER="${MIN_ORDER:-/mydistro-min.order}"
 # overridable so scripts/test-mkrootfs-min.sh can run this against a throwaway tree
 MYDISTRO="${MYDISTRO:-/mydistro}"
@@ -20,7 +20,7 @@ n=0
 while IFS= read -r pkg; do
     [[ -n $pkg ]] || continue
     archive=$(find_archive "$pkg") || {
-        echo "mkrootfs-min-inner: no archive of $pkg in the build root (build3/out, build/out, var/cache/dpm)" >&2
+        echo "mkrootfs-min-inner: no archive of $pkg in the build root (build3/out, build/out, var/cache/nawa)" >&2
         exit 1; }
     echo "== rootfs-min: $pkg  ($(basename "$archive"))"
     install_final "$archive"
@@ -29,7 +29,7 @@ done < "$ORDER"
 
 finalize_final_root
 
-# dpm copies every installed archive into var/cache/dpm for rollback. A build
+# nawa copies every installed archive into var/cache/nawa for rollback. A build
 # environment never rolls back, and the copies double the size of the tarball.
-rm -rf "${FINAL_ROOT:?}"/var/cache/dpm/*
+rm -rf "${FINAL_ROOT:?}"/var/cache/nawa/*
 echo "== rootfs-min: $n packages installed into $FINAL_ROOT"

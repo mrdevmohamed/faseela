@@ -17,7 +17,7 @@
 #
 # Usage:
 #   sudo ./mkrootfs.sh /mnt/mydistro/sysroot out/mydistro-x86_64-rootfs.tar.zst
-# Env overrides: ROOTFS_ZSTD_LEVEL (default 12), DPM_JOBS (zstd threads, 0=all)
+# Env overrides: ROOTFS_ZSTD_LEVEL (default 12), NAWA_JOBS (zstd threads, 0=all)
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -50,10 +50,10 @@ fi
 
 # ---- sanity: this must look like a finished system ------------------------
 bad=0
-for f in usr/bin/bash usr/bin/dpm usr/lib/libc.so.6 usr/bin/gcc; do
+for f in usr/bin/bash usr/bin/nawa usr/lib/libc.so.6 usr/bin/gcc; do
     [[ -e $ROOT/$f ]] || { echo "mkrootfs: ERROR: /$f missing in $ROOT" >&2; bad=1; }
 done
-[[ -d $ROOT/var/lib/dpm/local ]] || { echo "mkrootfs: ERROR: no dpm database in $ROOT (var/lib/dpm/local)" >&2; bad=1; }
+[[ -d $ROOT/var/lib/nawa/local ]] || { echo "mkrootfs: ERROR: no nawa database in $ROOT (var/lib/nawa/local)" >&2; bad=1; }
 for d in opt/seed opt/cargo opt/rustup opt/cross-tools build build3 mydistro; do
     [[ -e $ROOT/$d ]] && { echo "mkrootfs: ERROR: /$d (bootstrap/build leftover) is in $ROOT" >&2; bad=1; }
 done
@@ -79,7 +79,7 @@ tar --create --numeric-owner --xattrs --acls --sort=name --one-file-system \
     --exclude='./proc/*' --exclude='./sys/*' --exclude='./dev/*' \
     --exclude='./run/*'  --exclude='./tmp/*' \
     --exclude='./build'  --exclude='./build3' --exclude='./mydistro' \
-    --exclude='./sources' --exclude='./.dpm' --exclude='./sysroot' \
+    --exclude='./sources' --exclude='./.nawa' --exclude='./sysroot' \
     --exclude='./lost+found' \
     -C "$ROOT" . \
   | zstd -q -T"$THREADS" -"$LEVEL" -o "$TMP" -f
@@ -91,7 +91,7 @@ trap - EXIT
 # unpacks the file as a seed; .packages is a human-readable inventory
 ( cd "$(dirname "$OUT")" && sha256sum "$(basename "$OUT")" > "$(basename "$OUT").sha256" )
 PKGLIST="${OUT%.tar.zst}.packages"
-ls "$ROOT/var/lib/dpm/local" 2>/dev/null | sort > "$PKGLIST"
+ls "$ROOT/var/lib/nawa/local" 2>/dev/null | sort > "$PKGLIST"
 
 # ---- validation: it must decompress and contain what a consumer needs --------
 echo "== rootfs: validating the archive"
@@ -99,7 +99,7 @@ zstd -t -q "$OUT" || { echo "mkrootfs: ERROR: $OUT failed its zstd integrity tes
 LIST="$(mktemp)"
 trap 'rm -f "$LIST"' EXIT
 zstd -dc "$OUT" | tar -t > "$LIST"
-for member in ./usr/bin/bash ./usr/bin/dpm ./usr/lib/libc.so.6 ./etc/passwd; do
+for member in ./usr/bin/bash ./usr/bin/nawa ./usr/lib/libc.so.6 ./etc/passwd; do
     # exact, whole-line match: a member name must not match by substring
     grep -qxF -- "$member" "$LIST" || {
         echo "mkrootfs: ERROR: validation failed: '$member' is not in $OUT" >&2

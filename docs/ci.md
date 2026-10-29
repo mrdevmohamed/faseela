@@ -2,7 +2,7 @@
 
 | workflow | when | what |
 |---|---|---|
-| `ci.yml` | push, PR, weekly | dpm tests, isolation matrix, smoke tests, script/recipe checks |
+| `ci.yml` | push, PR, weekly | shell syntax + ShellCheck, recipe validation, script-level tests (nawa's own tests run in its repository) |
 | `release.yml` | tag `v*`, manual | whole distribution -> ISOs + rootfs tarballs (+ container image, GitHub Release) |
 | `packages.yml` | push touching `recipes/**`, manual | build packages, publish them to the separate package repo |
 
@@ -20,7 +20,7 @@ ci ─ plan ─ core (seed → stage1 → stage2 → stage3 → rootfs) ─┬�
   recompile gcc, glibc, rust or the kernel.
 * `iso-gui` re-runs `stage2.sh` with `WITH_GUI=1` on a copy of the finished
   core (only `recipes/gui` is compiled), then `mkiso.sh`.
-* `rootfs-min` = `bootstrap/mkrootfs-min.sh`: `base-devel` + `dpm` + git, curl,
+* `rootfs-min` = `bootstrap/mkrootfs-min.sh`: `base-devel` + `nawa` + git, curl,
   ca-certificates, assembled from the build's archives. No kernel, no rust, no GUI.
 * `boot-test` boots each ISO in QEMU through grub (KVM when the runner has it)
   and waits for `login:` on the serial console (`scripts/qemu-boot-test.sh`).
@@ -46,10 +46,10 @@ Setup (repository settings of THIS repo):
 | variable | `PKG_REPO` | `owner/name` of the packages-only repository |
 | variable | `PKG_TAG` | optional, release tag used as the repo (default `stable`) |
 | secret | `PKG_REPO_TOKEN` | fine-grained token, Contents read+write on `PKG_REPO` only |
-| secret | `DPM_SIGN_KEY_B64` | `base64 -w0 dpm.sec` from `dpm keygen` |
+| secret | `NAWA_SIGN_KEY_B64` | `base64 -w0 nawa.sec` from `nawa keygen` |
 
-Clients: `dpm upgrade --repo https://github.com/<PKG_REPO>/releases/download/stable`
-(after `dpm trust dpm.pub`).
+Clients: `nawa upgrade --repo https://github.com/<PKG_REPO>/releases/download/stable`
+(after `nawa trust nawa.pub`).
 
 Limits to know: a release asset is at most 2 GiB and a release holds at most
 1000 assets; old versions stay in the repo until someone prunes them; reverse

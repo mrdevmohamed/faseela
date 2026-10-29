@@ -15,7 +15,7 @@ run = ["ncurses"]
 
 [build]
 # `make install` runs `chgrp tty .../wall` (and write). Inside the build
-# sandbox only uid/gid 0 are mapped (docs/design/build-isolation.md), so that
+# sandbox only uid/gid 0 are mapped (nawa/docs/build-isolation.md), so that
 # chgrp fails with EPERM and the whole install aborts. --disable-makeinstall-chown
 # skips it; the group is fixed in post_install below, on the real system.
 # libmount/src/hook_idmap.c uses RESOLVE_NO_SYMLINKS (kernel UAPI

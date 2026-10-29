@@ -1,21 +1,13 @@
 name: CI
 
 # Everything the project can test without building the whole distribution:
+# shell syntax, ShellCheck, recipe validation and every script-level test,
+# plus build-all.sh dry runs at each isolation level.
 #
-#   dpm                 build + clippy + the full cargo test suite (normal user)
-#   dpm-matrix          the same suite on other hosts / as root (the rootless
-#                       and sandbox tests behave differently per uid and kernel)
-#   isolation           the real `dpm build` CLI at EACH isolation level:
-#                       none | env | sandbox | closure
-#   smoke               end-to-end CLI smoke tests (signing, upgrade, rollback,
-#                       remote repos, services)
-#   scripts             shell syntax, ShellCheck, recipe validation and every
-#                       script-level test, plus build-all.sh dry runs at each
-#                       isolation level
-#
-# A sandbox test that SKIPS because the runner refused a kernel feature is a
-# failure here (scripts/ci-no-skips.sh): a green run must mean the isolation
-# was really exercised.
+# The package manager (nawa) has its own repository and CI
+# (github.com/mrdevmohamed/nawa): its unit tests, isolation matrix and smoke
+# tests no longer run here. This repo only checks out the submodule so the
+# bootstrap scripts can find it.
 
 on:
   push:
@@ -34,178 +26,15 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-env:
-  CARGO_TERM_COLOR: always
-
 jobs:
-  dpm:
-    name: dpm (build, clippy, tests)
-    runs-on: ubuntu-24.04
-    timeout-minutes: 40
-    defaults:
-      run:
-        working-directory: pkgmgr
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Allow unprivileged user namespaces (needed by the sandbox tests)
-        working-directory: .
-        run: |
-          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
-          sudo sysctl -w kernel.unprivileged_userns_clone=1 || true
-
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: pkgmgr
-          key: ubuntu-24.04
-
-      - name: Build
-        run: cargo build --release --locked
-      - name: Clippy (warnings are errors)
-        run: cargo clippy --release --all-targets --locked -- -D warnings
-      - name: Test (normal user)
-        run: |
-          set -o pipefail
-          cargo test --release --locked --no-fail-fast -- --nocapture 2>&1 | tee "$RUNNER_TEMP/test.log"
-      - name: Fail if an isolation test was skipped
-        working-directory: .
-        run: bash scripts/ci-no-skips.sh "$RUNNER_TEMP/test.log"
-
-  dpm-matrix:
-    name: dpm tests (${{ matrix.os }}, ${{ matrix.as }})
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 40
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          # the (ubuntu-24.04, user) combination is the `dpm` job above
-          - { os: ubuntu-24.04, as: root }
-          - { os: ubuntu-22.04, as: user }
-          - { os: ubuntu-22.04, as: root }
-    defaults:
-      run:
-        working-directory: pkgmgr
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Allow unprivileged user namespaces
-        working-directory: .
-        run: |
-          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
-          sudo sysctl -w kernel.unprivileged_userns_clone=1 || true
-
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-        if: matrix.as == 'user'
-        with:
-          workspaces: pkgmgr
-          key: ${{ matrix.os }}
-
-      - name: Test as a normal user
-        if: matrix.as == 'user'
-        run: |
-          set -o pipefail
-          cargo test --release --locked --no-fail-fast -- --nocapture 2>&1 | tee "$RUNNER_TEMP/test.log"
-
-      # Root run: the rootless test drops to `nobody` (setpriv) and needs a
-      # world-traversable scratch path, which the runner's home is not — so
-      # root uses its own target dir. It must carry NO default ACL: an
-      # inherited default ACL replaces the umask, every staged file came out
-      # 777/666 and dpm's lint (rightly) rejected the packages.
-      - name: Test as root
-        if: matrix.as == 'root'
-        env:
-          CARGO_TARGET_DIR: /var/tmp/dpm-target
-        run: |
-          set -o pipefail
-          sudo mkdir -p "$CARGO_TARGET_DIR"
-          sudo chown "$USER" "$CARGO_TARGET_DIR"
-          chmod 755 "$CARGO_TARGET_DIR"
-          if command -v setfacl >/dev/null; then sudo setfacl -R -b -k "$CARGO_TARGET_DIR"; fi
-          echo "umask (user): $(umask)   sudo umask: $(sudo sh -c umask)"
-          stat -c '%a %U %n' "$CARGO_TARGET_DIR" /var/tmp
-          getfacl -p "$CARGO_TARGET_DIR" 2>/dev/null || true
-          cargo test --release --locked --no-fail-fast --no-run
-          sudo -E env "PATH=$PATH" "HOME=$HOME" "CARGO_HOME=$HOME/.cargo" "RUSTUP_HOME=$HOME/.rustup" \
-            bash -c 'umask 022; exec cargo test --release --locked --no-fail-fast -- --nocapture' 2>&1 \
-            | tee "$RUNNER_TEMP/test.log"
-
-      - name: Fail if an isolation test was skipped
-        working-directory: .
-        run: bash scripts/ci-no-skips.sh "$RUNNER_TEMP/test.log"
-
-  isolation:
-    name: dpm build, isolation=${{ matrix.level }}
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        level: [none, env, sandbox, closure]
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Allow unprivileged user namespaces
-        run: |
-          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
-          sudo sysctl -w kernel.unprivileged_userns_clone=1 || true
-
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: pkgmgr
-          key: ubuntu-24.04-release-bins
-
-      - name: Build dpm
-        working-directory: pkgmgr
-        run: cargo build --release --locked
-
-      - name: Sandbox capability report of this runner (informational)
-        if: matrix.level == 'sandbox' || matrix.level == 'closure'
-        continue-on-error: true
-        run: bash scripts/spike-sandbox.sh
-
-      - name: Real dpm builds at this isolation level
-        run: bash scripts/test-isolation-matrix.sh "${{ matrix.level }}"
-
-  smoke:
-    name: dpm CLI smoke tests
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: pkgmgr
-          key: ubuntu-24.04-release-bins
-
-      - name: Build dpm and the mkfake example
-        working-directory: pkgmgr
-        # `--examples` alone would build only the examples and skip the dpm binary
-        run: cargo build --release --locked --bins --examples
-
-      - name: Signing, upgrade, rollback (smoke-v05)
-        env:
-          DPM: ${{ github.workspace }}/pkgmgr/target/release/dpm
-          MKFAKE: ${{ github.workspace }}/pkgmgr/target/release/examples/mkfake
-        run: bash scripts/smoke-v05.sh
-      - name: Remote repositories and services (smoke-v06)
-        env:
-          DPM: ${{ github.workspace }}/pkgmgr/target/release/dpm
-          MKFAKE: ${{ github.workspace }}/pkgmgr/target/release/examples/mkfake
-        run: bash scripts/smoke-v06.sh
-
   scripts:
     name: scripts and recipes
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
       - name: Syntax check every shell script
         run: |
           for f in bootstrap/*.sh bootstrap/seed/*.sh scripts/*.sh; do
@@ -215,15 +44,15 @@ jobs:
         run: shellcheck --severity=error bootstrap/*.sh bootstrap/seed/*.sh scripts/*.sh
       - name: Validate recipes
         run: python3 -I scripts/check-recipes.py
-      - name: rootfs-min closure resolves (base-devel + dpm + network tools)
-        run: python3 scripts/rootfs-closure.py recipes base-devel dpm git curl ca-certificates > /dev/null
+      - name: rootfs-min closure resolves (base-devel + nawa + network tools)
+        run: python3 scripts/rootfs-closure.py recipes base-devel nawa git curl ca-certificates > /dev/null
       - name: build-all.sh mock pipeline tests
         run: bash scripts/test-build-all-mock.sh
       - name: rootfs artifact + self-hosting seed tests
         run: bash scripts/test-rootfs.sh
       - name: final-root helper tests
         run: bash scripts/test-final-root.sh
-      - name: rootfs-min tests (stubbed dpm)
+      - name: rootfs-min tests (stubbed nawa)
         run: bash scripts/test-mkrootfs-min.sh
       - name: qemu-boot-test.sh tests (fake qemu)
         run: bash scripts/test-qemu-boot-test.sh
@@ -243,7 +72,7 @@ jobs:
   ci-ok:
     name: CI passed
     if: always()
-    needs: [dpm, dpm-matrix, isolation, smoke, scripts]
+    needs: [scripts]
     runs-on: ubuntu-24.04
     steps:
       - name: All jobs must have succeeded

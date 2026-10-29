@@ -28,7 +28,7 @@ install -d -m755 %{pkgdir}/etc/opt %{pkgdir}/etc/profile.d %{pkgdir}/etc/skel %{
 ln -s usr/bin %{pkgdir}/bin
 ln -s usr/bin %{pkgdir}/sbin
 ln -s usr/lib %{pkgdir}/lib
-# RELATIVE on purpose: an absolute link resolves against whichever root dpm runs
+# RELATIVE on purpose: an absolute link resolves against whichever root nawa runs
 # from (build chroot vs /sysroot) and makes installs write into the wrong tree
 ln -s usr/lib64 %{pkgdir}/lib64
 ln -s /proc/mounts %{pkgdir}/etc/mtab

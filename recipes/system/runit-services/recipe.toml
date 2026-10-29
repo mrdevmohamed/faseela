@@ -124,7 +124,7 @@ printf '#!/bin/sh\nexec crond -n\n' > %{pkgdir}/etc/sv/crond/run
 install -d -m755 %{pkgdir}/etc/sv/sshd
 cat > %{pkgdir}/etc/sv/sshd/run <<'EOF'
 #!/bin/sh
-# available but not enabled by default: dpm service enable sshd
+# available but not enabled by default: nawa service enable sshd
 ssh-keygen -A >/dev/null 2>&1
 exec sshd -D
 EOF

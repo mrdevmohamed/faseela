@@ -23,19 +23,19 @@
 #   sudo ./initramfs.sh --root /mnt/mydistro --out out/initramfs.img
 #     [--src busybox-1.37.0.tar.bz2] [--jobs 4]
 #
-# Source lookup order: --src, $DPM_SRCCACHE, <repo>/srccache, download.
+# Source lookup order: --src, $NAWA_SRCCACHE, <repo>/srccache, download.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 REPO="$(cd "$HERE/.." && pwd)"
-SRCCACHE="${DPM_SRCCACHE:-$REPO/srccache}"
+SRCCACHE="${NAWA_SRCCACHE:-$REPO/srccache}"
 BUSYBOX_SHA256="$(sed -n 's/^sha256 *= *"\([0-9a-f]*\)".*/\1/p' "$REPO/recipes/boot/busybox/recipe.toml" | head -1)"
 BUSYBOX_URL="$(sed -n 's/^source *= *"\(.*\)".*/\1/p' "$REPO/recipes/boot/busybox/recipe.toml" | head -1)"
 
 ROOT=""
 OUT=""
 SRC=""
-JOBS="${DPM_JOBS:-4}"
+JOBS="${NAWA_JOBS:-4}"
 
 while [[ $# -gt 0 ]]; do
     case "$1" in

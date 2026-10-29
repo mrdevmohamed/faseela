@@ -1,0 +1,28 @@
+# base recipe: nawa — this distribution's source-based package manager (self-hosting build)
+#
+# nawa lives in its own repository (github.com/mrdevmohamed/nawa) and is
+# checked out here as the git submodule `nawa/` (see .gitmodules); `local:nawa`
+# copies that checkout. Built with the distro's own `rust` recipe (cargo on the
+# sandbox PATH). No network: the crates are vendored in nawa/vendor
+# (+ nawa/.cargo/config.toml, regenerated with nawa/scripts/vendor-nawa.sh in
+# the nawa repository).
+# To update nawa: bump the submodule, then `version` below to match
+# nawa/Cargo.toml and bump `rel` if only the packaging changed.
+[package]
+name = "nawa"
+version = "1.0.0"
+rel = 1
+arch = ["x86_64"]
+summary = "nawa — this distribution's source-based package manager (self-hosting build)"
+license = ["GPL-3.0"]
+source = "local:nawa"
+
+[depends]
+build = ["rust"]
+run = []
+
+[build]
+# local: sources are copied verbatim — drop any host-built target/ so we never package stale artifacts
+prepare = "rm -rf target"
+compile = "cargo build --release --offline --locked"
+install = "install -Dm755 target/release/nawa %{pkgdir}/usr/bin/nawa"

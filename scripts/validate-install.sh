@@ -4,7 +4,7 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")/.." && pwd)"   # repo root
-WORK=$(mktemp -d /tmp/dpm-install-validate-XXXX)
+WORK=$(mktemp -d /tmp/nawa-install-validate-XXXX)
 trap 'rm -rf "$WORK"' EXIT
 
 STUBS=$WORK/stubs
@@ -62,10 +62,10 @@ check_absent() {
 export PATH="$STUBS:$PATH"
 
 run_install() {
-    # NOTE: no DPM_INSTALL_DRYRUN here — the stubs on PATH shadow every
+    # NOTE: no NAWA_INSTALL_DRYRUN here — the stubs on PATH shadow every
     # disk-mutating tool (parted/mkfs/grub-install/...), so the script runs
     # for real against a fake environment and the cmdlog captures the args.
-    ( cd "$WORK" && DPM_INSTALL_TEST=1 \
+    ( cd "$WORK" && NAWA_INSTALL_TEST=1 \
       MNT="$WORK/mnt" KERNEL_SRC="$KSRC" FW_FORCE="$1" \
       bash "$HERE/bootstrap/install.sh" /dev/vda --hostname testhost --yes )
 }
@@ -74,9 +74,9 @@ run_install() {
 # that must NOT be copied
 PCACHE=$WORK/pkgcache
 mkdir -p "$PCACHE/remote/deadbeef"
-touch "$PCACHE/zlib-1.3-1.dpm.tar.zst" "$PCACHE/gcc-14-1.dpm.tar.zst"
+touch "$PCACHE/zlib-1.3-1.nawa.tar.zst" "$PCACHE/gcc-14-1.nawa.tar.zst"
 touch "$PCACHE/remote/deadbeef/index.toml"
-export DPM_PKG_CACHE_SRC="$PCACHE"
+export NAWA_PKG_CACHE_SRC="$PCACHE"
 
 # ============================================================ UEFI path ====
 echo "== UEFI install =="
@@ -109,8 +109,8 @@ check "unmount"              "umount -R .*"
 
 # package cache: copied for rollback, minus the remote subcache (the stub
 # rsync only logs — assert the invocation, not the result on disk)
-check "pkg cache rsync"      "rsync -a --exclude=remote .*/pkgcache/ .*mnt/var/cache/dpm"
-ls "$WORK/mnt/var/cache/dpm" >/dev/null 2>&1 && echo "  ok: cache dir created on target" \
+check "pkg cache rsync"      "rsync -a --exclude=remote .*/pkgcache/ .*mnt/var/cache/nawa"
+ls "$WORK/mnt/var/cache/nawa" >/dev/null 2>&1 && echo "  ok: cache dir created on target" \
     || { echo "  FAIL: cache dir missing"; exit 1; }
 
 # ============================================================ BIOS path ====
@@ -132,7 +132,7 @@ grep -q "UUID=aaaa-1111  /      ext4" "$WORK/mnt/etc/fstab" && echo "  ok: fstab
 
 # ==================================================== refusal behaviors ===
 echo "== safety checks =="
-( DPM_INSTALL_TEST=1 MNT="$WORK/mnt" KERNEL_SRC="$KSRC" \
+( NAWA_INSTALL_TEST=1 MNT="$WORK/mnt" KERNEL_SRC="$KSRC" \
   bash "$HERE/bootstrap/install.sh" /dev/vda2 --yes ) 2>"$WORK/err.txt" \
   && { echo "  FAIL: partition accepted"; exit 1; } \
   || grep -q "looks like a partition" "$WORK/err.txt" && echo "  ok: partition refus[ed]"
@@ -141,11 +141,11 @@ echo "== safety checks =="
 echo "== no-pkg-cache path =="
 : > "$CMDLOG"
 rm -rf "$WORK/mnt"; mkdir -p "$WORK/mnt/etc"
-( cd "$WORK" && DPM_INSTALL_TEST=1 \
+( cd "$WORK" && NAWA_INSTALL_TEST=1 \
   MNT="$WORK/mnt" KERNEL_SRC="$KSRC" FW_FORCE=bios \
   bash "$HERE/bootstrap/install.sh" /dev/vda --yes --no-pkg-cache )
 check_absent "no cache rsync with --no-pkg-cache" "rsync -a --exclude=remote"
-[ ! -e "$WORK/mnt/var/cache/dpm/zlib-1.3-1.dpm.tar.zst" ] \
+[ ! -e "$WORK/mnt/var/cache/nawa/zlib-1.3-1.nawa.tar.zst" ] \
     && echo "  ok: cache not copied" || { echo "  FAIL: cache copied despite --no-pkg-cache"; exit 1; }
 
 echo

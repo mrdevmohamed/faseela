@@ -8,10 +8,10 @@
 #
 #   * a working toolchain (gcc, make, python, perl, curl, rustc/cargo, ...)
 #     — verified here, loudly, before any hour of compiling is spent;
-#   * an EMPTY dpm database. The rootfs was a finished system, so its db
+#   * an EMPTY nawa database. The rootfs was a finished system, so its db
 #     records every package as installed and stage 2 (which skips what the db
 #     records) would build NOTHING. The old db is parked in
-#     var/lib/dpm/seed-local instead. Files without a db owner are exactly how
+#     var/lib/nawa/seed-local instead. Files without a db owner are exactly how
 #     stage 3's self-host proof recognises "left over from the seed", so the
 #     semantics of the Debian seed are kept: after stage 2 every package is
 #     rebuilt by the previous release's toolchain, after stage 3 by its own;
@@ -30,7 +30,7 @@ SRC="${2:-}"
 
 # ---- 1) is it a usable seed? ------------------------------------------------
 missing=()
-for f in usr/bin/env usr/bin/bash usr/bin/sh usr/bin/dpm usr/lib/libc.so.6 \
+for f in usr/bin/env usr/bin/bash usr/bin/sh usr/bin/nawa usr/lib/libc.so.6 \
          usr/bin/gcc usr/bin/g++ usr/bin/make usr/bin/ld usr/bin/ldconfig \
          usr/bin/python3 usr/bin/perl usr/bin/curl usr/bin/pkg-config \
          usr/bin/rustc usr/bin/cargo; do
@@ -49,8 +49,8 @@ if [[ -e $ROOT/opt/seed/manifest.txt ]] && grep -q 'debian packages' "$ROOT/opt/
 fi
 
 # ---- 2) park the package database ------------------------------------------
-DB="$ROOT/var/lib/dpm/local"
-PARKED="$ROOT/var/lib/dpm/seed-local"
+DB="$ROOT/var/lib/nawa/local"
+PARKED="$ROOT/var/lib/nawa/seed-local"
 # idempotent: a second run (resumed stage 1) finds the db already empty and
 # must keep the parked copy instead of replacing it with that empty one
 npkgs=0
@@ -61,7 +61,7 @@ fi
 mkdir -p "$DB"
 # rollback records of the previous build refer to versions of THAT db; with the
 # db reset they would point at packages this root does not record
-rm -rf "$ROOT/var/lib/dpm/undo"
+rm -rf "$ROOT/var/lib/nawa/undo"
 if [[ -d $PARKED ]]; then
     npkgs="$(find "$PARKED" -mindepth 1 -maxdepth 1 -type d | wc -l)"
 fi
@@ -71,7 +71,7 @@ mkdir -p "$ROOT/opt/seed"
 cat > "$ROOT/opt/seed/env.sh" <<'EOF'
 # sourced inside the chroot during stage1/2 (rootfs seed: the toolchain lives
 # in /usr, there is no /opt/cargo or /opt/rustup to put on PATH)
-export DPM_JOBS="${DPM_JOBS:-4}"
+export NAWA_JOBS="${NAWA_JOBS:-4}"
 EOF
 {
     echo "# mydistro bootstrap seed manifest (ROOTFS seed — self-hosting build)"
@@ -86,7 +86,7 @@ EOF
     fi
     echo "rustc = $(chroot "$ROOT" /usr/bin/rustc --version 2>/dev/null || echo unknown)"
     echo ""
-    echo "# packages the rootfs was built from ($npkgs; its db is parked in /var/lib/dpm/seed-local):"
+    echo "# packages the rootfs was built from ($npkgs; its db is parked in /var/lib/nawa/seed-local):"
     ls "$PARKED" 2>/dev/null || true
 } > "$ROOT/opt/seed/manifest.txt"
 

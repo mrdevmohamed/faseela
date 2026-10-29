@@ -1,0 +1,3 @@
+[submodule "nawa"]
+	path = nawa
+	url = https://github.com/mrdevmohamed/nawa.git

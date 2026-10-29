@@ -22,10 +22,10 @@ Or build it later on a running system:
 
 ```
 python3 scripts/fill-sha256.py                          # pin the hashes
-dpm --recipes recipes deps gui-session                  # show the build order
-for p in $(dpm --recipes recipes deps gui-session); do  # build + install
-    dpm --recipes recipes --builddir /build build "$p"
-    dpm --root / install /build/out/$p-*.dpm.tar.zst
+nawa --recipes recipes deps gui-session                  # show the build order
+for p in $(nawa --recipes recipes deps gui-session); do  # build + install
+    nawa --recipes recipes --builddir /build build "$p"
+    nawa --root / install /build/out/$p-*.nawa.tar.zst
 done
 ```
 

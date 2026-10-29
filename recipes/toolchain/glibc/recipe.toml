@@ -66,7 +66,7 @@ if [ -d /usr/lib/x86_64-linux-gnu ]; then
         new=/usr/lib/$b; old=/usr/lib/x86_64-linux-gnu/$b
         if [ -e "$new" ] && { [ -e "$old" ] || [ -L "$old" ]; }; then
             if [ "$(readlink -f "$old")" != "$(readlink -f "$new")" ]; then
-                ln -s "$new" "$old.dpm-tmp" && mv -T "$old.dpm-tmp" "$old"
+                ln -s "$new" "$old.nawa-tmp" && mv -T "$old.nawa-tmp" "$old"
             fi
         fi
     done

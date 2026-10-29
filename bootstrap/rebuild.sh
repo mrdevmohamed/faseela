@@ -15,7 +15,7 @@
 #   sudo ./rebuild.sh --iso out/test.iso /mnt/mydistro runit-services shadow
 #
 # Dependents are not rebuilt (e.g. after changing a library, name the
-# programs linked against it too). Env: DPM_JOBS, SINGLE_ROOT=1 (legacy
+# programs linked against it too). Env: NAWA_JOBS, SINGLE_ROOT=1 (legacy
 # layout), STAGE2_ISOLATION (none|env|sandbox, default none), VOL_ID,
 # SQUASH_COMP.
 set -euo pipefail
@@ -35,12 +35,12 @@ PKGS="$*"
 [[ $EUID -eq 0 ]] || { echo "rebuild: must run as root"; exit 1; }
 [[ -x "$LFS/usr/bin/env" && -x "$LFS/usr/bin/bash" ]] || {
     echo "rebuild: $LFS is not a built root — run build-all.sh first" >&2; exit 1; }
-[[ -x "$LFS/usr/bin/dpm" ]] || { echo "rebuild: no dpm in $LFS — stage 2 never ran" >&2; exit 1; }
+[[ -x "$LFS/usr/bin/nawa" ]] || { echo "rebuild: no nawa in $LFS — stage 2 never ran" >&2; exit 1; }
 
 # fresh copy of the repo + chroot mounts (same as stage 2)
 bash "$HERE/sync-repo.sh" "$LFS"
-find "$LFS/mydistro/pkgmgr/src" -type f -exec touch -- {} +
-touch -- "$LFS/mydistro/pkgmgr/Cargo.toml" 2>/dev/null || true
+find "$LFS/mydistro/nawa/src" -type f -exec touch -- {} +
+touch -- "$LFS/mydistro/nawa/Cargo.toml" 2>/dev/null || true
 bash "$HERE/ensure-chroot-mounts.sh" "$LFS"
 
 if [[ ${SINGLE_ROOT:-0} == 1 ]]; then
@@ -52,7 +52,7 @@ fi
 
 echo "== rebuild: $PKGS"
 bash "$HERE/enter-root.sh" "$LFS" /usr/bin/env -i \
-    HOME=/root TERM="${TERM:-dumb}" DPM_JOBS="${DPM_JOBS:-$(nproc 2>/dev/null || echo 4)}" \
+    HOME=/root TERM="${TERM:-dumb}" NAWA_JOBS="${NAWA_JOBS:-$(nproc 2>/dev/null || echo 4)}" \
     WITH_GUI="${WITH_GUI:-0}" FINAL_ROOT="$FINAL_ROOT" \
     STAGE2_ISOLATION="${STAGE2_ISOLATION:-none}" STAGE2_REBUILD="$PKGS" \
     bash -c 'if [ -r /opt/seed/env.sh ]; then . /opt/seed/env.sh; fi; bash /mydistro/bootstrap/stage2-inner.sh'

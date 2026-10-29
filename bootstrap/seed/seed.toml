@@ -4,7 +4,7 @@
 # bootstrap. It is deleted after stage 3. Every tool listed here is
 # assembled from the host distribution by build-seed.sh.
 #
-# rustc/cargo are mandatory: DPM itself is written in Rust, so the
+# rustc/cargo are mandatory: nawa itself is written in Rust, so the
 # package manager is the FIRST package compiled from the seed.
 
 [seed]

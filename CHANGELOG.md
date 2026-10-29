@@ -1,5 +1,26 @@
 # Changelog
 
+## Unreleased — the package manager moves out: dpm → nawa
+
+- The package manager is no longer part of this repository. It lives in
+  github.com/mrdevmohamed/nawa (1.0.0) and is checked out as the git submodule
+  `nawa/` (`git clone --recurse-submodules`, or `git submodule update --init`).
+  `pkgmgr/` is gone, together with the scripts and design note that moved with
+  it (`vendor-dpm.sh`, `smoke-v05/v06.sh`, `test-isolation-matrix.sh`,
+  `ci-no-skips.sh`, `spike-sandbox.sh`, `docs/design/build-isolation.md`).
+- New recipe `recipes/base/nawa` (replaces `recipes/base/dpm`): `local:nawa`,
+  version 1.0.0, built offline with the distro's `rust`.
+- stage 2 compiles the bootstrap nawa from `nawa/`; stage 2/3, `final-root.sh`,
+  `mkrootfs*.sh`, `seed-from-rootfs.sh`, `install.sh`, `sync-repo.sh` and the
+  workflows use the new names everywhere.
+- **Breaking, renamed with the binary**: `/usr/bin/nawa`, database
+  `/var/lib/nawa`, cache `/var/cache/nawa`, archives `*.nawa.tar.zst`, config
+  `nawa.toml`, env `NAWA_*` (was `DPM_*`), signing keys `nawa.sec`/`nawa.pub`,
+  CI secret `NAWA_SIGN_KEY_B64` (was `DPM_SIGN_KEY_B64`), `/etc/*.nawa-new`.
+  A system installed with dpm has to be rebuilt; its old db is not migrated.
+- CI keeps only the `scripts` job; nawa's own tests/isolation matrix/smoke
+  tests run in the nawa repository.
+
 ## Unreleased — fix: stage3 closure rebuild died at bc ("readline works only with flex")
 
 - First real `--isolation closure` run (after the pre-flight fix the build now
