@@ -18,8 +18,14 @@ run = []
 
 [build]
 prepare = "mkdir -v build"
+# LEX=: — the release tarball ships pre-generated lexers, so binutils never needs
+# flex. Without this, when flex is present in the build root (seed, or any
+# non-closure isolation level) configure picks up LEXLIB=-lfl and the installed
+# `ar`/`ld`/... get DT_NEEDED libfl.so.2. flex is build-only and absent from the
+# final system, so every binutils tool then dies with
+# "error while loading shared libraries: libfl.so.2".
 configure = """
-cd build && ../configure --prefix=/usr            \
+cd build && LEX=: ../configure --prefix=/usr      \
     --sysconfdir=/etc                             \
     --enable-ld=default                           \
     --enable-plugins                              \

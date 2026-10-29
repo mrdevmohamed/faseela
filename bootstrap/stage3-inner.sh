@@ -174,6 +174,16 @@ verify_final_root_no_seed_refs "$R" || {
     exit 1
 }
 
+# (4) every shared library an installed binary needs must itself be in the
+# final root. A build-only package (flex's libfl, ...) linked into a shipped
+# binary passes (3) yet leaves e.g. `ar` dead on the installed system.
+verify_final_root_needed_resolved "$R" || {
+    echo "stage3: SELF-HOST FAILED: binaries in the final root need libraries that are not installed" >&2
+    echo "        (a build-only dependency leaked into a shipped binary — add it to that recipe's" >&2
+    echo "         depends.run, or stop the recipe from linking it)" >&2
+    exit 1
+}
+
 # the final root never contained the seed; verify that and refresh ld.so.cache
 finalize_final_root
 echo "== stage3: self-hosted (rebuilt with its own compiler, seed removed, proofs passed)"

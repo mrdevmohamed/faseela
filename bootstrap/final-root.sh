@@ -160,3 +160,53 @@ verify_final_root_no_seed_refs() {
     echo "== final-root: no seed references in $found ELF file(s) under $root"
     return 0
 }
+
+# Verify that every DT_NEEDED soname of every ELF in a root is provided by a
+# shared object that exists INSIDE that root. Catches the "build succeeded but
+# the installed system is broken" class of bug, e.g. `ar: error while loading
+# shared libraries: libfl.so.2` — binutils got linked against flex's libfl from
+# the seed/build root, but flex is build-only and never reaches the final root.
+# (verify_final_root_no_seed_refs cannot see this: the NEEDED entry is a bare
+# soname, not a /opt path.)
+#
+# Overridables for tests: READELF_BIN, FILE_BIN, FINAL_ROOT_ELF_DIRS (as above)
+# and FINAL_ROOT_LIB_DIRS (default "usr/lib usr/lib64 lib lib64").
+verify_final_root_needed_resolved() {
+    local root="${1:?usage: verify_final_root_needed_resolved ROOT}"
+    local readelf="${READELF_BIN:-readelf}"
+    local filebin="${FILE_BIN:-file}"
+    local dirs="${FINAL_ROOT_ELF_DIRS:-usr/bin usr/sbin usr/lib usr/lib64}"
+    local libdirs="${FINAL_ROOT_LIB_DIRS:-usr/lib usr/lib64 lib lib64}"
+    command -v "$readelf" >/dev/null 2>&1 || {
+        echo "final-root: WARNING: readelf not available — cannot check NEEDED sonames in $root" >&2
+        return 0
+    }
+    local -A provided=()
+    local f d n bad=0 found=0 out
+    # every file or symlink named lib*.so* / ld-*.so* in the library dirs
+    while IFS= read -r -d '' f; do provided["${f##*/}"]=1; done < <(
+        # shellcheck disable=SC2086
+        for d in $libdirs; do find "$root/$d" \( -type f -o -type l \) -name '*.so*' -print0 2>/dev/null; done
+    )
+    while IFS= read -r -d '' f; do
+        if command -v "$filebin" >/dev/null 2>&1; then
+            "$filebin" -b "$f" | grep -q ELF || continue
+        fi
+        out=$("$readelf" -d "$f" 2>/dev/null) || continue
+        found=$((found+1))
+        while IFS= read -r n; do
+            [ -n "$n" ] || continue
+            case "$n" in */*) continue ;; esac     # path-style NEEDED: not a soname lookup
+            if [ -z "${provided[$n]:-}" ]; then
+                echo "final-root: ERROR: ${f#"$root"/} needs $n, which is not in the root" >&2
+                bad=1
+            fi
+        done < <(printf '%s\n' "$out" | sed -n 's/.*(NEEDED).*Shared library: \[\(.*\)\]/\1/p')
+    done < <(
+        # shellcheck disable=SC2086
+        for d in $dirs; do find "$root/$d" -type f -print0 2>/dev/null; done
+    )
+    [ "$bad" -eq 0 ] || return 1
+    echo "== final-root: all NEEDED sonames resolve inside $root ($found ELF file(s))"
+    return 0
+}

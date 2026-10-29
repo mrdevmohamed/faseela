@@ -18,7 +18,10 @@ sha256 = "ae470fec429775653e042015edc928d07c8c3b2fc59765172a330d3d87785f86"
 # §5.1). flex in turn execs m4 at runtime — pulled transitively via flex's
 # own run deps.
 build = ["readline", "flex"]
-run = ["readline"]
+# bc built --with-readline uses a flex scanner and links flex's libfl.so; that
+# soname must exist on the installed system (otherwise: "bc: error while
+# loading shared libraries: libfl.so.2"). stage3's NEEDED check enforces this.
+run = ["readline", "flex"]
 
 [build]
 configure = "./configure --prefix=/usr --with-readline"
