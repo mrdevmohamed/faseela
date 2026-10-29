@@ -483,15 +483,17 @@ pub fn detect_source_format(path: &Path) -> Option<SourceFormat> {
     let magic = &head[..n.min(6)];
     f.rewind().ok()?;
     if magic.starts_with(&[0xfd, 0x37, 0x7a, 0x58, 0x5a, 0x00]) {
-        // lzma-rs flushes only at dictionary boundaries (8-64 MiB), so a
-        // bounded sniff reads nothing. Run the full-stream worker instead and
-        // pull just the first block out of it; dropping the reader then ends
-        // the worker on EPIPE.
-        let (mut rx, worker) = xz_reader(f);
-        let ok = read_up_to(&mut rx, &mut head).unwrap_or(0) >= 512 && is_tar_header(&head);
-        drop(rx);
-        let _ = worker.join();
-        return ok.then_some(SourceFormat::TarXz);
+        // XzReader is a plain streaming `Read`, so pulling one 512-byte block
+        // decodes only the first LZMA2 chunk. A decode error before any tar
+        // header (unsupported check type, corrupt stream, ...) still claims
+        // the format, so extraction reports the real error; answering `None`
+        // would make build.rs stage the .xz as a single-file source and the
+        // build would fail far away with "./configure: No such file".
+        let mut dec = lzma_rust2::XzReader::new(std::io::BufReader::new(f), true);
+        return match read_up_to(&mut dec, &mut head) {
+            Some(n) => (n >= 512 && is_tar_header(&head)).then_some(SourceFormat::TarXz),
+            None => Some(SourceFormat::TarXz),
+        };
     }
     // the pull-based decoders only consume as much input as needed to fill
     // the 512-byte header request — no artificial input cap is required
@@ -569,25 +571,6 @@ fn octal_field(field: &[u8]) -> Option<u64> {
     u64::from_str_radix(s.trim().trim_matches(' '), 8).ok()
 }
 
-/// Turn a `.xz` file into a streaming reader: a worker thread decompresses
-/// the file into one end of a socket pair while the tar reader pulls from
-/// the other (lzma-rs's one-shot API has no `Read` adapter and buffers up to
-/// the dictionary size internally — the socket absorbs that backpressure).
-fn xz_reader(f: std::fs::File) -> (std::os::unix::net::UnixStream, std::thread::JoinHandle<anyhow::Result<()>>) {
-    let (rx, mut tx) = std::os::unix::net::UnixStream::pair().expect("socketpair");
-    let handle = std::thread::Builder::new()
-        .name("dpm-xz".into())
-        .spawn(move || {
-            let mut input = std::io::BufReader::new(f);
-            let res = lzma_rs::xz_decompress(&mut input, &mut tx)
-                .map_err(|e| anyhow::anyhow!("xz decompression failed: {e}"));
-            let _ = tx.flush();
-            res
-        })
-        .expect("spawn xz worker");
-    (rx, handle)
-}
-
 /// Extract a source tarball (tar / tar.gz / tar.bz2 / tar.xz / tar.zst) into
 /// `dest`, replacing the external `tar --no-same-owner -xf` call.
 ///
@@ -608,18 +591,10 @@ pub fn extract_source_archive(tarball: &Path, dest: &Path) -> Result<()> {
         SourceFormat::Tar => unpack_tar_stream(f, dest),
         SourceFormat::TarGz => unpack_tar_stream(flate2::read::GzDecoder::new(f), dest),
         SourceFormat::TarBz2 => unpack_tar_stream(bzip2::read::BzDecoder::new(f), dest),
-        SourceFormat::TarXz => {
-            let (rx, worker) = xz_reader(f);
-            // rx is moved into the tar reader and dropped when this scope
-            // ends: a still-running worker then hits EPIPE and exits instead
-            // of deadlocking on a full socket buffer
-            let res = unpack_tar_stream(rx, dest);
-            match worker.join() {
-                Ok(Ok(())) => res,
-                Ok(Err(e)) => Err(e).with_context(|| format!("reading {}", tarball.display())),
-                Err(_) => bail!("xz worker thread panicked while reading {}", tarball.display()),
-            }
-        }
+        SourceFormat::TarXz => unpack_tar_stream(
+            lzma_rust2::XzReader::new(std::io::BufReader::new(f), true),
+            dest,
+        ),
         SourceFormat::TarZst => unpack_tar_stream(zstd::stream::read::Decoder::new(f)?, dest),
     }
 }
@@ -928,9 +903,10 @@ mod tests {
                 zstd::stream::copy_encode(bytes, &mut f, 3).unwrap();
             }
             "tar.xz" => {
-                let mut cur = std::io::Cursor::new(bytes);
-                let mut out = std::fs::File::create(&p).unwrap();
-                lzma_rs::xz_compress(&mut cur, &mut out).unwrap();
+                let out = std::fs::File::create(&p).unwrap();
+                let mut w = lzma_rust2::XzWriter::new(out, lzma_rust2::XzOptions::with_preset(6)).unwrap();
+                w.write_all(bytes).unwrap();
+                w.finish().unwrap();
             }
             other => panic!("unexpected ext {other}"),
         }
@@ -1016,6 +992,36 @@ mod tests {
         assert!(!dir.join("evil.txt").exists(), "must not escape the root");
         assert!(!out.join("evil.txt").exists());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Regression: xz-5.8.1.tar.xz is compressed with `--check=sha256`, which
+    /// the old lzma-rs decoder rejected; detection then returned None and the
+    /// build died with "./configure: No such file or directory".
+    #[test]
+    fn tar_xz_with_sha256_check_extracts() {
+        const FIXTURE: &[u8] = include_bytes!("../tests/fixtures/sha256-check.tar.xz");
+        let dir = scratch("xz-sha256");
+        let p = dir.join("sha256-check.tar.xz");
+        std::fs::write(&p, FIXTURE).unwrap();
+        assert_eq!(detect_source_format(&p), Some(SourceFormat::TarXz));
+        let out = dir.join("out");
+        extract_source_archive(&p, &out).unwrap();
+        assert!(out.join("pkg-1.0/configure").is_file());
+    }
+
+    /// A corrupt xz stream must fail loudly (claimed as TarXz, extraction
+    /// errors) instead of silently degrading to a "single-file source".
+    #[test]
+    fn corrupt_xz_is_an_extraction_error_not_a_single_file() {
+        const FIXTURE: &[u8] = include_bytes!("../tests/fixtures/sha256-check.tar.xz");
+        let dir = scratch("xz-corrupt");
+        let mut bad = FIXTURE.to_vec();
+        let mid = bad.len() / 2;
+        bad[mid] ^= 0xff;
+        let p = dir.join("bad.tar.xz");
+        std::fs::write(&p, &bad).unwrap();
+        assert_eq!(detect_source_format(&p), Some(SourceFormat::TarXz));
+        assert!(extract_source_archive(&p, &dir.join("out")).is_err());
     }
 
     #[test]
