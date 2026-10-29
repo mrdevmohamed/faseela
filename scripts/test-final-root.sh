@@ -78,4 +78,25 @@ if [[ -x $SR/usr/bin/clean ]]; then
     check "missing readelf warns, does not fail" "printf '%s' \"\$out\" | grep -q 'cannot scan'"
 fi
 
+# verify_final_root_needed_resolved: DT_NEEDED sonames must exist inside the
+# root (the `ar: libfl.so.2: cannot open shared object file` class of bug).
+if command -v gcc >/dev/null 2>&1; then
+    NR="$W/needed"; mkdir -p "$NR/ok/usr/bin" "$NR/ok/usr/lib" "$NR/bad/usr/bin" "$NR/bad/usr/lib"
+    printf 'int fl_yywrap(void){return 1;}\n' > "$W/fl.c"
+    printf 'int fl_yywrap(void);\nint main(void){return fl_yywrap()-1;}\n' > "$W/m.c"
+    gcc -shared -Wl,-soname,libfl.so.2 -o "$W/libfl.so.2.0.0" "$W/fl.c"
+    gcc -o "$NR/ok/usr/bin/tool" "$W/m.c" "$W/libfl.so.2.0.0" -Wl,-rpath,'$ORIGIN/../lib'
+    cp "$NR/ok/usr/bin/tool" "$NR/bad/usr/bin/tool"
+    cp "$W/libfl.so.2.0.0" "$NR/ok/usr/lib/"; ln -s libfl.so.2.0.0 "$NR/ok/usr/lib/libfl.so.2"
+    : > "$NR/ok/usr/lib/libc.so.6"; : > "$NR/bad/usr/lib/libc.so.6"
+    # libc/ld.so come from the real glibc; give both roots the sonames the fixture needs
+    for r in ok bad; do for l in $(readelf -d "$NR/$r/usr/bin/tool" | sed -n 's/.*Shared library: \[\(.*\)\]/\1/p' | grep -v '^libfl'); do : > "$NR/$r/usr/lib/$l"; done; done
+    check "NEEDED present in root passes"       "verify_final_root_needed_resolved $NR/ok"
+    out=$(verify_final_root_needed_resolved "$NR/bad" 2>&1); rc=$?
+    check "missing libfl.so.2 fails the scan"   "[[ $rc -ne 0 ]]"
+    check "offender and soname are named"       "printf '%s' \"\$out\" | grep -q 'usr/bin/tool needs libfl.so.2'"
+    out=$(READELF_BIN=/nonexistent-readelf verify_final_root_needed_resolved "$NR/bad" 2>&1) || true
+    check "missing readelf warns, does not fail" "printf '%s' \"\$out\" | grep -q 'cannot check'"
+fi
+
 echo; echo "  PASS: $PASS   FAIL: $FAIL"; [[ $FAIL -eq 0 ]]
