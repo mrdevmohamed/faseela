@@ -215,12 +215,18 @@ jobs:
         run: shellcheck --severity=error bootstrap/*.sh bootstrap/seed/*.sh scripts/*.sh
       - name: Validate recipes
         run: python3 -I scripts/check-recipes.py
+      - name: rootfs-min closure resolves (base-devel + dpm + network tools)
+        run: python3 scripts/rootfs-closure.py recipes base-devel dpm git curl ca-certificates > /dev/null
       - name: build-all.sh mock pipeline tests
         run: bash scripts/test-build-all-mock.sh
       - name: rootfs artifact + self-hosting seed tests
         run: bash scripts/test-rootfs.sh
       - name: final-root helper tests
         run: bash scripts/test-final-root.sh
+      - name: rootfs-min tests (stubbed dpm)
+        run: bash scripts/test-mkrootfs-min.sh
+      - name: qemu-boot-test.sh tests (fake qemu)
+        run: bash scripts/test-qemu-boot-test.sh
       - name: mkiso.sh tests (stubbed host tools)
         run: bash scripts/test-mkiso.sh
       - name: installer validation (stubbed disks)

@@ -1,35 +1,48 @@
 name: Build ISO (CD)
 
-# Builds the whole distribution from source and publishes the bootable ISO
-# TOGETHER WITH its rootfs (mydistro-x86_64-rootfs.tar.zst + .sha256).
-#   * push a tag `v*`            -> build + GitHub Release with ISO and rootfs
-#   * Actions > Run workflow     -> build + downloadable artifact only
+# Builds the distribution from source and publishes, per release:
 #
-# Self-hosting: the rootfs of a release is the SEED of the next build. Each run
-# looks for the newest release that carries a rootfs, verifies its checksum and
-# builds with it (build-all.sh --seed-rootfs) instead of the Debian-based seed,
-# so the distribution is built by its own previous release. The very first run
-# (no release yet) and `seed: debian` bootstrap from the Debian seed.
+#   core            seed -> stage1 -> stage2 -> stage3 -> rootfs (once, the slow part)
+#                   publishes  mydistro-x86_64-rootfs.tar.zst  = the SEED of the next build
+#   build (matrix)  runs in parallel on the finished core, one runner each:
+#                     iso-nogui   mydistro-x86_64.iso
+#                     iso-gui     mydistro-gui-x86_64.iso   (adds recipes/gui on top of core)
+#                     rootfs-min  mydistro-x86_64-rootfs-min.tar.zst  (base-devel + dpm only)
+#   boot-test       boots each ISO in QEMU, waits for the login prompt (gates the release)
+#   image           rootfs-min -> ghcr.io/<owner>/mydistro-build (container build environment)
+#   release         one GitHub Release with everything above (tags only)
 #
-# A full source build is long. GitHub-hosted runners stop a job after 6 hours
-# and have limited disk, so for a complete build set the repository variable
-# ISO_RUNNER to the label of a self-hosted runner (Linux x86_64, root/sudo,
-# >= 30 GB free). The default is the hosted ubuntu-24.04 runner.
+# Why a pipeline and not a plain matrix over "gui: [false, true]": the GUI
+# stack is only extra packages on top of the same system, so a matrix over
+# the whole build would compile gcc/glibc/rust/linux twice. The matrix is
+# over what is DERIVED from the core.
+#
+#   * push a tag `v*`         -> everything, then a GitHub Release
+#   * Actions > Run workflow  -> artifacts only (pick what to build in `outputs`)
+#
+# Self-hosting: each run builds with the rootfs of the newest release that
+# carries one (scripts/fetch-rootfs-seed.sh) instead of the Debian-based seed.
+#
+# Hosted runners stop a job after 6 hours and the core is the long job, so
+# every dispatch run saves the build target to the Actions cache and the next
+# dispatch run with `resume` continues from it. The core hands its finished
+# target to the matrix jobs as a one-day workflow artifact.
 
 on:
   push:
     tags: ["v*"]
   workflow_dispatch:
     inputs:
+      outputs:
+        description: "What to build on top of the core system"
+        type: choice
+        options: [all, iso-nogui, iso-gui, rootfs-min]
+        default: all
       isolation:
         description: "Build isolation for stages 2 and 3"
         type: choice
         options: [env, sandbox, closure, none]
         default: env
-      with_gui:
-        description: "Also build the sway/Wayland stack (recipes/gui)"
-        type: boolean
-        default: false
       stage3_world:
         description: "Rebuild every package in stage 3"
         type: boolean
@@ -43,6 +56,10 @@ on:
         type: choice
         options: [auto, rootfs, debian]
         default: auto
+      push_image:
+        description: "Also publish rootfs-min as a container image (tags do this anyway)"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -51,22 +68,54 @@ concurrency:
   group: iso-${{ github.ref }}
   cancel-in-progress: false
 
+env:
+  TARGET: /mnt/mydistro
+  ROOTFS_ASSET: mydistro-x86_64-rootfs.tar.zst
+
 jobs:
   ci:
     uses: ./.github/workflows/ci.yml
 
-  iso:
-    name: build the ISO
+  # Turns the `outputs` choice into the build matrix (tag pushes: everything).
+  plan:
+    name: plan
     needs: ci
-    runs-on: ${{ vars.ISO_RUNNER || 'ubuntu-24.04' }}
+    runs-on: ubuntu-24.04
+    outputs:
+      matrix: ${{ steps.m.outputs.matrix }}
+      isos: ${{ steps.m.outputs.isos }}
+      has_iso: ${{ steps.m.outputs.has_iso }}
+    steps:
+      - id: m
+        env:
+          ONLY: ${{ inputs.outputs || 'all' }}
+        run: |
+          python3 - >> "$GITHUB_OUTPUT" <<'PY'
+          import json, os
+          only = os.environ["ONLY"]
+          variants = [
+              {"variant": "iso-nogui", "kind": "iso", "gui": "0",
+               "iso": "mydistro-x86_64.iso", "vol": "MYDISTRO"},
+              {"variant": "iso-gui", "kind": "iso", "gui": "1",
+               "iso": "mydistro-gui-x86_64.iso", "vol": "MYDISTRO_GUI"},
+              {"variant": "rootfs-min", "kind": "rootfs", "gui": "0"},
+          ]
+          sel = [v for v in variants if only in ("all", v["variant"])]
+          print("matrix=" + json.dumps({"include": sel}))
+          isos = [v for v in sel if v["kind"] == "iso"]
+          print("isos=" + json.dumps({"include": isos}))
+          print("has_iso=" + ("true" if isos else "false"))
+          PY
+
+  core:
+    name: core (seed → stage3 → rootfs)
+    needs: plan
+    runs-on: ubuntu-24.04
     timeout-minutes: 355
-    permissions:
-      contents: write # create the GitHub Release
+    outputs:
+      seed: ${{ steps.rootfsseed.outputs.path != '' && 'the previous release rootfs (self-hosting)' || 'the Debian-based bootstrap seed' }}
     env:
-      TARGET: /mnt/mydistro
       ISOLATION: ${{ inputs.isolation || 'env' }}
-      ISO_NAME: mydistro-x86_64.iso
-      ROOTFS_ASSET: mydistro-x86_64-rootfs.tar.zst
     steps:
       - uses: actions/checkout@v4
 
@@ -74,7 +123,7 @@ jobs:
       # restore (and later save) a ~330 MB seed it will not use. The download
       # is verified against the release's .sha256 inside the script; a
       # mismatch or a gh failure fails the job (never a silent fallback to a
-      # different seed). Needs the gh CLI (preinstalled on hosted runners).
+      # different seed).
       - name: Choose the seed (previous release's rootfs, else Debian)
         id: rootfsseed
         env:
@@ -109,19 +158,16 @@ jobs:
       # The hosted runner already has ~100 GB free; removing dotnet/android/ghc
       # cost ~52 s per run. Opt in with the repository variable FREE_DISK=true.
       - name: Free disk space (opt-in)
-        if: ${{ vars.FREE_DISK == 'true' && vars.ISO_RUNNER == '' }}
+        if: ${{ vars.FREE_DISK == 'true' }}
         run: |
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
           sudo apt-get clean
           df -h / /mnt
 
-      # The seed (~330 MB, ~1 min to assemble from Debian packages) only
-      # changes when its builder does. Restored with its mtime, because
-      # build-all.sh fingerprints the seed by size+mtime.
-      # Restore here, save AFTER the build with `always()`: a plain
-      # actions/cache step saves only when the job succeeds, so a failed run
-      # lost the seed while the target cache (whose stamps say "seed done")
-      # survived -> the next resume died with "stage1: seed missing".
+      # The Debian seed (~330 MB) only changes when its builder does. Restore
+      # here, save AFTER the build with `always()`: a plain actions/cache step
+      # saves only when the job succeeds, so a failed run lost the seed while
+      # the target cache (whose stamps say "seed done") survived.
       - name: Restore the bootstrap seed
         id: seedcache
         if: ${{ steps.rootfsseed.outputs.path == '' }}
@@ -134,9 +180,8 @@ jobs:
 
       # Resume = restore the whole build target (/mnt/mydistro + its state dir)
       # saved by the previous dispatch run, even if that run failed or timed
-      # out. Stage 2 skips packages that are already installed, so a re-run
-      # continues where the last one stopped. Tag (release) builds are always
-      # clean.
+      # out. Stage 2 skips packages that are already installed. Tag (release)
+      # builds are always clean.
       - name: Restore the previous build target
         id: tgtcache
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.resume }}
@@ -155,33 +200,31 @@ jobs:
           rm -f "$RUNNER_TEMP/target.tar.zst"
           ls /mnt
 
+      # No ISO host tools here: the ISOs are made by the matrix jobs.
       - name: Install host tools
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            squashfs-tools grub-pc-bin grub-efi-amd64-bin grub-common xorriso mtools \
             gcc make curl zstd ca-certificates util-linux
 
       - name: Allow unprivileged user namespaces, disable core dumps
         run: |
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
-          # a crash loop (3000+ aborts in the failed run) must not spend ~1 s
-          # per crash writing cores
+          # a crash loop must not spend ~1 s per crash writing cores
           sudo sysctl -w kernel.core_pattern='|/bin/false' || true
 
-      - name: Build the distribution (seed -> stage1 -> stage2 -> stage3 -> ISO)
+      - name: Build the core (seed -> stage1 -> stage2 -> stage3 -> rootfs)
         id: build
         timeout-minutes: 320 # leaves ~35 min of the 355 for saving the cache and logs
         env:
           ROOTFS_SEED: ${{ steps.rootfsseed.outputs.path }}
+          STAGE3_WORLD: ${{ inputs.stage3_world }}
         run: |
-          args=(--isolation "$ISOLATION"
-                --out "$GITHUB_WORKSPACE/out/$ISO_NAME"
+          args=(--isolation "$ISOLATION" --no-iso
                 --rootfs-out "$GITHUB_WORKSPACE/out/$ROOTFS_ASSET")
-          [[ "${{ inputs.with_gui }}" == "true" ]]     && args+=(--with-gui)
-          [[ "${{ inputs.stage3_world }}" == "true" ]] && args+=(--stage3-world)
+          [[ "$STAGE3_WORLD" == "true" ]] && args+=(--stage3-world)
           # self-hosting: the previous release's rootfs replaces the Debian seed
-          [[ -n "$ROOTFS_SEED" ]]                      && args+=(--seed-rootfs "$ROOTFS_SEED")
+          [[ -n "$ROOTFS_SEED" ]]         && args+=(--seed-rootfs "$ROOTFS_SEED")
           sudo -E ./bootstrap/build-all.sh "${args[@]}" "$TARGET"
 
       - name: Save the bootstrap seed (also on failure)
@@ -194,9 +237,12 @@ jobs:
             bootstrap/seed/seed.tar.zst.sha256
           key: seed-${{ runner.os }}-${{ hashFiles('bootstrap/seed/build-seed.sh', 'bootstrap/seed/seed.toml') }}
 
-      - name: Pack the build target for the next run
+      # One tarball, two uses: the resume cache of the next dispatch run, and
+      # the hand-over to the matrix jobs. Packed after a failure only when a
+      # dispatch run may resume from it.
+      - name: Pack the build target
         id: packtgt
-        if: ${{ always() && github.event_name == 'workflow_dispatch' && steps.build.conclusion != 'skipped' }}
+        if: ${{ always() && steps.build.conclusion != 'skipped' && (github.event_name == 'workflow_dispatch' || steps.build.outcome == 'success') }}
         continue-on-error: true
         run: |
           sudo ./bootstrap/umount-chroot.sh "$TARGET" || true
@@ -205,8 +251,8 @@ jobs:
             -C /mnt mydistro .mydistro.build
           ls -lh "$RUNNER_TEMP/target.tar.zst"
 
-      - name: Save the build target cache
-        if: ${{ always() && steps.packtgt.outcome == 'success' }}
+      - name: Save the build target cache (resume)
+        if: ${{ always() && github.event_name == 'workflow_dispatch' && steps.packtgt.outcome == 'success' }}
         continue-on-error: true
         uses: actions/cache/save@v4
         with:
@@ -214,31 +260,29 @@ jobs:
           key: iso-target-${{ runner.os }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Checksums
-        id: sum
+        if: ${{ steps.build.outcome == 'success' }}
         run: |
-          # build-all.sh runs under sudo, so out/ and the ISO are root-owned;
-          # hand them to the runner user before writing the .sha256 next to it.
+          # build-all.sh runs under sudo: out/ is root-owned
           sudo chown -R "$(id -u):$(id -g)" out
           cd out
-          sha256sum "$ISO_NAME" | tee "$ISO_NAME.sha256"
-          echo "size=$(stat -c %s "$ISO_NAME")" >> "$GITHUB_OUTPUT"
           # the rootfs checksum was written by mkrootfs.sh; re-verify it here,
           # because the NEXT build trusts exactly this file as its seed
           sha256sum -c "$ROOTFS_ASSET.sha256"
-          echo "rootfs_size=$(stat -c %s "$ROOTFS_ASSET")" >> "$GITHUB_OUTPUT"
 
-      - name: Upload the ISO and the rootfs as workflow artifacts
+      - name: Upload the core target for the matrix jobs
+        if: ${{ steps.build.outcome == 'success' && steps.packtgt.outcome == 'success' }}
         uses: actions/upload-artifact@v4
         with:
-          name: mydistro-x86_64-iso
-          path: |
-            out/mydistro-x86_64.iso
-            out/mydistro-x86_64.iso.sha256
-          retention-days: 14
+          name: core-target
+          path: ${{ runner.temp }}/target.tar.zst
+          retention-days: 1
           compression-level: 0
-      - uses: actions/upload-artifact@v4
+
+      - name: Upload the rootfs (the seed of the next build)
+        if: ${{ steps.build.outcome == 'success' }}
+        uses: actions/upload-artifact@v4
         with:
-          name: mydistro-x86_64-rootfs
+          name: out-rootfs
           path: |
             out/mydistro-x86_64-rootfs.tar.zst
             out/mydistro-x86_64-rootfs.tar.zst.sha256
@@ -246,7 +290,7 @@ jobs:
           retention-days: 14
           compression-level: 0
 
-      - name: Upload build logs (also on failure)
+      - name: Collect build logs
         if: always()
         run: |
           mkdir -p ci-logs
@@ -256,28 +300,229 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: build-logs
+          name: build-logs-core
           path: ci-logs
           if-no-files-found: ignore
           retention-days: 14
 
-      # A release asset is limited to 2 GiB. Bigger files stay as the artifacts
-      # above and the release carries only the checksum files. The rootfs and
-      # its .sha256 are what the NEXT build downloads as its seed
-      # (scripts/fetch-rootfs-seed.sh): a release without them is skipped there.
-      - name: Publish the GitHub Release
-        if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
+  # ---------------------------------------------------------------- matrix
+  build:
+    name: ${{ matrix.variant }}
+    needs: [plan, core]
+    runs-on: ubuntu-24.04
+    # iso-gui compiles the whole GUI stack (stage 2 with recipes/gui)
+    timeout-minutes: ${{ matrix.gui == '1' && 340 || 90 }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    env:
+      ISOLATION: ${{ inputs.isolation || 'env' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
         with:
-          generate_release_notes: true
-          body: |
-            Contains the bootable ISO and the **rootfs** (`mydistro-x86_64-rootfs.tar.zst`).
-            The rootfs is the seed of the next build (`bootstrap/build-all.sh --seed-rootfs`),
-            so the distribution is built by its own previous release.
-            This release was built from: ${{ steps.rootfsseed.outputs.path != '' && 'the previous release rootfs (self-hosting)' || 'the Debian-based bootstrap seed' }}.
-          files: |
-            out/mydistro-x86_64.iso.sha256
-            out/mydistro-x86_64-rootfs.tar.zst.sha256
-            out/mydistro-x86_64-rootfs.packages
-            ${{ steps.sum.outputs.size < 2147483648 && 'out/mydistro-x86_64.iso' || '' }}
-            ${{ steps.sum.outputs.rootfs_size < 2147483648 && 'out/mydistro-x86_64-rootfs.tar.zst' || '' }}
+          name: core-target
+          path: ${{ runner.temp }}/core
+
+      - name: Unpack the core target
+        run: |
+          sudo tar -I zstd -xpf "$RUNNER_TEMP/core/target.tar.zst" -C /mnt --numeric-owner
+          rm -rf "$RUNNER_TEMP/core"
+          df -h /mnt
+
+      - name: Install host tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            squashfs-tools grub-pc-bin grub-efi-amd64-bin grub-common xorriso mtools \
+            gcc make curl zstd ca-certificates util-linux python3
+
+      - name: Allow unprivileged user namespaces
+        run: |
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+          sudo sysctl -w kernel.core_pattern='|/bin/false' || true
+
+      # The GUI stack is installed into the same two-root layout as the core
+      # (build root + clean /sysroot). stage 2 skips every package the core
+      # already installed, so only recipes/gui is compiled. Re-running stage 2
+      # after stage 3 is supported (stage2.sh keeps the installed dpm).
+      - name: Build the GUI stack on top of the core
+        if: ${{ matrix.gui == '1' }}
+        run: |
+          # stage 2 never uses `closure` (that level is stage 3 only)
+          iso="$ISOLATION"; [[ "$iso" == closure ]] && iso=sandbox
+          sudo env WITH_GUI=1 DPM_JOBS="$(nproc)" STAGE2_ISOLATION="$iso" \
+            bash bootstrap/stage2.sh "$TARGET"
+
+      - name: Make the ISO
+        if: ${{ matrix.kind == 'iso' }}
+        env:
+          ISO_NAME: ${{ matrix.iso }}
+          VOL_ID: ${{ matrix.vol }}
+        run: |
+          mkdir -p out
+          sudo env VOL_ID="$VOL_ID" DPM_JOBS="$(nproc)" \
+            bash bootstrap/mkiso.sh "$TARGET/sysroot" "$PWD/out/$ISO_NAME"
+          sudo chown -R "$(id -u):$(id -g)" out
+          cd out
+          sha256sum "$ISO_NAME" | tee "$ISO_NAME.sha256"
+          ls -lh .
+
+      - name: Make the small base-devel rootfs
+        if: ${{ matrix.kind == 'rootfs' }}
+        run: |
+          mkdir -p out
+          sudo bash bootstrap/mkrootfs-min.sh "$TARGET" "$PWD/out/mydistro-x86_64-rootfs-min.tar.zst"
+          sudo chown -R "$(id -u):$(id -g)" out
+          ls -lh out
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: out-${{ matrix.variant }}
+          path: out/*
+          retention-days: 14
+          compression-level: 0
+
+      - name: Collect build logs
+        if: always()
+        run: |
+          mkdir -p ci-logs
+          sudo cp -r /mnt/.mydistro.build/logs ci-logs/ 2>/dev/null || true
+          sudo chown -R "$(id -u):$(id -g)" ci-logs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: build-logs-${{ matrix.variant }}
+          path: ci-logs
+          if-no-files-found: ignore
+          retention-days: 14
+
+  # Boots every ISO in QEMU (BIOS, through grub) and waits for the login
+  # prompt on the serial console (scripts/qemu-boot-test.sh). On a tag this
+  # gates the release: an ISO that does not boot is never published.
+  boot-test:
+    name: boot ${{ matrix.variant }} in QEMU
+    needs: [plan, build]
+    if: ${{ needs.plan.outputs.has_iso == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.isos) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: out-${{ matrix.variant }}
+          path: iso
+      - name: Install QEMU
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends qemu-system-x86 socat
+          # hosted Linux runners expose /dev/kvm, but only root may use it
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm || true
+          ls -l /dev/kvm || true
+      - name: Verify the ISO checksum
+        env:
+          ISO_NAME: ${{ matrix.iso }}
+        run: cd iso && sha256sum -c "$ISO_NAME.sha256"
+      - name: Boot it and wait for the login prompt
+        env:
+          ISO_NAME: ${{ matrix.iso }}
+        run: bash scripts/qemu-boot-test.sh "iso/$ISO_NAME" qemu-boot
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: qemu-boot-${{ matrix.variant }}
+          path: qemu-boot
+          if-no-files-found: ignore
+          retention-days: 14
+
+  # The small rootfs as a container image: the environment packages.yml and
+  # anyone else can build in (`docker run ghcr.io/<owner>/mydistro-build`).
+  image:
+    name: container image (rootfs-min → ghcr.io)
+    needs: build
+    if: ${{ (startsWith(github.ref, 'refs/tags/v') || inputs.push_image) && (inputs.outputs == '' || inputs.outputs == 'all' || inputs.outputs == 'rootfs-min') }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: out-rootfs-min
+          path: rootfs
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Import and push
+        run: |
+          set -euo pipefail
+          img="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/mydistro-build"
+          tag="${GITHUB_REF_NAME//\//-}"
+          cd rootfs
+          sha256sum -c mydistro-x86_64-rootfs-min.tar.zst.sha256
+          zstd -dc mydistro-x86_64-rootfs-min.tar.zst \
+            | docker import \
+                --change 'ENV PATH=/usr/sbin:/usr/bin:/sbin:/bin' \
+                --change 'CMD ["/usr/bin/bash"]' \
+                - "$img:$tag"
+          docker tag "$img:$tag" "$img:latest"
+          docker push "$img:$tag"
+          docker push "$img:latest"
+
+  release:
+    name: GitHub Release
+    needs: [core, build, boot-test]
+    if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: out-*
+          path: artifacts
+          merge-multiple: true
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SEED: ${{ needs.core.outputs.seed }}
+        run: |
+          set -euo pipefail
+          ls -lh artifacts
+          # A release asset is limited to 2 GiB. Bigger files stay workflow
+          # artifacts and the release carries only the checksum files. The
+          # rootfs and its .sha256 are what the NEXT build downloads as its
+          # seed (scripts/fetch-rootfs-seed.sh).
+          files=()
+          for f in artifacts/*; do
+            size=$(stat -c %s "$f")
+            case "$f" in *.sha256|*.packages) ;; *)
+              if (( size >= 2147483648 )); then
+                echo "::warning::$f is $size bytes (>= 2 GiB): left as a workflow artifact"
+                continue
+              fi ;;
+            esac
+            files+=("$f")
+          done
+          cat > notes.md <<NOTES
+          | file | what |
+          |---|---|
+          | \`mydistro-x86_64.iso\` | live ISO, no GUI |
+          | \`mydistro-gui-x86_64.iso\` | live ISO with the sway/Wayland stack |
+          | \`mydistro-x86_64-rootfs-min.tar.zst\` | small rootfs: base-devel + dpm (build environment, also \`ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/mydistro-build\`) |
+          | \`mydistro-x86_64-rootfs.tar.zst\` | full rootfs incl. rust: the seed of the next build (\`build-all.sh --seed-rootfs\`) |
+
+          This release was built from: ${SEED}.
+          NOTES
+          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
+            --generate-notes --notes-file notes.md "${files[@]}"

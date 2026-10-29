@@ -99,18 +99,21 @@ mksquashfs "$ROOT" "$ISO/live/rootfs.squashfs" \
     ${EXCL[@]:+-e "${EXCL[@]}"}
 
 # 3) kernel + grub config
+# console=ttyS0 first, tty0 last: the kernel log also goes to the serial line
+# (CI boots the ISO in QEMU and waits for the login prompt there), while
+# /dev/console stays the screen, so a real machine behaves as before.
 cp "$KERNEL" "$ISO/boot/$KVER"
 cat > "$ISO/boot/grub/grub.cfg" <<EOF
 set default=0
 set timeout=5
 
 menuentry "mydistro (live)" {
-    linux /boot/$KVER quiet
+    linux /boot/$KVER quiet console=ttyS0,115200 console=tty0
     initrd /boot/initramfs.img
 }
 
 menuentry "mydistro (live, verbose)" {
-    linux /boot/$KVER loglevel=7
+    linux /boot/$KVER loglevel=7 console=ttyS0,115200 console=tty0
     initrd /boot/initramfs.img
 }
 EOF
