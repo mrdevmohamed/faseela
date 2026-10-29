@@ -113,19 +113,26 @@ jobs:
 
       # Root run: the rootless test drops to `nobody` (setpriv) and needs a
       # world-traversable scratch path, which the runner's home is not — so
-      # root uses its own target dir under /opt.
+      # root uses its own target dir. It must carry NO default ACL: an
+      # inherited default ACL replaces the umask, every staged file came out
+      # 777/666 and dpm's lint (rightly) rejected the packages.
       - name: Test as root
         if: matrix.as == 'root'
         env:
-          CARGO_TARGET_DIR: /opt/dpm-target
+          CARGO_TARGET_DIR: /var/tmp/dpm-target
         run: |
           set -o pipefail
           sudo mkdir -p "$CARGO_TARGET_DIR"
           sudo chown "$USER" "$CARGO_TARGET_DIR"
           chmod 755 "$CARGO_TARGET_DIR"
+          if command -v setfacl >/dev/null; then sudo setfacl -R -b -k "$CARGO_TARGET_DIR"; fi
+          echo "umask (user): $(umask)   sudo umask: $(sudo sh -c umask)"
+          stat -c '%a %U %n' "$CARGO_TARGET_DIR" /var/tmp
+          getfacl -p "$CARGO_TARGET_DIR" 2>/dev/null || true
           cargo test --release --locked --no-fail-fast --no-run
           sudo -E env "PATH=$PATH" "HOME=$HOME" "CARGO_HOME=$HOME/.cargo" "RUSTUP_HOME=$HOME/.rustup" \
-            cargo test --release --locked --no-fail-fast -- --nocapture 2>&1 | tee "$RUNNER_TEMP/test.log"
+            bash -c 'umask 022; exec cargo test --release --locked --no-fail-fast -- --nocapture' 2>&1 \
+            | tee "$RUNNER_TEMP/test.log"
 
       - name: Fail if an isolation test was skipped
         working-directory: .
@@ -179,7 +186,8 @@ jobs:
 
       - name: Build dpm and the mkfake example
         working-directory: pkgmgr
-        run: cargo build --release --locked --examples
+        # `--examples` alone would build only the examples and skip the dpm binary
+        run: cargo build --release --locked --bins --examples
 
       - name: Signing, upgrade, rollback (smoke-v05)
         env:

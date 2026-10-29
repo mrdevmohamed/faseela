@@ -42,11 +42,10 @@ degraded=()
 rm -rf "$WORK"
 mkdir -p "$WORK"/recipes/{base-devel,deptool,probe,netprobe}
 
-BUILD="$WORK/build"
 dpm() {
   env -u CFLAGS -u CXXFLAGS -u LDFLAGS "$DPM" \
     --root "$WORK/target-root" --recipes "$WORK/recipes" \
-    --builddir "$BUILD" --profiles "$WORK/profiles" "$@"
+    --builddir "$WORK/build" --profiles "$WORK/profiles" "$@"
 }
 
 echo "== isolation level: $level   dpm: $("$DPM" --version 2>&1 | head -1)"
@@ -184,8 +183,8 @@ fi
 
 # ---- 3. reproducibility ------------------------------------------------------
 if [[ $level != none ]]; then
-  BUILD="$WORK/build-rc"
-  rm -rf "$BUILD"
+  # same builddir as above: the closure level needs the dependency archives
+  # in <builddir>/out, and rebuild-check builds its two copies below it
   dpm build probe --isolation "$level" "${degraded[@]}" --rebuild-check \
     > "$WORK/rebuild.log" 2>&1 \
     || { cat "$WORK/rebuild.log"; die "$level: --rebuild-check failed"; }
