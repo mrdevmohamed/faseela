@@ -5,7 +5,7 @@
 [package]
 name = "runit-services"
 version = "0.4"
-rel = 5
+rel = 6
 arch = ["x86_64"]
 summary = "runit stage scripts and supervised service tree"
 license = ["MIT"]
@@ -35,7 +35,13 @@ mountpoint -q /dev/shm || mount -t tmpfs -o mode=1777,nosuid,nodev tmpfs /dev/sh
 
 mount -a 2>/dev/null || true
 
-hostname -F /etc/hostname 2>/dev/null || true
+# set the kernel hostname straight through /proc: coreutils does not install a
+# `hostname` binary here, so `hostname -F` silently failed and the prompt
+# showed "(none)"
+if [ -r /etc/hostname ]; then
+    read -r _h < /etc/hostname 2>/dev/null
+    [ -n "$_h" ] && echo "$_h" > /proc/sys/kernel/hostname 2>/dev/null
+fi
 
 # udev coldplug (udevd itself runs supervised under /etc/sv/udevd)
 mkdir -p /run/udev
