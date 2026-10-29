@@ -477,10 +477,13 @@ preflight() {
     fi
 
     # host tools for the stages that will actually run: fail BEFORE gcc burns
-    # three hours, not after
+    # three hours, not after.  Stages switched off with --no-iso / --no-rootfs
+    # never run (the pipeline loop skips them), so their tools are not needed
+    # either — the CI core job builds --no-iso on hosts without xorriso.
     for i in "${!STAGE_IDS[@]}"; do
         if (( i < START )); then continue; fi
         id=${STAGE_IDS[$i]}
+        if stage_skipped "$id"; then continue; fi
         case $id in
             seed)
                 # a rootfs seed is not built; nothing to check here

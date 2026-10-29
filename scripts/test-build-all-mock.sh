@@ -41,6 +41,7 @@ sed -i 's/\[\[ $EUID -ne 0 \]\]/false/' "$MOCK/build-all.sh"
 for t in mksquashfs grub-mkrescue xorriso zstd; do
     printf '#!/bin/sh\nexit 0\n' > "$WORK/bin/$t"; chmod +x "$WORK/bin/$t"
 done
+BASE_PATH="$PATH"   # pre-stub PATH — the G2 tests re-run without the ISO stubs
 export PATH="$WORK/bin:$PATH"
 
 cat > "$MOCK/seed/build-seed.sh" <<'EOF'
@@ -183,6 +184,36 @@ RC=$(bash "$MOCK/build-all.sh" --no-iso --no-rootfs "$WORK/tgt2b" > "$WORK/last.
 check "G8 re-run: nothing to run"          "[[ $RC -eq 0 ]] && OUT | grep -q 'nothing to run'"
 bash "$MOCK/build-all.sh" --no-iso --no-rootfs --list-stages "$WORK/tgt2b" > "$WORK/last.out" 2>&1
 check "G9 list marks both as skipped"      "OUT | grep -q 'rootfs.*skipped (--no-rootfs)' && OUT | grep -q 'iso.*skipped (--no-iso)'"
+
+say "G2. --no-iso needs no ISO host tools (the release 'core' job scenario)"
+# The CI core job builds --no-iso on a host that installs no ISO tools
+# (release.yml: "No ISO host tools here: the ISOs are made by the matrix
+# jobs") — pre-flight must not demand tools of stages that are switched
+# off.  Run with the stubs (mksquashfs/grub-mkrescue/xorriso) REMOVED from
+# PATH; the zstd stub stays because stages 1-3 still need it.
+mkdir -p "$WORK/bin2"
+cp "$WORK/bin/zstd" "$WORK/bin2/zstd"
+NOPATH="$WORK/bin2:$BASE_PATH"
+rm -rf "$WORK/tgt2n" "$WORK/.tgt2n.build"
+RC=$(PATH="$NOPATH" bash "$MOCK/build-all.sh" --no-iso "$WORK/tgt2n" > "$WORK/last.out" 2>"$WORK/last.err"; echo $?)
+check "G2a exit 0 with no ISO tools on PATH"  "[[ $RC -eq 0 ]]"
+check "G2b rootfs built, no ISO demanded"    "[[ -f $WORK/.tgt2n.build/stamps/rootfs.done ]]"
+check "G2c no ISO stamp (stage skipped)"     "[[ ! -f $WORK/.tgt2n.build/stamps/iso.done ]]"
+# negative control: on the same PATH *without* --no-iso the ISO tool check
+# must still fire (proves the fix disabled the check only for skipped
+# stages, not for real ISO builds).  Skipped gracefully on dev hosts that
+# happen to have all five tools, where it would be vacuous.
+have_all=1
+for t in mksquashfs grub-mkrescue xorriso gcc make; do
+    ( export PATH="$NOPATH"; command -v "$t" >/dev/null ) || have_all=0
+done
+if (( have_all )); then
+    echo "  (host has every ISO tool; the negative control is vacuous here)"
+else
+    RC=$(PATH="$NOPATH" bash "$MOCK/build-all.sh" "$WORK/tgt2n" > "$WORK/last.out" 2>"$WORK/last.err"; echo $?)
+    check "G2d without --no-iso the ISO tools are still required" \
+          "[[ $RC -eq 2 ]] && cat $WORK/last.out $WORK/last.err | grep -q 'iso stage misses host tool'"
+fi
 
 say "H. non-empty target without state is refused"
 mkdir -p "$WORK/tgt3"; echo data > "$WORK/tgt3/precious.txt"
