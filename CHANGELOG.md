@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased — feat: per-recipe download mirrors (`package.mirrors`)
+
+- A release build died in stage2 at `rsync` (102/118): `download.samba.org`
+  answered 503 / timed out on all 4 attempts. `candidate_urls` only knew
+  mirrors for GNU hosts, so any other host (github, samba, gitlab,
+  freedesktop, ...) was a single point of failure.
+- Recipes may now list `mirrors = [...]` under `[package]`. After `source`
+  (and the built-in GNU mirrors) fails, dpm tries them in order.
+  `%{version}` & co. are expanded. Mirrors need no trust: every candidate is
+  verified against the recipe's `sha256`, and a mirror serving other bytes is
+  rejected (nothing is cached) and the next one is tried.
+- `fetch::download_cached` keeps its signature (used by `upgrade`); the new
+  `download_cached_with_mirrors` / `candidate_urls_with` carry the extra URLs.
+- `rsync` declares `rsync.samba.org/ftp/rsync/src/` as a fallback.
+- Note: `mirrors` is part of recipe.toml, so adding it changes that recipe's
+  deterministic build id (docs/design/build-isolation.md §7).
+- Tests: parsing/validation of `mirrors` (recipe.rs); fallback, dedupe and
+  wrong-bytes rejection (fetch.rs).
+
 ## Unreleased — fix: stage3 closure rebuild died at bc ("readline works only with flex")
 
 - First real `--isolation closure` run (after the pre-flight fix the build now
