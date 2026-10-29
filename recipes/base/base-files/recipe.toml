@@ -5,7 +5,7 @@
 [package]
 name = "base-files"
 version = "0.4"
-rel = 3
+rel = 4
 arch = ["x86_64"]
 summary = "FHS skeleton, merged-usr symlinks and core /etc files"
 license = ["MIT"]
@@ -64,6 +64,8 @@ cdrom:x:14:
 adm:x:15:
 input:x:24:
 kvm:x:61:
+sgx:x:62:
+render:x:63:
 wheel:x:97:
 users:x:100:
 nogroup:x:65534:
