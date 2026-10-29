@@ -42,15 +42,15 @@ on:
         description: "Build isolation for stages 2 and 3"
         type: choice
         options: [env, sandbox, closure, none]
-        default: env
+        default: sandbox
       stage3_world:
         description: "Rebuild every package in stage 3"
         type: boolean
-        default: false
+        default: true
       resume:
         description: "Resume from the cached build target of the previous run (uncheck for a clean start)"
         type: boolean
-        default: true
+        default: false
       seed:
         description: "Build seed: auto = previous release's rootfs if there is one, else Debian; rootfs = require it; debian = always start from the Debian seed"
         type: choice
@@ -59,7 +59,7 @@ on:
       push_image:
         description: "Also publish rootfs-min as a container image (tags do this anyway)"
         type: boolean
-        default: false
+        default: true
 
 permissions:
   contents: read
