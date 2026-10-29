@@ -24,7 +24,7 @@ run = [
     "binutils", "gcc", "glibc", "linux-headers",
     "make", "bash", "coreutils", "sed", "grep", "gawk", "findutils",
     "diffutils", "tar", "gzip", "xz", "zstd",
-    "patch", "pkgconf", "file", "perl", "python",
+    "patch", "pkgconf", "file", "openssl", "perl", "python",
 ]
 
 [build]
