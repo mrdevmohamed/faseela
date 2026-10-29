@@ -2,7 +2,7 @@
 [package]
 name = "coreutils"
 version = "9.12"
-rel = 1
+rel = 2
 arch = ["x86_64"]
 summary = "GNU core utilities (ls, cp, cat, ...)"
 license = ["GPL-3.0"]
@@ -14,6 +14,6 @@ build = []
 run = []
 
 [build]
-configure = "FORCE_UNSAFE_CONFIGURE=1 ./configure --prefix=/usr --enable-no-install-program=kill,uptime"
+configure = "FORCE_UNSAFE_CONFIGURE=1 ./configure --prefix=/usr --enable-install-program=hostname --enable-no-install-program=kill,uptime"
 compile = "make -j%{jobs}"
 install = "make DESTDIR=%{pkgdir} install"
