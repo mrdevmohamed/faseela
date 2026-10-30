@@ -14,13 +14,13 @@
 [package]
 name = "nawa-recipes"
 version = "2026.10.30"
-rel = 4
+rel = 8
 arch = ["x86_64"]
 summary = "nawa-recipes — the distribution's recipe tree for nawa"
 license = ["MIT"]
-source = "https://github.com/mrdevmohamed/faseela/archive/c0f9f6657df0f762a71de4e5d3db3500488773f8.tar.gz"
-sha256 = "d8391dcabe281bed29ba849d1710e9210411100c669181297baa77a3c8e3596b"
-source_dir = "faseela-c0f9f6657df0f762a71de4e5d3db3500488773f8"
+source = "https://github.com/mrdevmohamed/faseela/archive/97927b4ed3a26efbc143fdcaf657c7c42fbb9bc9.tar.gz"
+sha256 = "56b74c54ac485dc16ac63c06b31bf0a2531d8fd252bfe2f7e181bcbd55338620"
+source_dir = "faseela-97927b4ed3a26efbc143fdcaf657c7c42fbb9bc9"
 
 [depends]
 build = []
