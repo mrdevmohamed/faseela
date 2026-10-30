@@ -69,7 +69,29 @@ static void *f(void *a){ return a; }
 int main(void){ pthread_t t; pthread_create(&t,0,f,0); pthread_join(t,0);
   puts("c-ok"); return 0; }
 EOT
-cc -O2 -pthread t.c -o tc || fail "cannot compile/link C"
+if ! cc -O2 -pthread t.c -o tc; then
+    # say WHY: the file may be missing, or present but not executable here
+    # (loader / symlink / mount problem inside this chroot)
+    {
+        echo "---- seed C compile diagnostics ----"
+        echo "PATH=$PATH"; echo "GCC_EXEC_PREFIX=${GCC_EXEC_PREFIX:-} COMPILER_PATH=${COMPILER_PATH:-}"
+        command -v cc gcc; ls -l "$(command -v cc)" "$(command -v gcc)" 2>&1
+        echo "cc -print-prog-name=cc1 -> $(cc -print-prog-name=cc1 2>&1)"
+        echo "cc -print-search-dirs:"; cc -print-search-dirs 2>&1 | head -5
+        echo "libexec dirs:"; ls -ld /usr/libexec /usr/libexec/gcc/*/* 2>&1
+        ls -l /usr/libexec/gcc/*/*/ 2>&1 | head -20
+        for c in /usr/libexec/gcc/*/*/cc1; do
+            echo "== $c"; ls -lL "$c" 2>&1; file "$c" 2>&1
+            readelf -l "$c" 2>&1 | grep -i interpreter
+            "$c" --version 2>&1 | head -3
+        done
+        echo "loader: $(ls -lL /lib64/ld-linux-x86-64.so.2 2>&1)"
+        ls -ld /lib64 /usr/lib64 2>&1
+        mount | grep -E ' (/|/usr|/mnt[^ ]*) ' 2>&1 | head
+        echo "---- end diagnostics ----"
+    } >&2
+    fail "cannot compile/link C"
+fi
 [ "$(./tc)" = "c-ok" ] || fail "C test binary did not run"
 
 cat > t.cc <<'EOT'

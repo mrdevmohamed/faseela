@@ -57,6 +57,13 @@ done
 for d in opt/seed opt/cargo opt/rustup opt/cross-tools build build3 mydistro; do
     [[ -e $ROOT/$d ]] && { echo "mkrootfs: ERROR: /$d (bootstrap/build leftover) is in $ROOT" >&2; bad=1; }
 done
+# /usr/bin/gcc is only the driver: without the compiler proper (cc1, cc1plus)
+# the root cannot compile anything and is useless as the next build's seed.
+for cc in cc1 cc1plus; do
+    compgen -G "$ROOT/usr/libexec/gcc/*/*/$cc" >/dev/null \
+      || compgen -G "$ROOT/usr/lib/gcc/*/*/$cc" >/dev/null \
+      || { echo "mkrootfs: ERROR: gcc's $cc is missing in $ROOT (usr/libexec/gcc/*/*/$cc)" >&2; bad=1; }
+done
 (( bad == 0 )) || { echo "mkrootfs: $ROOT is not a finished, clean root — refusing to pack it" >&2; exit 1; }
 # not an error: a rootfs without rust is a valid system, it just cannot seed
 # a later build (seed-from-rootfs.sh enforces that on the consuming side)

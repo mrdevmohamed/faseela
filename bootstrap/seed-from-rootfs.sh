@@ -36,6 +36,12 @@ for f in usr/bin/env usr/bin/bash usr/bin/sh usr/bin/dpm usr/lib/libc.so.6 \
          usr/bin/rustc usr/bin/cargo; do
     [[ -e $ROOT/$f || -L $ROOT/$f ]] || missing+=("/$f")
 done
+# the gcc driver alone is not a compiler: cc1/cc1plus must be there too
+for cc in cc1 cc1plus; do
+    compgen -G "$ROOT/usr/libexec/gcc/*/*/$cc" >/dev/null \
+      || compgen -G "$ROOT/usr/lib/gcc/*/*/$cc" >/dev/null \
+      || missing+=("/usr/libexec/gcc/*/*/$cc")
+done
 if (( ${#missing[@]} > 0 )); then
     echo "seed-from-rootfs: this rootfs cannot seed a build — missing: ${missing[*]}" >&2
     echo "seed-from-rootfs: it must come from a full build of this distribution" >&2
