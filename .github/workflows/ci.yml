@@ -219,6 +219,12 @@ jobs:
         run: python3 scripts/rootfs-closure.py recipes base-devel dpm git curl ca-certificates > /dev/null
       - name: build-all.sh mock pipeline tests
         run: bash scripts/test-build-all-mock.sh
+      - name: build-packages-inner.sh tests (stubbed dpm)
+        run: bash scripts/test-build-packages-inner.sh
+      - name: recipe-ids.py lists every recipe
+        run: |
+          python3 scripts/recipe-ids.py recipes > "$RUNNER_TEMP/ids.txt"
+          [ "$(wc -l < "$RUNNER_TEMP/ids.txt")" -eq "$(ls recipes/*/*/recipe.toml | wc -l)" ]
       - name: rootfs artifact + self-hosting seed tests
         run: bash scripts/test-rootfs.sh
       - name: final-root helper tests

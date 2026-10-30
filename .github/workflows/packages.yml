@@ -7,25 +7,45 @@ name: Build packages
 #
 #   dpm upgrade --repo https://github.com/<PKG_REPO>/releases/download/stable
 #
-# (`dpm upgrade --repo` takes an http(s) URL; archive names in the index are
-# bare file names, which is exactly what a release's flat asset list is.)
+# (the package repository must be PUBLIC for that URL to work without a token)
 #
 # One-time setup in THIS repository (Settings > Secrets and variables > Actions):
 #   variable PKG_REPO        owner/name of the packages repository
+#                            (e.g. mrdevmohamed/faseela-repo)
 #   variable PKG_TAG         release tag used as the repo (optional, default stable)
 #   secret   PKG_REPO_TOKEN  fine-grained token: Contents read+write on PKG_REPO only
 #   secret   DPM_SIGN_KEY_B64   base64 of dpm.sec   (dpm keygen --out <dir>; base64 -w0 dpm.sec)
 # The matching dpm.pub is what the distribution trusts (`dpm trust dpm.pub`).
 #
-# Which packages: those whose recipe directory changed in the push, or the
-# names given to the manual run. Missing dependencies are built too and
-# published with them. Dependents are NOT rebuilt automatically.
+# WHICH PACKAGES  (Actions > Build packages > Run workflow > packages)
+#   (push)        the recipes changed by the push
+#   names         `curl git jq`            exactly those (+ missing dependencies)
+#   @category     `@extra` `@system` `@base` `@boot` `@gui` `@toolchain`
+#   ALL / @all    base + system + boot + extra  (NOT gui, NOT toolchain)
+#   mix them      `@all @gui`   `@extra vim`
 #
-# Build environment: the rootfs of the newest release of this repository
-#   rootfs=min   mydistro-x86_64-rootfs-min.tar.zst   base-devel + dpm, small, NO rust
-#   rootfs=seed  mydistro-x86_64-rootfs.tar.zst       the full system incl. rust
-# A package that needs rust (dpm itself) must be built with rootfs=seed,
-# otherwise dpm would first compile rust from source.
+# `@toolchain` is left out of ALL on purpose: rebuilding glibc/gcc/binutils
+# inside the very root that is running the build replaces the libc under the
+# running dpm. The toolchain is built by the ISO workflow (stage 2 / stage 3).
+#
+# BUILDING EVERYTHING TAKES LONGER THAN ONE RUN. So the workflow is resumable:
+#   * a package whose archive (name-version-rel) is already in the package
+#     repository is up to date and is skipped; a recipe bump rebuilds it;
+#   * published archives a build needs are installed, not compiled again;
+#   * after `budget` minutes no new package is started, everything built so
+#     far is published, and (auto_continue) the workflow starts itself again
+#     for the rest. A failing package never blocks the others: its dependents
+#     are skipped, all the rest is still built and published, and the run
+#     ends red with the list of what failed.
+#   * archives of an older version of a package are removed once the new one
+#     is published (prune).
+#
+# Build environment: the rootfs of the newest release of THIS repository
+#   min   mydistro-x86_64-rootfs-min.tar.zst   base-devel + dpm, small, NO rust
+#   seed  mydistro-x86_64-rootfs.tar.zst       the full system incl. rust
+#   auto  (default) seed when rust or dpm is in the list, else min
+# Both come from the ISO workflow (release.yml) on a `v*` tag: run that once
+# before the first package build.
 
 on:
   push:
@@ -34,19 +54,35 @@ on:
   workflow_dispatch:
     inputs:
       packages:
-        description: "Package names, space separated (empty = recipes changed by this push)"
+        description: "Names, @category or ALL, space separated (empty = recipes changed by this push)"
         type: string
         default: ""
       rootfs:
         description: "Build environment"
         type: choice
-        options: [min, seed]
-        default: min
+        options: [auto, min, seed]
+        default: auto
       isolation:
         description: "dpm build isolation"
         type: choice
         options: [sandbox, env, closure, none]
         default: sandbox
+      budget:
+        description: "Minutes after which no NEW package is started (the hard limit of a run is 6 h)"
+        type: string
+        default: "270"
+      auto_continue:
+        description: "When time ran out, start this workflow again for the remaining packages"
+        type: boolean
+        default: true
+      keep_going:
+        description: "Keep building the other packages when one fails"
+        type: boolean
+        default: true
+      prune:
+        description: "Delete superseded versions from the package repository after publishing"
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -62,6 +98,7 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       pkgs: ${{ steps.s.outputs.pkgs }}
+      rootfs: ${{ steps.s.outputs.rootfs }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -69,31 +106,59 @@ jobs:
       - id: s
         env:
           INPUT_PKGS: ${{ inputs.packages }}
+          INPUT_ROOTFS: ${{ inputs.rootfs || 'auto' }}
           BEFORE: ${{ github.event.before }}
         run: |
           set -euo pipefail
+          python3 scripts/recipe-ids.py recipes > "$RUNNER_TEMP/ids.txt"
+          pkgs=""
           if [[ -n "${INPUT_PKGS// /}" ]]; then
-            pkgs="$INPUT_PKGS"
+            for tok in $INPUT_PKGS; do
+              case "$tok" in
+                ALL|@all)
+                  pkgs+=" $(awk '$1 != "gui" && $1 != "toolchain" {print $2}' "$RUNNER_TEMP/ids.txt")" ;;
+                @*)
+                  names="$(awk -v c="${tok#@}" '$1 == c {print $2}' "$RUNNER_TEMP/ids.txt")"
+                  [[ -n "$names" ]] || { echo "::error::no recipe category '${tok#@}' (have: $(awk '{print $1}' "$RUNNER_TEMP/ids.txt" | sort -u | tr '\n' ' '))"; exit 1; }
+                  pkgs+=" $names" ;;
+                *) pkgs+=" $tok" ;;
+              esac
+            done
           else
             base="${BEFORE:-}"
             if [[ -z "$base" || "$base" =~ ^0+$ ]]; then
               base="$(git rev-parse HEAD~1 2>/dev/null || true)"
             fi
             [[ -n "$base" ]] || { echo "::error::no commit to diff against - run it manually with 'packages'"; exit 1; }
-            pkgs=""
             # recipes/<category>/<name>/...  ->  <name>, if its recipe still exists
             while IFS= read -r p; do
               [[ -n "$p" ]] || continue
-              compgen -G "recipes/*/$p/recipe.toml" >/dev/null && pkgs+="$p "
+              compgen -G "recipes/*/$p/recipe.toml" >/dev/null && pkgs+=" $p"
             done < <(git diff --name-only "$base" "$GITHUB_SHA" -- recipes | awk -F/ 'NF >= 4 {print $3}' | sort -u)
           fi
+          pkgs="$(tr ' ' '\n' <<< "$pkgs" | awk 'NF && !seen[$0]++' | tr '\n' ' ')"
+          pkgs="$(echo $pkgs)"   # trim
           for p in $pkgs; do
             [[ "$p" =~ ^[A-Za-z0-9][A-Za-z0-9._+-]*$ ]] || { echo "::error::bad package name '$p'"; exit 1; }
             compgen -G "recipes/*/$p/recipe.toml" >/dev/null || { echo "::error::no recipe named '$p'"; exit 1; }
           done
-          pkgs="$(echo $pkgs)"   # trim
+
+          rootfs="$INPUT_ROOTFS"
+          if [[ "$rootfs" == auto ]]; then
+            rootfs=min
+            for p in $pkgs; do [[ "$p" == rust || "$p" == dpm ]] && rootfs=seed; done
+          fi
+          if [[ "$rootfs" == min ]]; then
+            for p in $pkgs; do
+              [[ "$p" == rust || "$p" == dpm ]] && echo "::warning::$p is in the list but the min rootfs has no rust: it would be compiled first (hours). Use rootfs=seed."
+            done
+          fi
           echo "pkgs=$pkgs" >> "$GITHUB_OUTPUT"
-          echo "### Packages: ${pkgs:-none}" >> "$GITHUB_STEP_SUMMARY"
+          echo "rootfs=$rootfs" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Packages ($(wc -w <<< "$pkgs")): ${pkgs:-none}"
+            echo "Build environment: \`$rootfs\`"
+          } >> "$GITHUB_STEP_SUMMARY"
 
   build:
     name: build and publish
@@ -101,11 +166,18 @@ jobs:
     if: ${{ needs.select.outputs.pkgs != '' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 355
+    permissions:
+      contents: read
+      actions: write # lets the run start its own continuation
     env:
       T: /mnt/pkgroot
       PKGS: ${{ needs.select.outputs.pkgs }}
       ISOLATION: ${{ inputs.isolation || 'sandbox' }}
-      ROOTFS_KIND: ${{ inputs.rootfs || 'min' }}
+      ROOTFS_KIND: ${{ needs.select.outputs.rootfs }}
+      BUDGET_MIN: ${{ inputs.budget || '270' }}
+      KEEP_GOING: ${{ github.event_name == 'workflow_dispatch' && !inputs.keep_going && '0' || '1' }}
+      AUTO_CONTINUE: ${{ github.event_name == 'workflow_dispatch' && !inputs.auto_continue && '0' || '1' }}
+      PRUNE: ${{ github.event_name == 'workflow_dispatch' && !inputs.prune && '0' || '1' }}
       PKG_REPO: ${{ vars.PKG_REPO }}
       PKG_TAG: ${{ vars.PKG_TAG || 'stable' }}
     steps:
@@ -113,12 +185,33 @@ jobs:
 
       - name: Check the publishing setup before spending hours building
         env:
+          GH_TOKEN: ${{ secrets.PKG_REPO_TOKEN }}
           HAVE_TOKEN: ${{ secrets.PKG_REPO_TOKEN != '' }}
           HAVE_KEY: ${{ secrets.DPM_SIGN_KEY_B64 != '' }}
         run: |
+          set -euo pipefail
           [[ -n "$PKG_REPO" ]]          || { echo "::error::repository variable PKG_REPO (owner/name) is not set"; exit 1; }
           [[ "$HAVE_TOKEN" == true ]]   || { echo "::error::secret PKG_REPO_TOKEN is not set"; exit 1; }
           [[ "$HAVE_KEY" == true ]]     || { echo "::error::secret DPM_SIGN_KEY_B64 is not set"; exit 1; }
+          [[ "$BUDGET_MIN" =~ ^[0-9]+$ ]] || { echo "::error::budget must be a number of minutes"; exit 1; }
+
+          # The token must really reach the package repository ...
+          gh api "repos/$PKG_REPO" --jq .full_name > /dev/null \
+            || { echo "::error::PKG_REPO_TOKEN cannot read $PKG_REPO (wrong repo name, or the token is not scoped to it)"; exit 1; }
+          # ... and a release needs a commit to tag. A brand-new EMPTY repository
+          # has none, and `gh release create` fails there with a confusing 422.
+          if ! gh api "repos/$PKG_REPO/commits?per_page=1" > /dev/null 2>&1; then
+            echo "$PKG_REPO is empty: creating the first commit"
+            gh api -X PUT "repos/$PKG_REPO/contents/README.md" \
+              -f message="Initialise the package repository" \
+              -f content="$(printf '# %s\n\nFlat dpm package repository: the packages are the assets of the `%s` release. Written by CI.\n' "$PKG_REPO" "$PKG_TAG" | base64 -w0)" \
+              > /dev/null \
+              || { echo "::error::cannot write to $PKG_REPO - the token needs Contents: read AND write"; exit 1; }
+          fi
+          if ! gh release view "$PKG_TAG" --repo "$PKG_REPO" > /dev/null 2>&1; then
+            gh release create "$PKG_TAG" --repo "$PKG_REPO" --title "dpm package repository" \
+              --notes "Flat dpm repository: *.dpm.tar.zst plus a signed index.toml. Written by CI, do not edit."
+          fi
 
       - name: Download the build rootfs from the newest release
         env:
@@ -129,8 +222,16 @@ jobs:
           asset=mydistro-x86_64-rootfs-min.tar.zst
           [[ "$ROOTFS_KIND" == seed ]] && asset=mydistro-x86_64-rootfs.tar.zst
           dir="$RUNNER_TEMP/rootfs"
+          rc=0
           # verifies the .sha256 sidecar; exit 3 = no release carries the asset
-          ROOTFS_ASSET="$asset" bash scripts/fetch-rootfs-seed.sh "$dir" > /dev/null
+          ROOTFS_ASSET="$asset" bash scripts/fetch-rootfs-seed.sh "$dir" > /dev/null || rc=$?
+          if [[ $rc -eq 3 ]]; then
+            echo "::error::no release of $GH_REPO carries $asset. Push a v* tag (workflow 'Build ISO (CD)') once, so there is a rootfs to build in."
+            exit 1
+          elif [[ $rc -ne 0 ]]; then
+            echo "::error::could not fetch/verify $asset (fetch-rootfs-seed.sh exit $rc)"
+            exit "$rc"
+          fi
           sudo mkdir -p "$T"
           sudo tar -I zstd -xpf "$dir/$asset" -C "$T" --numeric-owner
           rm -rf "$dir"
@@ -150,66 +251,148 @@ jobs:
           sudo bash bootstrap/sync-repo.sh "$T"          # recipes + profiles -> $T/mydistro
           sudo bash bootstrap/ensure-chroot-mounts.sh "$T"
 
+      # Everything already published goes into the build root's out/ dir: that
+      # is how the build knows what is up to date, and it supplies the
+      # dependencies as ready-made archives. The same files are the base of
+      # the new index (the index must list the OLD packages too).
+      - name: Fetch the packages already published
+        id: published
+        env:
+          GH_TOKEN: ${{ secrets.PKG_REPO_TOKEN }}
+        run: |
+          set -euo pipefail
+          sudo mkdir -p "$T/build/out"
+          sudo chown "$(id -u):$(id -g)" "$T/build/out"
+          n="$(gh release view "$PKG_TAG" --repo "$PKG_REPO" --json assets \
+                 --jq '[.assets[].name | select(endswith(".dpm.tar.zst"))] | length')"
+          if (( n > 0 )); then
+            gh release download "$PKG_TAG" --repo "$PKG_REPO" --dir "$T/build/out" \
+              --pattern '*.dpm.tar.zst' --clobber
+          fi
+          echo "published=$n" >> "$GITHUB_OUTPUT"
+          echo "$n archive(s) already in $PKG_REPO ($PKG_TAG)"
+          # everything newer than this file was built by THIS run
+          sleep 2; touch "$T/build/.run-start"
+
       - name: Build
+        id: build
+        timeout-minutes: 320 # leaves ~35 min of the 355 for publishing and logs
         run: |
           sudo bash bootstrap/enter-root.sh "$T" /usr/bin/env -i \
             HOME=/root TERM=dumb DPM_JOBS="$(nproc)" PKGS="$PKGS" ISOLATION="$ISOLATION" \
+            BUDGET_MIN="$BUDGET_MIN" KEEP_GOING="$KEEP_GOING" \
             bash /mydistro/bootstrap/build-packages-inner.sh
 
+      # `always()`: the build step exits red when ANY package failed, and a
+      # timeout kills it - the archives built until then must still be published.
       - name: Publish to the package repository
+        id: publish
+        if: ${{ always() && steps.published.conclusion == 'success' }}
         env:
           GH_TOKEN: ${{ secrets.PKG_REPO_TOKEN }}
           SIGN_KEY_B64: ${{ secrets.DPM_SIGN_KEY_B64 }}
         run: |
           set -euo pipefail
-          repo="$RUNNER_TEMP/repo"; mkdir -p "$repo"
-
-          # the index must list the OLD packages too: fetch what is published
-          if gh release view "$PKG_TAG" --repo "$PKG_REPO" > /dev/null 2>&1; then
-            names="$(gh release view "$PKG_TAG" --repo "$PKG_REPO" --json assets --jq '.assets[].name' \
-                     | grep -E '\.dpm\.tar\.zst$' || true)"
-            if [[ -n "$names" ]]; then
-              gh release download "$PKG_TAG" --repo "$PKG_REPO" --dir "$repo" \
-                --pattern '*.dpm.tar.zst' --clobber
-            fi
-          else
-            gh release create "$PKG_TAG" --repo "$PKG_REPO" --title "dpm package repository" \
-              --notes "Flat dpm repository: *.dpm.tar.zst plus a signed index.toml. Written by CI, do not edit."
+          shopt -s nullglob
+          out="$T/build/out"
+          new=()
+          while IFS= read -r -d '' f; do new+=("$f"); done \
+            < <(find "$out" -maxdepth 1 -name '*.dpm.tar.zst' -newer "$T/build/.run-start" -print0)
+          echo "new archives: ${#new[@]}"
+          echo "built=${#new[@]}" >> "$GITHUB_OUTPUT"
+          if (( ${#new[@]} == 0 )); then
+            echo "### Nothing new to publish" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
           fi
 
-          shopt -s nullglob
-          built=("$T"/build/out/*.dpm.tar.zst)
-          (( ${#built[@]} )) || { echo "::error::the build left no archives in /build/out"; exit 1; }
-          cp -f "${built[@]}" "$repo/"
+          # the repository directory = published + new, WITHOUT superseded
+          # versions. It lives under $T (= /repo inside the root) so the
+          # archives can be hardlinked instead of copied (same filesystem).
+          repo="$T/repo"
+          sudo rm -rf "$repo"; sudo mkdir -p "$repo"
+          sudo cp -al "$out"/*.dpm.tar.zst "$repo/"
+          sudo chown -R "$(id -u):$(id -g)" "$repo"
+          stale=()
+          if [[ "$PRUNE" == 1 ]]; then
+            mapfile -t stale < <(python3 scripts/recipe-ids.py --stale "$repo" recipes)
+            for s in "${stale[@]}"; do rm -f "$repo/$s"; done
+            if (( ${#stale[@]} )); then printf 'superseded: %s\n' "${stale[@]}"; fi
+          fi
 
           # sign the index inside the root (dpm links against the distro's libc)
-          sudo mkdir -p "$T/repo"
-          sudo cp -f "$repo"/*.dpm.tar.zst "$T/repo/"
           printf '%s' "$SIGN_KEY_B64" | base64 -d | sudo install -m 600 /dev/stdin "$T/root/dpm.sec"
           sudo bash bootstrap/enter-root.sh "$T" /usr/bin/dpm repo-create /repo \
             --out index.toml --sign --key /root/dpm.sec
           sudo shred -u "$T/root/dpm.sec" || sudo rm -f "$T/root/dpm.sec"
-          sudo cp "$T/repo/index.toml" "$T/repo/index.toml.sig" "$repo/"
           sudo chown -R "$(id -u):$(id -g)" "$repo"
+          [[ -s "$repo/index.toml" && -s "$repo/index.toml.sig" ]] \
+            || { echo "::error::repo-create left no signed index.toml"; exit 1; }
 
-          # upload only what is new, plus the index
-          upload=("$repo/index.toml" "$repo/index.toml.sig")
-          for f in "${built[@]}"; do upload+=("$repo/$(basename "$f")"); done
-          gh release upload "$PKG_TAG" --repo "$PKG_REPO" --clobber "${upload[@]}"
+          # `gh release upload` can fail half way on a flaky network: retry, and
+          # upload the ARCHIVES first, the index LAST, so a client never reads
+          # an index that lists an archive which is not there yet.
+          upload() {
+            local n
+            for n in 1 2 3; do
+              gh release upload "$PKG_TAG" --repo "$PKG_REPO" --clobber "$@" && return 0
+              echo "upload attempt $n failed" >&2; sleep $((n * 20))
+            done
+            return 1
+          }
+          for f in "${new[@]}"; do upload "$repo/$(basename "$f")"; done
+          upload "$repo/index.toml" "$repo/index.toml.sig"
+
+          # only now remove superseded archives from the release
+          for s in "${stale[@]}"; do
+            gh release delete-asset "$PKG_TAG" "$s" --repo "$PKG_REPO" --yes || true
+          done
 
           {
-            echo "### Published ${#built[@]} archive(s) to $PKG_REPO ($PKG_TAG)"
+            echo "### Published ${#new[@]} archive(s) to $PKG_REPO ($PKG_TAG)"
             echo
             echo '```'
             echo "dpm upgrade --repo https://github.com/$PKG_REPO/releases/download/$PKG_TAG"
             echo '```'
+            if (( ${#stale[@]} )); then echo "Removed ${#stale[@]} superseded archive(s)."; fi
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Report
+        if: ${{ always() && steps.published.conclusion == 'success' }}
+        run: |
+          {
+            echo "### Build report"
+            echo '```'
+            sudo cat "$T/build/report.txt" 2>/dev/null || echo "(no report: the build did not get that far)"
+            sudo cat "$T/build/status" 2>/dev/null || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Time ran out with packages left: run the workflow again - what was
+      # published now counts as done, so it continues with the rest. Only when
+      # this run made progress, otherwise two runs would loop forever.
+      - name: Continue with the remaining packages
+        if: ${{ always() && steps.publish.outputs.built != '' && steps.publish.outputs.built != '0' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          sudo grep -qx 'INCOMPLETE=1' "$T/build/status" 2>/dev/null || { echo "nothing left over"; exit 0; }
+          if [[ "$AUTO_CONTINUE" != 1 ]]; then
+            echo "::notice::packages are left over - run the workflow again with the same list to continue"
+            exit 0
+          fi
+          gh workflow run packages.yml --repo "$GITHUB_REPOSITORY" --ref "$GITHUB_REF_NAME" \
+            -f packages="$PKGS" -f rootfs="$ROOTFS_KIND" -f isolation="$ISOLATION" \
+            -f budget="$BUDGET_MIN" -f keep_going="$([[ $KEEP_GOING == 1 ]] && echo true || echo false)" \
+            -f prune="$([[ $PRUNE == 1 ]] && echo true || echo false)" -f auto_continue=true
+          echo "### Time budget used up: started a continuation run for the rest" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Collect build logs
         if: always()
         run: |
           mkdir -p ci-logs
           sudo cp -r "$T"/build/logs ci-logs/ 2>/dev/null || true
+          sudo cp "$T"/build/report.txt "$T"/build/status ci-logs/ 2>/dev/null || true
           sudo chown -R "$(id -u):$(id -g)" ci-logs
       - uses: actions/upload-artifact@v4
         if: always()
@@ -218,3 +401,10 @@ jobs:
           path: ci-logs
           if-no-files-found: ignore
           retention-days: 14
+
+      # Publishing already happened above; this just makes the run red.
+      - name: Fail the run if a package failed
+        if: ${{ steps.build.outcome == 'failure' }}
+        run: |
+          echo "::error::some packages failed - see 'Build report' in the run summary. The packages that did build were published."
+          exit 1
