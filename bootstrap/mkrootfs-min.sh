@@ -39,7 +39,9 @@ MIN_DIR="${ROOTFS_MIN_DIR:-sysroot-min}"
     || { echo "mkrootfs-min: ROOTFS_MIN_DIR must be a plain directory name" >&2; exit 2; }
 command -v python3 >/dev/null 2>&1 || { echo "mkrootfs-min: missing host tool python3 (>= 3.11)" >&2; exit 1; }
 
-# 1) closure, computed on the host from the recipes of THIS checkout
+# 1) closure, computed on the host from the recipes of THIS checkout (fetched
+#    from faseela-repo first: a no-op once they are there)
+bash "$HERE/fetch-recipes.sh"
 # shellcheck disable=SC2086  # PACKAGES is a word list on purpose
 python3 "$REPO/scripts/rootfs-closure.py" "$REPO/recipes" $PACKAGES > "$TARGET/mydistro-min.order"
 echo "== rootfs-min: $(wc -l < "$TARGET/mydistro-min.order") packages: $(tr '\n' ' ' < "$TARGET/mydistro-min.order")"

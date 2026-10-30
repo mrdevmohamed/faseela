@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # bootstrap/build-packages-inner.sh — runs INSIDE a rootfs (invoked by
-# .github/workflows/packages.yml via enter-root.sh): build the packages named
+# faseela-repo's .github/workflows/packages.yml via enter-root.sh): build the packages named
 # in $PKGS with nawa and leave the archives in $BUILD/out.
 #
 # Differences from "just loop over the names":

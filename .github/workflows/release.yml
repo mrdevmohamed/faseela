@@ -23,6 +23,11 @@ name: Build ISO (CD)
 # Self-hosting: each run builds with the rootfs of the newest release that
 # carries one (scripts/fetch-rootfs-seed.sh) instead of the Debian-based seed.
 #
+# The recipes are NOT in this repository: they live in faseela-repo. The first
+# job resolves the commit of its default branch (or the `recipes_ref` you give)
+# once, every job fetches exactly that commit (bootstrap/fetch-recipes.sh), and
+# the release notes name it, so a release can be rebuilt from the same recipes.
+#
 # Hosted runners stop a job after 6 hours and the core is the long job, so
 # every dispatch run saves the build target to the Actions cache and the next
 # dispatch run with `resume` continues from it. The core hands its finished
@@ -60,6 +65,10 @@ on:
         description: "Also publish rootfs-min as a container image (tags do this anyway)"
         type: boolean
         default: true
+      recipes_ref:
+        description: "faseela-repo branch, tag or commit to build the recipes from (empty = its default branch)"
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -73,15 +82,37 @@ env:
   ROOTFS_ASSET: mydistro-x86_64-rootfs.tar.zst
 
 jobs:
+  # The ONE place that decides which faseela-repo commit this whole run builds:
+  # a branch that moves while the run is going must not split it in two.
+  recipes:
+    name: recipes revision
+    runs-on: ubuntu-24.04
+    outputs:
+      rev: ${{ steps.r.outputs.rev }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: r
+        env:
+          RECIPES_REF: ${{ inputs.recipes_ref }}
+        run: |
+          set -euo pipefail
+          rev="$(bash bootstrap/fetch-recipes.sh --resolve)"
+          echo "rev=$rev" >> "$GITHUB_OUTPUT"
+          echo "### Recipes: faseela-repo@$rev" >> "$GITHUB_STEP_SUMMARY"
+
   ci:
+    needs: recipes
     uses: ./.github/workflows/ci.yml
+    with:
+      recipes_ref: ${{ needs.recipes.outputs.rev }}
 
   # Turns the `outputs` choice into the build matrix (tag pushes: everything).
   plan:
     name: plan
-    needs: ci
+    needs: [recipes, ci]
     runs-on: ubuntu-24.04
     outputs:
+      recipes_rev: ${{ needs.recipes.outputs.rev }}
       matrix: ${{ steps.m.outputs.matrix }}
       isos: ${{ steps.m.outputs.isos }}
       has_iso: ${{ steps.m.outputs.has_iso }}
@@ -118,6 +149,11 @@ jobs:
       ISOLATION: ${{ inputs.isolation || 'env' }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Fetch the recipes (faseela-repo @ the commit chosen by this run)
+        env:
+          RECIPES_REF: ${{ needs.plan.outputs.recipes_rev }}
+        run: bash bootstrap/fetch-recipes.sh
 
       # Seed selection, BEFORE the Debian-seed cache so a rootfs seed does not
       # restore (and later save) a ~330 MB seed it will not use. The download
@@ -384,6 +420,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Fetch the recipes (faseela-repo @ the commit chosen by this run)
+        env:
+          RECIPES_REF: ${{ needs.plan.outputs.recipes_rev }}
+        run: bash bootstrap/fetch-recipes.sh
+
       - uses: actions/download-artifact@v4
         with:
           name: core-target
@@ -506,7 +547,7 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
-  # The small rootfs as a container image: the environment packages.yml and
+  # The small rootfs as a container image: the environment packages.yml (in faseela-repo) and
   # anyone else can build in (`docker run ghcr.io/<owner>/mydistro-build`).
   image:
     name: container image (rootfs-min → ghcr.io)
@@ -544,7 +585,7 @@ jobs:
 
   release:
     name: GitHub Release
-    needs: [core, build, boot-test]
+    needs: [plan, core, build, boot-test]
     if: ${{ startsWith(github.ref, 'refs/tags/v') }}
     runs-on: ubuntu-24.04
     permissions:
@@ -560,6 +601,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           SEED: ${{ needs.core.outputs.seed }}
+          RECIPES_REV: ${{ needs.plan.outputs.recipes_rev }}
         run: |
           set -euo pipefail
           ls -lh artifacts
@@ -587,6 +629,9 @@ jobs:
           | \`mydistro-x86_64-rootfs.tar.zst\` | full rootfs incl. rust: the seed of the next build (\`build-all.sh --seed-rootfs\`) |
 
           This release was built from: ${SEED}.
+
+          Recipes: [faseela-repo@${RECIPES_REV:0:12}](https://github.com/mrdevmohamed/faseela-repo/tree/${RECIPES_REV}).
+          To rebuild this release from the same recipes, run *Build ISO (CD)* with \`recipes_ref\` = \`${RECIPES_REV}\`.
           NOTES
           gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
             --generate-notes --notes-file notes.md "${files[@]}"
