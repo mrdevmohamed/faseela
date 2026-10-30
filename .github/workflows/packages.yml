@@ -272,7 +272,7 @@ jobs:
           echo "published=$n" >> "$GITHUB_OUTPUT"
           echo "$n archive(s) already in $PKG_REPO ($PKG_TAG)"
           # everything newer than this file was built by THIS run
-          sleep 2; touch "$T/build/.run-start"
+          sleep 2; sudo touch "$T/build/.run-start"
 
       - name: Build
         id: build
