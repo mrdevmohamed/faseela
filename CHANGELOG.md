@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased — the recipe tree comes from `nawa sync`, not from a pinned package
+
+- **Removed** the `nawa-recipes` and `nawa-repo` recipes and
+  `scripts/pin-recipes-source.py`. The pinned tarball always lagged the code
+  it was cut from (stage 2 died at `nawa-recipes` because the pin still held a
+  literal `/build/src`), and `nawa-repo` needed a `dist/nawa.pub` that was
+  never committed.
+- `nawa` re-pinned to the commit that adds `nawa sync` (signed recipe tree in
+  the repository index).
+- The final root ships a **snapshot of this checkout's `recipes/`** in
+  `/usr/share/nawa/recipes` (`snapshot-<hash>` in `/var/lib/nawa/recipes.rev`),
+  so `nawa install` works offline; `nawa sync` replaces it with the newest
+  signed tree. `dist/nawa.pub`, when committed, is installed into
+  `/etc/nawa/trusted-keys/`; without it the build warns and trusts no key.
+- `packages.yml` publishes the tree with `nawa repo-create --recipes
+  /mydistro/recipes --recipes-rev $GITHUB_SHA` (skipped with a warning while
+  the build root's nawa predates the flag) and prunes older recipe archives.
+
 ## Unreleased — the package manager moves to its own repository (dpm → nawa)
 
 `pkgmgr/` (DPM) is gone from this repository. The package manager is now
