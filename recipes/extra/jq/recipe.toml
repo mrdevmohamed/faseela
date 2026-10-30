@@ -2,7 +2,7 @@
 [package]
 name = "jq"
 version = "1.7.1"
-rel = 2
+rel = 3
 arch = ["x86_64"]
 summary = "jq — lightweight and flexible command-line JSON processor"
 license = ["MIT"]
@@ -14,6 +14,12 @@ build = []
 run = []
 
 [build]
-configure = "./configure --prefix=/usr --with-oniguruma=builtin --disable-docs"
+# `--with-oniguruma=builtin` builds oniguruma inside the jq tree. As a shared
+# build, libjq.so.1 got a NEEDED libonig.so.5 that points at the build tree
+# and is never installed, so the final-root check (stage3 self-host) failed:
+# "usr/lib/libjq.so.1.0.4 needs libonig.so.5, which is not in the root".
+# Static only: jq (and libjq.a) carry the regex engine themselves, nothing
+# shared is left to resolve at run time.
+configure = "./configure --prefix=/usr --with-oniguruma=builtin --disable-docs --disable-shared --enable-static"
 compile = "make -j%{jobs}"
 install = "make DESTDIR=%{pkgdir} install"
