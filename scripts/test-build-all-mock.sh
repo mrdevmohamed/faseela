@@ -36,6 +36,9 @@ chmod +x "$MOCK/build-all.sh"
 # relax ONLY the disk floor in the throwaway copy (see header comment)
 sed -i 's/^MIN_FREE_KB=.*/MIN_FREE_KB=1/' "$MOCK/build-all.sh"
 sed -i 's/\[\[ $EUID -ne 0 \]\]/false/' "$MOCK/build-all.sh"
+# build-all.sh fetches the recipes from faseela-repo first; the mock tree has
+# recipes of its own (made further down), so that step is a stub here
+printf '#!/usr/bin/env bash\nexit 0\n' > "$MOCK/fetch-recipes.sh"
 # stub the host tools the pre-flight looks for (container lacks them):
 # mksquashfs/grub-mkrescue/xorriso for the iso stage, zstd for stages 1-3
 for t in mksquashfs grub-mkrescue xorriso zstd; do

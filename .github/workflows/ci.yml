@@ -8,8 +8,10 @@ name: CI
 #
 # nawa (the package manager) lives in its own repository,
 # github.com/mrdevmohamed/nawa, which runs its cargo test suite, the isolation
-# matrix and the CLI smoke tests. This repository only pins the nawa commit it
-# ships (recipes/base/nawa/recipe.toml, scripts/pin-nawa-source.py).
+# matrix and the CLI smoke tests. The recipes (and so the nawa commit that is
+# shipped) live in github.com/mrdevmohamed/faseela-repo, which validates them
+# in its own CI; here they are fetched (bootstrap/fetch-recipes.sh) so the
+# scripts are tested against the real tree.
 
 on:
   push:
@@ -20,6 +22,11 @@ on:
     # weekly: runner images change kernel / AppArmor settings under us
     - cron: "0 4 * * 1"
   workflow_call: # reused by release.yml as a gate before the ISO build
+    inputs:
+      recipes_ref:
+        description: "faseela-repo branch, tag or commit to take the recipes from (empty = master)"
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -38,6 +45,10 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+      - name: Fetch the recipes (faseela-repo)
+        env:
+          RECIPES_REF: ${{ inputs.recipes_ref }}
+        run: bash bootstrap/fetch-recipes.sh
       - name: Syntax check every shell script
         run: |
           for f in bootstrap/*.sh bootstrap/seed/*.sh scripts/*.sh; do
@@ -45,18 +56,14 @@ jobs:
           done
       - name: ShellCheck (errors only)
         run: shellcheck --severity=error bootstrap/*.sh bootstrap/seed/*.sh scripts/*.sh
-      - name: Validate recipes
-        run: python3 -I scripts/check-recipes.py
+      - name: fetch-recipes.sh tests (local fake GitHub)
+        run: bash scripts/test-fetch-recipes.sh
       - name: rootfs-min closure resolves (base-devel + nawa + network tools)
         run: python3 scripts/rootfs-closure.py recipes base-devel nawa git curl ca-certificates > /dev/null
       - name: build-all.sh mock pipeline tests
         run: bash scripts/test-build-all-mock.sh
       - name: build-packages-inner.sh tests (stubbed nawa)
         run: bash scripts/test-build-packages-inner.sh
-      - name: recipe-ids.py lists every recipe
-        run: |
-          python3 scripts/recipe-ids.py recipes > "$RUNNER_TEMP/ids.txt"
-          [ "$(wc -l < "$RUNNER_TEMP/ids.txt")" -eq "$(ls recipes/*/*/recipe.toml | wc -l)" ]
       - name: rootfs artifact + self-hosting seed tests
         run: bash scripts/test-rootfs.sh
       - name: final-root helper tests

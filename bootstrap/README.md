@@ -61,6 +61,17 @@ sudo ./stage3.sh /mnt/mydistro         # self-hosting rebuild, seed removed
 sudo ./mkiso.sh /mnt/mydistro out.iso  # bootable image
 ```
 
+### Where the recipes come from: `fetch-recipes.sh`
+
+`recipes/` is not part of this repository: `fetch-recipes.sh` fills it from
+faseela-repo (`build-all.sh`, `sync-repo.sh` and `mkrootfs-min.sh` call it, so
+you rarely run it yourself). A sibling `../faseela-repo` checkout is copied as
+it is, uncommitted changes included, every time; otherwise `master` is fetched
+once and kept (`--update` for the newest, `RECIPES_REF=<branch|tag|commit>` for
+a specific one, `RECIPES_DIR=<path>` for another local tree). The commit is
+recorded in `.recipes-rev`. A `recipes/` without that stamp is your own copy
+and is never touched.
+
 ### Iterating on a few recipes: `rebuild.sh`
 
 `build-all.sh` fingerprints the WHOLE recipe tree, so editing one recipe
@@ -274,8 +285,8 @@ validation proves the boot-critical members are present in the image — a
 boot test needs a VM (the author's runs booted it in QEMU; CI cannot).
 A full source build (all 148 recipes, ~hours) is exercised only by the
 release workflow, not by CI. The 32 GUI recipes with placeholder sha256
-fail loudly at source verification until `scripts/fill-sha256.py` pins
-them (by design — never ship an unpinned source).
+fail loudly at source verification until `scripts/fill-sha256.py` (in faseela-repo)
+pins them (by design — never ship an unpinned source).
 
 ## Tests
 
@@ -285,7 +296,9 @@ nor the real ISO tooling:
 ```bash
 bash -n bootstrap/*.sh scripts/*.sh            # syntax
 shellcheck --severity=error bootstrap/*.sh scripts/*.sh
-python3 -I scripts/check-recipes.py            # recipe sanity (148 recipes)
+bash scripts/test-fetch-recipes.sh             # fetching the recipes from faseela-repo
+                                                #  (local fake GitHub); recipe sanity
+                                                #  itself runs in faseela-repo's CI
 bash scripts/test-build-all-mock.sh            # orchestration: 131 checks
                                                 # (stamps, input invalidation,
                                                 #  resume, lock, wipe, seed)
