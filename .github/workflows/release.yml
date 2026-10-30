@@ -215,6 +215,31 @@ jobs:
           rm -f "$RUNNER_TEMP/target.tar.zst"
           ls /mnt
 
+      # Package cache: the archives (+ .buildid sidecars) of every package the
+      # previous runs built. stage2 reuses an archive whose build_id still
+      # matches (nawa build --use-cache), so a rerun after a one-recipe fix
+      # rebuilds that recipe, not gcc + linux + cmake again. The key carries a
+      # hash of the toolchain recipes, profiles and stage scripts: touching
+      # glibc/gcc/binutils/the profile drops the whole cache (build_id does not
+      # cover dependencies' versions at stage-2 isolation levels). Set the
+      # repository variable PKGCACHE=false to build everything from scratch.
+      - name: Restore the package cache
+        id: pkgcache
+        if: ${{ vars.PKGCACHE != 'false' && steps.tgtcache.outputs.cache-matched-key == '' }}
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/pkgcache
+          key: pkgs-${{ hashFiles('recipes/toolchain/**', 'profiles/**', 'bootstrap/stage2-inner.sh') }}-never-matches
+          restore-keys: |
+            pkgs-${{ hashFiles('recipes/toolchain/**', 'profiles/**', 'bootstrap/stage2-inner.sh') }}-
+
+      - name: Place the cached archives in the build target
+        if: ${{ steps.pkgcache.outputs.cache-matched-key != '' }}
+        run: |
+          sudo mkdir -p "$TARGET/build/out"
+          sudo cp -a "$RUNNER_TEMP/pkgcache/." "$TARGET/build/out/"
+          ls "$TARGET/build/out" | wc -l
+
       # No ISO host tools here: the ISOs are made by the matrix jobs.
       - name: Install host tools
         run: |
@@ -239,6 +264,7 @@ jobs:
         env:
           ROOTFS_SEED: ${{ steps.rootfsseed.outputs.path }}
           STAGE3_WORLD: ${{ inputs.stage3_world }}
+          STAGE2_USE_CACHE: ${{ vars.PKGCACHE != 'false' && '1' || '0' }}
         run: |
           args=(--isolation "$ISOLATION" --no-iso
                 --rootfs-out "$GITHUB_WORKSPACE/out/$ROOTFS_ASSET")
@@ -270,6 +296,24 @@ jobs:
             --exclude='mydistro/build/*/src' --exclude='mydistro/build/*/pkg' \
             -C /mnt mydistro .mydistro.build
           ls -lh "$RUNNER_TEMP/target.tar.zst"
+
+      - name: Pack the package cache
+        id: packpkgs
+        if: ${{ always() && vars.PKGCACHE != 'false' && steps.build.conclusion != 'skipped' }}
+        continue-on-error: true
+        run: |
+          rm -rf "$RUNNER_TEMP/pkgcache" && mkdir -p "$RUNNER_TEMP/pkgcache"
+          sudo cp -a "$TARGET/build/out/." "$RUNNER_TEMP/pkgcache/"
+          sudo chown -R "$(id -u):$(id -g)" "$RUNNER_TEMP/pkgcache"
+          du -sh "$RUNNER_TEMP/pkgcache"; ls "$RUNNER_TEMP/pkgcache" | wc -l
+
+      - name: Save the package cache
+        if: ${{ always() && steps.packpkgs.outcome == 'success' }}
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/pkgcache
+          key: pkgs-${{ hashFiles('recipes/toolchain/**', 'profiles/**', 'bootstrap/stage2-inner.sh') }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Save the build target cache (resume)
         if: ${{ always() && steps.packtgt.outcome == 'success' }}
