@@ -175,10 +175,10 @@ fn read_layer(path: &Path) -> Result<Layer> {
 }
 
 /// First layer (highest precedence first) that sets the key.
-fn pick<'a, T>(
-    layers: &'a [Layer],
+fn pick<T>(
+    layers: &[Layer],
     get: impl Fn(&FileCfg) -> Option<T>,
-) -> Option<(T, &'a Layer)> {
+) -> Option<(T, &Layer)> {
     layers.iter().find_map(|l| get(&l.cfg).map(|v| (v, l)))
 }
 
