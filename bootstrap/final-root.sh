@@ -84,6 +84,39 @@ sync_final_root() {
     [ "$n" -eq 0 ] || echo "== final-root: synced $n package(s)"
 }
 
+# Ship the recipe tree and the repository's trust key in the final root.
+# There is no nawa-recipes package any more: the tree is a snapshot of THIS
+# checkout (the same recipes the system was built from) and `nawa sync`
+# replaces it with the newest signed tree from the repository. The snapshot
+# revision is content-derived ("snapshot-<hash>"), so the first `nawa sync`
+# always replaces it.
+#   DISTRO_SRC  checkout inside the chroot (default /mydistro)
+install_recipes_snapshot() {
+    final_root_enabled || return 0
+    local src="${DISTRO_SRC:-/mydistro}" dst="$FINAL_ROOT/usr/share/nawa/recipes" rev
+    if [ -d "$src/recipes" ]; then
+        rm -rf "$dst"
+        mkdir -p "$dst"
+        cp -a "$src/recipes/." "$dst/"
+        find "$dst" -type f -exec chmod 644 {} +
+        find "$dst" -type d -exec chmod 755 {} +
+        rev="snapshot-$(cd "$src/recipes" && find . -type f -print0 | LC_ALL=C sort -z \
+            | xargs -0 -r sha256sum | sha256sum | cut -c1-12)"
+        mkdir -p "$FINAL_ROOT/var/lib/nawa"
+        printf '%s\n' "$rev" > "$FINAL_ROOT/var/lib/nawa/recipes.rev"
+        echo "== final-root: recipe snapshot $rev -> /usr/share/nawa/recipes"
+    else
+        echo "final-root: WARNING no $src/recipes — the final root ships no recipe tree" >&2
+    fi
+    if [ -s "$src/dist/nawa.pub" ]; then
+        install -Dm644 "$src/dist/nawa.pub" "$FINAL_ROOT/etc/nawa/trusted-keys/nawa.pub"
+        echo "== final-root: trusted the repository key (dist/nawa.pub)"
+    else
+        echo "final-root: WARNING dist/nawa.pub is missing — no repository key is trusted;" >&2
+        echo "final-root:   commit the PUBLIC half of NAWA_SIGN_KEY_B64 as dist/nawa.pub" >&2
+    fi
+}
+
 # Last step of a stage: skeleton, ld.so cache, sanity checks.
 finalize_final_root() {
     final_root_enabled || return 0
@@ -103,6 +136,7 @@ finalize_final_root() {
     if command -v ldconfig >/dev/null 2>&1; then
         ldconfig -r "$FINAL_ROOT" || echo "final-root: WARNING ldconfig -r failed" >&2
     fi
+    install_recipes_snapshot
     # the final root must stand on its own: nothing of the seed or of the build
     # may have leaked in
     local bad=0

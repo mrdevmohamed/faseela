@@ -45,6 +45,21 @@ check "finalize rejects a seed leak"    "! finalize_final_root"
 rm -rf "$F/opt/seed"; rm -f "$F/usr/bin/bash"
 check "finalize rejects missing bash"   "! finalize_final_root"
 
+# recipe snapshot + trust key
+DS="$W/distro"; mkdir -p "$DS/recipes/base/hello" "$DS/dist"
+echo '# r' > "$DS/recipes/base/hello/recipe.toml"; echo deadbeef > "$DS/dist/nawa.pub"
+mkdir -p "$F/usr/lib"; : > "$F/usr/bin/bash"
+check "finalize installs the snapshot"  "DISTRO_SRC=$DS finalize_final_root"
+check "recipes copied to the final root" "[[ -s $F/usr/share/nawa/recipes/base/hello/recipe.toml ]]"
+check "snapshot rev recorded"           "grep -q '^snapshot-[0-9a-f]\{12\}\$' $F/var/lib/nawa/recipes.rev"
+check "repository key trusted"          "[[ -s $F/etc/nawa/trusted-keys/nawa.pub ]]"
+rm -rf "$DS/dist"; rm -rf "$F/etc/nawa"
+check "missing key warns, does not fail" "DISTRO_SRC=$DS finalize_final_root"
+check "no key is trusted without dist/nawa.pub" "[[ ! -e $F/etc/nawa/trusted-keys/nawa.pub ]]"
+echo '# changed' > "$DS/recipes/base/hello/recipe.toml"; r1=$(cat "$F/var/lib/nawa/recipes.rev")
+DISTRO_SRC=$DS finalize_final_root >/dev/null 2>&1
+check "snapshot rev follows the content" "[[ \$(cat $F/var/lib/nawa/recipes.rev) != $r1 ]]"
+
 # legacy mode: everything is a no-op
 FINAL_ROOT=""
 check "disabled when FINAL_ROOT empty"  "! final_root_enabled"
