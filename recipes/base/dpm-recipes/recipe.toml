@@ -1,0 +1,36 @@
+# base recipe: dpm-recipes — the recipe tree, installed system-wide
+#
+# Downloads the official repository (github.com/mrdevmohamed/faseela) at ONE
+# pinned commit and installs its recipes/ directory to /usr/share/dpm/recipes,
+# the path /etc/dpm/dpm.toml points `recipes` at. With it `dpm install <name>`
+# resolves dependencies and builds from source on any machine, from any
+# directory, with no checkout and no dependency on how the CI lays out files.
+#
+# The commit, `version` (its date), `rel` and `sha256` are written by
+#   python3 scripts/pin-recipes-source.py [<commit>]
+# Run it after the commit you want to ship is pushed. A commit cannot contain
+# the hash of its own tarball, so the shipped tree is the one AT the pinned
+# commit — normally one commit behind this file. That is intended.
+[package]
+name = "dpm-recipes"
+version = "2026.10.30"
+rel = 4
+arch = ["x86_64"]
+summary = "dpm-recipes — the distribution's recipe tree for dpm"
+license = ["MIT"]
+source = "https://github.com/mrdevmohamed/faseela/archive/c0f9f6657df0f762a71de4e5d3db3500488773f8.tar.gz"
+sha256 = "d8391dcabe281bed29ba849d1710e9210411100c669181297baa77a3c8e3596b"
+source_dir = "faseela-c0f9f6657df0f762a71de4e5d3db3500488773f8"
+
+[depends]
+build = []
+run = ["dpm"]
+
+[build]
+install = """
+install -d -m755 %{pkgdir}/usr/share/dpm/recipes
+cp -a recipes/. %{pkgdir}/usr/share/dpm/recipes/
+# the tree is data: nothing executable, nothing group/world writable
+find %{pkgdir}/usr/share/dpm/recipes -type f -exec chmod 644 {} +
+find %{pkgdir}/usr/share/dpm/recipes -type d -exec chmod 755 {} +
+"""

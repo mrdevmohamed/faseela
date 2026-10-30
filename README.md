@@ -139,7 +139,7 @@ recipes      = "recipes"                            # env: DPM_RECIPES
 builddir     = "build"                              # env: DPM_BUILDDIR
 profiles     = "profiles"                           # env: DPM_PROFILES
 jobs         = 8                                    # env: DPM_JOBS
-repo         = "https://raw.githubusercontent.com/mrdevmohamed/faseela-repo/main"
+repo         = "https://github.com/mrdevmohamed/faseela-repo/releases/download/stable"
                                                     # env: DPM_REPO — "" switches it off
 install_mode = "auto"                               # env: DPM_INSTALL_MODE
 ```

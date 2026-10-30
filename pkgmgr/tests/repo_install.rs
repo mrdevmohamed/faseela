@@ -265,7 +265,7 @@ fn config_show_lists_repo_install_mode_and_system_file() {
         .unwrap();
     let out = ok(&o);
     // built-in default repository, install_mode from the system file
-    assert!(out.contains("raw.githubusercontent.com/mrdevmohamed/faseela-repo/main"), "{out}");
+    assert!(out.contains("mrdevmohamed/faseela-repo/releases/download/stable"), "{out}");
     let line = out.lines().find(|l| l.starts_with("install_mode")).expect("install_mode line");
     assert!(line.contains("ask") && line.contains("dpm.toml"), "{line}");
     assert!(out.contains("system"), "{out}");
