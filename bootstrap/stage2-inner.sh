@@ -275,8 +275,14 @@ build_one() {
     local pkg="$1"
     purge_seed_libc_headers
     switch_to_new_glibc
+    # STAGE2_USE_CACHE=1: an archive in /build/out whose recorded build_id
+    # (<archive>.buildid: recipe bytes + source sha256 + profile flags) equals
+    # the current one is reused instead of rebuilt (the CI restores /build/out
+    # from the previous run). Only needs an isolation level >= env to record ids.
+    local cache_flag=()
+    [ "${STAGE2_USE_CACHE:-0}" = 1 ] && [ "$ISOLATION" != none ] && cache_flag=(--use-cache)
     "$NAWA_BIN" --recipes "$REPO/recipes" --profiles "$REPO/profiles" --builddir /build \
-        --jobs "$NAWA_JOBS" build ${ISOLATION:+--isolation "$ISOLATION"} "$pkg"
+        --jobs "$NAWA_JOBS" build ${ISOLATION:+--isolation "$ISOLATION"} "${cache_flag[@]}" "$pkg"
     local archive
     # `|| true`: with pipefail a missing archive makes `ls` fail and the
     # assignment would kill the script silently (exit 2) before the

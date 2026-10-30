@@ -63,6 +63,7 @@ bash "$HERE/enter-root.sh" "$LFS" /usr/bin/env -i \
     HOME=/root PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin TERM="${TERM:-dumb}" NAWA_JOBS="${NAWA_JOBS:-4}" WITH_GUI="${WITH_GUI:-0}" \
     FINAL_ROOT="$FINAL_ROOT" \
     STAGE2_ISOLATION="${STAGE2_ISOLATION:-none}" \
+    STAGE2_USE_CACHE="${STAGE2_USE_CACHE:-0}" \
     bash -c 'if [ -r /opt/seed/env.sh ]; then . /opt/seed/env.sh; else echo "stage2: NOTE: no /opt/seed/env.sh (seed removed by stage 3?) — using the installed toolchain" >&2; fi; bash /mydistro/bootstrap/stage2-inner.sh'
 
 echo "== stage2: core system installed"
