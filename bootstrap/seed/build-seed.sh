@@ -145,7 +145,7 @@ cat > "$SEED_ROOT/opt/seed/env.sh" <<'EOF'
 export RUSTUP_HOME=/opt/rustup
 export CARGO_HOME=/opt/cargo
 export PATH="/opt/cargo/bin:$PATH"
-export DPM_JOBS="${DPM_JOBS:-4}"
+export NAWA_JOBS="${NAWA_JOBS:-4}"
 EOF
 
 # --------------------------------------------------------------------------

@@ -1,0 +1,35 @@
+# base recipe: nawa — this distribution's source-based package manager (self-hosting build)
+#
+# The source lives in its own repository (github.com/mrdevmohamed/nawa) and is
+# pinned here to ONE commit by sha256. The crates are vendored in that
+# repository (vendor/ + .cargo/config.toml), so the build needs no network
+# beyond fetching this tarball, and runs with the distro's own `rust` recipe
+# (cargo on the sandbox PATH).
+#
+# The commit, `version` and `sha256` are written by
+#   python3 scripts/pin-nawa-source.py [<nawa commit>]
+# bootstrap/fetch-nawa.sh reads this same pin to unpack the source for the
+# stage-2 bootstrap build, so there is exactly one place that says which nawa
+# the distribution ships.
+[package]
+name = "nawa"
+version = "1.0.0"
+rel = 1
+arch = ["x86_64"]
+summary = "nawa — this distribution's source-based package manager (self-hosting build)"
+license = ["GPL-3.0"]
+source = "https://github.com/mrdevmohamed/nawa/archive/ddc9661264e012cdcf7f8660179e837e540516f4.tar.gz"
+sha256 = "e358e1d941e3b381bc84d5fcb19b816ed4608b28a4e1bb9b36235c4b4baddd61"
+source_dir = "nawa-ddc9661264e012cdcf7f8660179e837e540516f4"
+
+[depends]
+build = ["rust"]
+run = []
+
+[build]
+compile = "cargo build --release --offline --locked"
+install = """
+install -Dm755 target/release/nawa %{pkgdir}/usr/bin/nawa
+# system-wide configuration: default repository + install mode
+install -Dm644 dist/nawa.toml %{pkgdir}/etc/nawa/nawa.toml
+"""

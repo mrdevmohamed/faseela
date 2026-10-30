@@ -3,15 +3,20 @@
 A from-scratch, source-based Linux distribution (Gentoo-style) built around its own
 package manager written in Rust.
 
-This repository is a single monorepo with three cooperating components:
+This repository holds the distribution itself:
 
 ```
 mydistro/
-├── pkgmgr/      DPM — the package manager (Rust)
 ├── recipes/     Source recipes for every package in the distribution
 ├── bootstrap/   Stage 0-4 scripts that build the distribution from nothing
 └── profiles/    Per-architecture build profiles (CFLAGS, toolchain choices)
 ```
+
+The package manager, **nawa**, lives in its own repository,
+[github.com/mrdevmohamed/nawa](https://github.com/mrdevmohamed/nawa). This
+repository pins one nawa commit in `recipes/base/nawa/recipe.toml` (re-pin with
+`python3 scripts/pin-nawa-source.py [<commit>]`); `bootstrap/fetch-nawa.sh`
+unpacks exactly that commit into `nawa/` (git-ignored) for the stage-2 build.
 
 ## Design decisions (locked in)
 
@@ -23,8 +28,8 @@ mydistro/
 | Init system     | runit                                         |
 | Compiler        | gcc                                           |
 | Recipe format   | Declarative TOML with shell build sections    |
-| Package archive | `.dpm.tar.zst` (payload + .PKGINFO + file list) |
-| Local database  | Plain text files under `/var/lib/dpm/local/`  |
+| Package archive | `.nawa.tar.zst` (payload + .PKGINFO + file list) |
+| Local database  | Plain text files under `/var/lib/nawa/local/`  |
 
 ## CI / CD (GitHub Actions)
 
@@ -39,10 +44,12 @@ to the label of a self-hosted Linux runner with sudo and >= 30 GB free disk.
 Release assets are limited to 2 GiB; a bigger ISO or rootfs stays as the workflow artifact
 (and a release without the rootfs cannot seed the next build).
 
-## DPM — the package manager
+## NAWA — the package manager
+
+Source, build and tests: [github.com/mrdevmohamed/nawa](https://github.com/mrdevmohamed/nawa).
 
 ```
-cd pkgmgr
+git clone https://github.com/mrdevmohamed/nawa && cd nawa
 cargo build --release
 cargo test
 ```
@@ -51,33 +58,33 @@ Commands (global flags work anywhere on the line — see the config section
 below for making them unnecessary):
 
 ```
-dpm install <name>...                          # build + install packages AND all missing dependencies
-dpm install -n <name>                          # show that plan, change nothing (--dry-run)
-dpm outdated                                   # installed packages whose recipe is newer
-dpm update [name...]                           # rebuild + reinstall the outdated ones
-dpm autoremove                                 # remove dependency packages nothing needs
-dpm build --install <name>                     # build ONE recipe and install it (no dependency handling)
-dpm install <archive.dpm.tar.zst>              # install a built archive into --root
-dpm install <name>                             # from the repo if it has it, else build (deps included)
-dpm install --build <name>                     # always build from the recipes
-dpm install --from-repo <name>                 # repository only (error if it is not there)
-dpm install --from ask <name>                  # on a terminal: asked "repository or build?"
-dpm search <term>                              # find recipes by name/summary (--glob for patterns)
-dpm info <name>                                # everything known about a package
-dpm why <name>                                 # who depends on it (--tree also scans recipes)
-dpm deps <name>                                # show dependency order
-dpm list [pattern] [-e|-d]                    # installed packages; -e explicit only, -d dependencies only
-dpm files <name>                               # files owned by package
-dpm owner /usr/bin/foo                         # which package owns file
-dpm remove --yes <name>                        # remove package (--yes skips the confirmation)
-dpm repo-create <dir-of-archives> --out index.toml --sign  # signed repo index
-dpm upgrade --yes --repo <dir-or-url>          # upgrade from a repo (repo also comes from dpm.toml)
-dpm rollback <name>                            # restore previous version
-dpm service list                               # runit services
-dpm config show                                # effective config + where each value came from
-dpm init                                       # write a commented dpm.toml template
-dpm init --system                              # write /etc/dpm/dpm.toml (as root)
-dpm completions bash|zsh|fish                  # shell completion scripts
+nawa install <name>...                          # build + install packages AND all missing dependencies
+nawa install -n <name>                          # show that plan, change nothing (--dry-run)
+nawa outdated                                   # installed packages whose recipe is newer
+nawa update [name...]                           # rebuild + reinstall the outdated ones
+nawa autoremove                                 # remove dependency packages nothing needs
+nawa build --install <name>                     # build ONE recipe and install it (no dependency handling)
+nawa install <archive.nawa.tar.zst>              # install a built archive into --root
+nawa install <name>                             # from the repo if it has it, else build (deps included)
+nawa install --build <name>                     # always build from the recipes
+nawa install --from-repo <name>                 # repository only (error if it is not there)
+nawa install --from ask <name>                  # on a terminal: asked "repository or build?"
+nawa search <term>                              # find recipes by name/summary (--glob for patterns)
+nawa info <name>                                # everything known about a package
+nawa why <name>                                 # who depends on it (--tree also scans recipes)
+nawa deps <name>                                # show dependency order
+nawa list [pattern] [-e|-d]                    # installed packages; -e explicit only, -d dependencies only
+nawa files <name>                               # files owned by package
+nawa owner /usr/bin/foo                         # which package owns file
+nawa remove --yes <name>                        # remove package (--yes skips the confirmation)
+nawa repo-create <dir-of-archives> --out index.toml --sign  # signed repo index
+nawa upgrade --yes --repo <dir-or-url>          # upgrade from a repo (repo also comes from nawa.toml)
+nawa rollback <name>                            # restore previous version
+nawa service list                               # runit services
+nawa config show                                # effective config + where each value came from
+nawa init                                       # write a commented nawa.toml template
+nawa init --system                              # write /etc/nawa/nawa.toml (as root)
+nawa completions bash|zsh|fish                  # shell completion scripts
 ```
 
 Any command accepts `--root` so everything can be tested safely against a
@@ -86,15 +93,15 @@ throwaway directory instead of `/`.
 ### Installing by name
 
 ```
-dpm install curl          # shows the plan, asks, then builds + installs
+nawa install curl          # shows the plan, asks, then builds + installs
 ```
 
-`dpm install <name>` resolves `depends.build` **and** `depends.run`
+`nawa install <name>` resolves `depends.build` **and** `depends.run`
 transitively, skips whatever is already installed, and prints the order
 before touching anything:
 
 ```
-dpm: 3 package(s) to build and install into /:
+nawa: 3 package(s) to build and install into /:
     1. zlib                   1.3.1-1       dependency
     2. openssl                3.3.1-1       dependency
     3. curl                   8.9.1-1       explicit
@@ -110,47 +117,47 @@ everything pulled in as `dependency`.
   is not a terminal (same contract as `remove` and `upgrade`)
 * `--no-deps` builds only the named packages
 * `--isolation`, `--use-cache`, `--allow-degraded`, `--force`,
-  `--allow-unsigned` work as for `dpm build` / `dpm install <archive>`
-* a bare word is a package name; anything ending in `.dpm.tar.zst` or
+  `--allow-unsigned` work as for `nawa build` / `nawa install <archive>`
+* a bare word is a package name; anything ending in `.nawa.tar.zst` or
   containing a `/` is an archive path (the two cannot be mixed in one call)
 
-`dpm outdated` lists installed packages whose recipe has a newer
-`version-rel`; `dpm update` plans and rebuilds exactly those (plus any missing
+`nawa outdated` lists installed packages whose recipe has a newer
+`version-rel`; `nawa update` plans and rebuilds exactly those (plus any missing
 dependency they gained), keeping each package's explicit/dependency reason.
-`dpm autoremove` removes `dependency` packages that no explicit package needs
+`nawa autoremove` removes `dependency` packages that no explicit package needs
 any more, dependents first. Build-only dependencies of packages you keep
 (compilers, headers) are **kept** unless you pass `--build-deps`, since the next
 rebuild needs them.
 
-### Configuration (/etc/dpm/dpm.toml and dpm.toml)
+### Configuration (/etc/nawa/nawa.toml and nawa.toml)
 
-dpm reads two config files and merges them **under** the environment and the
+nawa reads two config files and merges them **under** the environment and the
 command-line flags:
 
-1. the nearest `dpm.toml` at or above the current directory (like git;
-   `DPM_CONFIG` names one directly) — per project / per checkout;
-2. the system-wide `/etc/dpm/dpm.toml` (the directory can be moved with
-   `DPM_SYSCONFDIR`) — installed by the `dpm` package, edit it to change the
+1. the nearest `nawa.toml` at or above the current directory (like git;
+   `NAWA_CONFIG` names one directly) — per project / per checkout;
+2. the system-wide `/etc/nawa/nawa.toml` (the directory can be moved with
+   `NAWA_SYSCONFDIR`) — installed by the `nawa` package, edit it to change the
    defaults for the whole machine.
 
 ```toml
-root         = "/"                                  # env: DPM_ROOT
-recipes      = "recipes"                            # env: DPM_RECIPES
-builddir     = "build"                              # env: DPM_BUILDDIR
-profiles     = "profiles"                           # env: DPM_PROFILES
-jobs         = 8                                    # env: DPM_JOBS
+root         = "/"                                  # env: NAWA_ROOT
+recipes      = "recipes"                            # env: NAWA_RECIPES
+builddir     = "build"                              # env: NAWA_BUILDDIR
+profiles     = "profiles"                           # env: NAWA_PROFILES
+jobs         = 8                                    # env: NAWA_JOBS
 repo         = "https://github.com/mrdevmohamed/faseela-repo/releases/download/stable"
-                                                    # env: DPM_REPO — "" switches it off
-install_mode = "auto"                               # env: DPM_INSTALL_MODE
+                                                    # env: NAWA_REPO — "" switches it off
+install_mode = "auto"                               # env: NAWA_INSTALL_MODE
 ```
 
-Precedence per key: **flag > env var > dpm.toml > /etc/dpm/dpm.toml >
+Precedence per key: **flag > env var > nawa.toml > /etc/nawa/nawa.toml >
 built-in default**. Relative paths inside a file resolve against that file's
-own directory. `dpm init` writes a commented project template, `dpm init
---system` writes `/etc/dpm/dpm.toml`; `dpm config show` prints the effective
+own directory. `nawa init` writes a commented project template, `nawa init
+--system` writes `/etc/nawa/nawa.toml`; `nawa config show` prints the effective
 values annotated with where each one came from.
 
-### Install from the repository or build — `dpm install <name>`
+### Install from the repository or build — `nawa install <name>`
 
 `install_mode` (or a flag on the command) decides where packages come from:
 
@@ -158,7 +165,7 @@ values annotated with where each one came from.
 |---------|---------------------------|-----------|
 | `auto`  | *(default)*               | per package: take it from the repository when the repo has it **and** it is at least as new as the recipe, otherwise build it from the recipe |
 | `repo`  | `--from-repo` / `-r`      | repository only — a package the repo lacks is an error, reported **before** anything is installed |
-| `build` | `--build` / `-b`          | always build from the recipes (the pre-repository behaviour; `dpm update` and the bootstrap scripts always do this) |
+| `build` | `--build` / `-b`          | always build from the recipes (the pre-repository behaviour; `nawa update` and the bootstrap scripts always do this) |
 | `ask`   | `--from ask`              | like `auto`, but on a terminal you are asked "repository (r) or build (b)?" after seeing the plan |
 
 The plan shows the source of every package (`[repo ]` / `[build]`). Dependencies
@@ -173,7 +180,7 @@ repository archive that fails to download or verify falls back to building
 that package. `repo` mode never builds behind your back.
 
 Remote repositories must be authenticated: add the repository's public key with
-`dpm trust <key.pub>` (or pass `--allow-unsigned` and accept the risk). Until a
+`nawa trust <key.pub>` (or pass `--allow-unsigned` and accept the risk). Until a
 key is trusted, the default repository is skipped and packages are built.
 
 ### Confirmations, colors, suggestions
@@ -183,35 +190,35 @@ key is trusted, the default repository is skipped and packages are built.
   piped stdin is **refused** rather than guessed at. `install` never asks —
   the bootstrap depends on it.
 * Output is colored only on a real terminal; pipes and scripts get plain,
-  byte-identical text. `NO_COLOR` disables colors, `DPM_COLOR=always|never|auto`
+  byte-identical text. `NO_COLOR` disables colors, `NAWA_COLOR=always|never|auto`
   overrides the detection.
 * Mistyped package names get suggestions built from the recipe graph:
-  `dpm build gzp` → *did you mean `gmp` or `gzip` or `gcc`?*
+  `nawa build gzp` → *did you mean `gmp` or `gzip` or `gcc`?*
 
 ### Shell completions
 
 ```
-dpm completions bash | sudo tee /etc/bash_completion.d/dpm   # then restart the shell
-dpm completions zsh > "${fpath[1]}/_dpm"                     # zsh
-dpm completions fish > ~/.config/fish/completions/dpm.fish   # fish
+nawa completions bash | sudo tee /etc/bash_completion.d/nawa   # then restart the shell
+nawa completions zsh > "${fpath[1]}/_nawa"                     # zsh
+nawa completions fish > ~/.config/fish/completions/nawa.fish   # fish
 ```
 
 Package names complete dynamically — the scripts shell out to
-`dpm __complete_pkgs`, which lists every recipe plus every installed package.
+`nawa __complete_pkgs`, which lists every recipe plus every installed package.
 
 ### Database locking
 
-Every command that touches `<root>/var/lib/dpm` takes an `flock(2)` lock on
-`<root>/var/lib/dpm/lock`: `install`, `remove`, `rollback` and `upgrade`
+Every command that touches `<root>/var/lib/nawa` takes an `flock(2)` lock on
+`<root>/var/lib/nawa/lock`: `install`, `remove`, `rollback` and `upgrade`
 exclusively (held for the whole command, hooks included); `query`, `list`,
 `files`, `owner`, `info`, `why`, `deps`, `deps-all` and `upgrade --dry-run`
 shared, so readers never see a half-applied transaction and don't block each
 other (`build --install` locks around the install step only, never through
-the build itself). A second dpm waits
-and prints who holds the lock; `DPM_LOCK_TIMEOUT=<seconds>` makes it give up
+the build itself). A second nawa waits
+and prints who holds the lock; `NAWA_LOCK_TIMEOUT=<seconds>` makes it give up
 instead. The kernel releases the lock when the holder exits for any reason, so
-there are no stale lock files to clean up. Package hooks get `DPM_LOCK_HELD=1`
-so a hook that calls dpm does not wait on its own parent.
+there are no stale lock files to clean up. Package hooks get `NAWA_LOCK_HELD=1`
+so a hook that calls nawa does not wait on its own parent.
 
 ### Build profiles
 
@@ -226,8 +233,8 @@ profile `jobs`            # next
 number of CPUs            # fallback
 ```
 
-A missing profile is fine (toolchain defaults); flags already present in dpm's
-own environment win over the profile (`CFLAGS=-O3 dpm build foo`). `--profiles
+A missing profile is fine (toolchain defaults); flags already present in nawa's
+own environment win over the profile (`CFLAGS=-O3 nawa build foo`). `--profiles
 <dir>` selects another directory (default `profiles`; the bootstrap stages pass
 it explicitly).
 
@@ -237,47 +244,47 @@ in real order).
 
 ### Build isolation
 
-`dpm build --isolation <level>` (or the profile's `[build] isolation`; default
+`nawa build --isolation <level>` (or the profile's `[build] isolation`; default
 `none`) controls what a build can see and do — see
 `docs/design/build-isolation.md` for the full rationale:
 
 | level | the build gets |
 |-------|----------------|
-| `none` | today's behaviour (dpm's environment, live filesystem) |
+| `none` | today's behaviour (nawa's environment, live filesystem) |
 | `env` | only the whitelisted environment (LC_ALL=C, TZ=UTC, umask 022, ...), `SOURCE_DATE_EPOCH`, byte-reproducible archives; `--rebuild-check` verifies exactly that |
 | `sandbox` | + user/mount/pid/net/ipc/uts namespaces: read-only root, private `/tmp` `/dev` `/proc`, no network, fake-root identity, per-section timeout |
 | `closure` | + a build root assembled from built archives only (`base-devel` + the declared `depends.build`), so a missing declaration fails the build |
 
 A post-build lint runs from `env` up: it warns about `DT_NEEDED` libraries
 missing from `depends.run` and errors on leaked build paths or bad layout.
-`dpm sandbox-probe` (hidden) tells you what this kernel allows; restricted
+`nawa sandbox-probe` (hidden) tells you what this kernel allows; restricted
 environments need `--allow-degraded` (loudly, never silently weaker).
 
 On top of that:
 
 - **Layer cache**: closure archives are extracted once into a content-addressed
-  layer cache (`DPM_LAYER_CACHE`, default `<root>/var/cache/dpm/layers`) and
+  layer cache (`NAWA_LAYER_CACHE`, default `<root>/var/cache/nawa/layers`) and
   the build root is an overlayfs over them (kernel ≥ 5.11; older kernels
   automatically fall back to extract-per-build).
 - **`--use-cache`**: skip a build whose `build_id` (recipe + source sha256 +
   closure + profile flags) matches the recorded one.
-- **Rootless**: `dpm build` up to `closure` works as a normal user — no root
+- **Rootless**: `nawa build` up to `closure` works as a normal user — no root
   required at build time.
 
-### Signing & trust (dpm-sig-v1)
+### Signing & trust (nawa-sig-v1)
 
 Packages and repo indexes are signed with ed25519. The signed message is
-`dpm-v1:sha256:<hash>`, so one verification covers both integrity and
+`nawa-v1:sha256:<hash>`, so one verification covers both integrity and
 authenticity. Signatures live in detached `<file>.sig` sidecars.
 
 ```
-dpm keygen --out /etc/dpm/keys              # dpm.sec (0600) + dpm.pub
-dpm sign <archive-or-index> --key dpm.sec   # writes <file>.sig
-dpm --root / trust /etc/dpm/keys/dpm.pub    # copy key into the trust store
-dpm verify <file>                           # trust store, else embedded key
+nawa keygen --out /etc/nawa/keys              # nawa.sec (0600) + nawa.pub
+nawa sign <archive-or-index> --key nawa.sec   # writes <file>.sig
+nawa --root / trust /etc/nawa/keys/nawa.pub    # copy key into the trust store
+nawa verify <file>                           # trust store, else embedded key
 ```
 
-Verification policy (`dpm install` / `dpm upgrade`):
+Verification policy (`nawa install` / `nawa upgrade`):
 
 | Trust store | Signature      | Result                                             |
 |-------------|----------------|----------------------------------------------------|
@@ -288,35 +295,35 @@ Verification policy (`dpm install` / `dpm upgrade`):
 | empty       | missing        | pass (bootstrap mode)                              |
 
 Remote repositories (`upgrade --repo http(s)://…`) are stricter: with an empty
-trust store dpm refuses them outright (before any network access) unless
+trust store nawa refuses them outright (before any network access) unless
 `--allow-unsigned` is passed, because bootstrap mode and embedded-key checks
 cannot authenticate a mirror. Add the distribution key first:
-`dpm --root / trust /path/to/dpm.pub`.
+`nawa --root / trust /path/to/nawa.pub`.
 
 ### Atomic upgrades & rollback
 
 * every install stages into a hidden dir, conflict-checks against the db,
   then renames into place through an undo journal: files it replaces are
-  first moved to `.dpm/bak-*`, and if any move fails everything is restored
+  first moved to `.nawa/bak-*`, and if any move fails everything is restored
   (all-or-nothing file placement); db writes are temp-file + rename
-* replaced versions leave an undo record (`/var/lib/dpm/undo/<name>`) and
-  their archive in the package cache (`/var/cache/dpm`) — `dpm rollback <name>`
+* replaced versions leave an undo record (`/var/lib/nawa/undo/<name>`) and
+  their archive in the package cache (`/var/cache/nawa`) — `nawa rollback <name>`
   walks one step back, and keeps ping-ponging as long as there is history
-* `dpm upgrade --repo <dir>`: verifies the index signature, checks sha256,
+* `nawa upgrade --repo <dir>`: verifies the index signature, checks sha256,
   resolves order through the recipe graph, then applies
 * pacman-style config protection: `/etc` files are hashed at install time
   (`<pkg>/hashes` in the db). Untouched configs upgrade in place; locally
   modified ones are preserved and the new version lands next to them as
-  `<path>.dpm-new`
+  `<path>.nawa-new`
 * files dropped between versions are removed; obsolete-file deletion only
   touches paths the package still owns
 
 ### Remote repositories (http/https)
 
-`dpm upgrade --repo` accepts a local directory **or** an http(s) URL:
+`nawa upgrade --repo` accepts a local directory **or** an http(s) URL:
 
 ```
-dpm --root / upgrade --repo https://mirror.example.com/mydistro/stable
+nawa --root / upgrade --repo https://mirror.example.com/mydistro/stable
 ```
 
 * the index (`index.toml` + optional `index.toml.sig`) is fetched fresh on
@@ -324,7 +331,7 @@ dpm --root / upgrade --repo https://mirror.example.com/mydistro/stable
   warning (so upgrades still run offline once a mirror was seen)
 * the index signature goes through the same trust policy as local repos
 * archives are downloaded on demand into a stable per-URL cache under
-  `/var/cache/dpm/remote/<key>/`, sha256-checked against the index on every
+  `/var/cache/nawa/remote/<key>/`, sha256-checked against the index on every
   reuse (a corrupted cache entry is transparently re-downloaded)
 * archive paths recorded in the index are validated — no `/`, no `..`, no
   dotfiles — so a compromised index cannot write outside the cache
@@ -334,10 +341,10 @@ dpm --root / upgrade --repo https://mirror.example.com/mydistro/stable
 ### Service management (runit)
 
 ```
-dpm service list                 # /etc/sv tree + enabled state
-dpm service enable sshd          # link into /etc/runit/runsvdir/default
-dpm service disable dhcpcd       # remove the link (runsvdir stops it live)
-dpm service status [name]        # static state + live `sv status` when supervised
+nawa service list                 # /etc/sv tree + enabled state
+nawa service enable sshd          # link into /etc/runit/runsvdir/default
+nawa service disable dhcpcd       # remove the link (runsvdir stops it live)
+nawa service status [name]        # static state + live `sv status` when supervised
 ```
 
 A service is *available* when `/etc/sv/<name>/run` exists and *enabled* when
@@ -370,10 +377,10 @@ install   = "make DESTDIR=%{pkgdir} install"
 
 [hooks]
 post_install = ""    # runs after install (also used after upgrade)
-pre_remove   = ""    # runs before `dpm remove`
-post_remove  = ""    # runs after `dpm remove`
+pre_remove   = ""    # runs before `nawa remove`
+post_remove  = ""    # runs after `nawa remove`
 # hooks are stored in the archive (.HOOKS); they run on the live system, or in a
-# chroot of --root when dpm runs as root and the target has /bin/sh; else skipped
+# chroot of --root when nawa runs as root and the target has /bin/sh; else skipped
 ```
 
 Placeholders available in build sections: `%{name} %{version} %{rel} %{arch}
@@ -404,7 +411,7 @@ option list, the stage contracts and the seed trust boundary.
 |------------|-----------------------------|-----------------------------------------------------|
 | 0 — Seed   | `bootstrap/seed/build-seed.sh` | Assemble a prebuilt toolchain tarball (Debian .debs + rustup rustc — the bootstrap is NOT source-only), with a content manifest + sha256 sidecar |
 | 1 — Chroot | `bootstrap/stage1.sh`       | verify the seed (zstd + sha256), unpack, chroot; seed toolchain verified (it IS the temporary toolchain) |
-| 2 — Core   | `bootstrap/stage2.sh`       | Build & install core system with DPM from recipes (into the build root and the clean final root) |
+| 2 — Core   | `bootstrap/stage2.sh`       | Build & install core system with NAWA from recipes (into the build root and the clean final root) |
 | 3 — Self   | `bootstrap/stage3.sh`       | Rebuild the toolchain (or world) with the distro's own toolchain, remove the seed, PROVE self-hosting (compile+run test, db ownership, ELF /opt scan) |
 | 4 — Rootfs | `bootstrap/mkrootfs.sh`     | final root → `mydistro-x86_64-rootfs.tar.zst` (+ `.sha256`, `.packages`), validated; published with the ISO and used as the seed of the next build (`build-all.sh --seed-rootfs`, `bootstrap/seed-from-rootfs.sh`) |
 | 5 — ISO    | `bootstrap/mkiso.sh`        | squashfs + initramfs + grub → hybrid ISO, structurally validated (boot-critical members verified IN the image) |
@@ -415,10 +422,10 @@ See `bootstrap/README.md` for details and host requirements.
 ## Status / roadmap
 
 - [x] Project skeleton
-- [x] DPM v0.1: recipe parser, version compare, local DB, dependency resolver,
+- [x] NAWA v0.1: recipe parser, version compare, local DB, dependency resolver,
       build engine, archive (tar.zst), install/remove/query, repo index
 - [x] Build isolation (docs/design/build-isolation.md — **all phases**): env
-      whitelist + reproducible archives (`--rebuild-check`), the dpm-owned
+      whitelist + reproducible archives (`--rebuild-check`), the nawa-owned
       namespace sandbox (`--isolation sandbox`), archive-assembled build roots
       (`--isolation closure`, `base-devel` meta package), post-build ELF lint,
       the overlayfs layer cache with extract-per-build fallback (Phase 5) and
@@ -436,7 +443,7 @@ See `bootstrap/README.md` for details and host requirements.
       expat, gdbm, gperf, coreutils, bash, tar, gzip, xz, zstd, grep, gawk,
       sed, flex, bison, bc, diffutils, findutils, gettext, texinfo,
       util-linux, perl, python, openssl, sqlite, libunistring, libidn2, less,
-      dpm (self-hosting build)
+      nawa (self-hosting build)
 - [x] System recipes (17): libpsl, curl, git, shadow, procps-ng, psmisc,
       eudev, kmod, e2fsprogs, libpipeline, groff, man-db, libmnl, iproute2,
       dhcpcd, sysklogd, runit
@@ -448,7 +455,7 @@ See `bootstrap/README.md` for details and host requirements.
       htop, screen), misc/libs/hw (jq, which, time, cpio, tree, popt,
       logrotate, cronie, ca-certificates, libxml2, libyaml, dosfstools,
       parted, mdadm, pciutils, usbutils, libusb, kbd)
-- [x] `dpm deps-all` — full-graph topological order (stage2 consumes it;
+- [x] `nawa deps-all` — full-graph topological order (stage2 consumes it;
       `--include-installed` also lists packages the db already records, for
       stage3 world rebuilds)
 - [x] Single-file source support (pinned Mozilla CA bundle via curl.se)
@@ -458,21 +465,21 @@ See `bootstrap/README.md` for details and host requirements.
 - [x] Stage 4 — real hybrid ISO: squashfs + grub (BIOS+UEFI)
 - [x] Package signing (ed25519): keygen / sign / verify / trust store,
       signed repo indexes, progressive trust policy
-- [x] Atomic upgrades (`dpm upgrade`), rollback (`dpm rollback`),
-      `.dpm-new` config protection with hash baselines
+- [x] Atomic upgrades (`nawa upgrade`), rollback (`nawa rollback`),
+      `.nawa-new` config protection with hash baselines
 - [x] Disk installer (`bootstrap/install.sh`): UEFI + BIOS paths,
       UUID fstab, static grub.cfg, root=UUID disk boot in the initramfs
-- [x] Remote repos: `dpm upgrade --repo https://…` with signature checks,
+- [x] Remote repos: `nawa upgrade --repo https://…` with signature checks,
       per-URL archive cache and offline fallback
-- [x] Native fetch/extract in dpm: HTTP through `ureq` (rustls, bundled
+- [x] Native fetch/extract in nawa: HTTP through `ureq` (rustls, bundled
       roots, https-only redirects, retries), source tarballs unpacked by the
       tar crate with in-process gzip/xz/bzip2/zstd decoders, pure-Rust
-      `cp -a` for `local:` sources, `chroot(2)` hooks — dpm needs no
+      `cp -a` for `local:` sources, `chroot(2)` hooks — nawa needs no
       external curl/tar/cp/chroot binaries
-- [x] `dpm service` — runit enable/disable/list/status UX
+- [x] `nawa service` — runit enable/disable/list/status UX
 - [x] initramfs: USB3/HID (USB keyboards), virtio, and filesystem modules
       staged for live boot
-- [x] DPM v0.7 UX overhaul: `dpm.toml` config file + `DPM_*` env vars,
+- [x] NAWA v0.7 UX overhaul: `nawa.toml` config file + `NAWA_*` env vars,
       global flags anywhere on the line, `search`/`info`/`why`/`list`,
       `build --install` in one step, `remove`/`upgrade` confirmations with
       `--yes` for scripts, smart terminal colors (plain when piped),
@@ -484,7 +491,7 @@ Every recipe outside `recipes/gui` carries a sha256 computed from the actual
 upstream tarball (no copied-and-pasted hashes). The 32 GUI recipes ship a
 zero placeholder instead and fail loudly at source verification until
 `scripts/fill-sha256.py` pins them — an unpinned source is never silently
-built. Full graph sanity check: `dpm --recipes recipes deps-all` — all 148
+built. Full graph sanity check: `nawa --recipes recipes deps-all` — all 148
 packages resolve in topological order (base-files #5, runit-services right
 after runit).
 

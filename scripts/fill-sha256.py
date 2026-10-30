@@ -42,7 +42,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent / "recipes"
 ZERO = "0" * 64
-CACHE = Path.home() / ".cache" / "dpm-fill-sha256"
+CACHE = Path.home() / ".cache" / "nawa-fill-sha256"
 SHA_LINE = re.compile(r'(?m)^sha256 = "[0-9a-f]{64}"')
 
 
@@ -79,7 +79,7 @@ def download(url, part, retries):
         got = part.stat().st_size if part.exists() else 0
         if total is not None and got == total:
             return
-        headers = {"User-Agent": "dpm-fill-sha256"}
+        headers = {"User-Agent": "nawa-fill-sha256"}
         if got:
             headers["Range"] = f"bytes={got}-"
         try:

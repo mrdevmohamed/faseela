@@ -1,7 +1,7 @@
 # base recipe: Rust toolchain (rustc + cargo + std) from the official binary release.
 #
-# dpm itself is written in Rust, so the distro needs a Rust toolchain INSIDE
-# its dependency graph — otherwise `dpm` can only be built from the seed's
+# nawa itself is written in Rust, so the distro needs a Rust toolchain INSIDE
+# its dependency graph — otherwise `nawa` can only be built from the seed's
 # /opt/cargo, which the sandbox hides and stage 3 deletes.
 #
 # Trust boundary (honest): this is a prebuilt upstream binary, pinned by sha256,
@@ -27,7 +27,7 @@ build = []
 run = ["gcc", "glibc"]
 
 [build]
-# only the components dpm needs: no docs, clippy, rustfmt, rust-src, ...
+# only the components nawa needs: no docs, clippy, rustfmt, rust-src, ...
 # `bash ./install.sh`: the installer is POSIX sh but its #! line must not matter
 # inside the sandbox. The guard prints the tree if the source dir is not what
 # source_dir expects, instead of a bare "No such file or directory".
@@ -41,9 +41,9 @@ bash ./install.sh --prefix=/usr --destdir=%{pkgdir} --disable-ldconfig \\
     --components=rustc,cargo,rust-std-x86_64-unknown-linux-gnu
 
 # install.sh records the build machine's paths (%{pkgdir}, the source dir) in
-# its log and component manifests; dpm lint refuses an archive that names them.
+# its log and component manifests; nawa lint refuses an archive that names them.
 # The log is useless in a package, and so is rust's own uninstall.sh (it would
-# bypass dpm's database); the manifests only need their destdir stripped.
+# bypass nawa's database); the manifests only need their destdir stripped.
 rl=%{pkgdir}/usr/lib/rustlib
 rm -f "$rl/install.log" "$rl/uninstall.sh"
 for f in "$rl"/manifest-*; do

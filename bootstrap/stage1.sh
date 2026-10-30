@@ -125,7 +125,7 @@ fi
 bash "$HERE/sync-repo.sh" "$LFS"
 
 bash "$HERE/enter-root.sh" "$LFS" /usr/bin/env -i \
-    HOME=/root PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin TERM="${TERM:-xterm}" DPM_JOBS="${DPM_JOBS:-4}" \
+    HOME=/root PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin TERM="${TERM:-xterm}" NAWA_JOBS="${NAWA_JOBS:-4}" \
     LFS=/ LFS_TGT="$(uname -m)-mydistro-linux-gnu" \
     SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt \
     bash -c '. /opt/seed/env.sh && bash /mydistro/bootstrap/stage1-inner.sh'

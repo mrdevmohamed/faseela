@@ -1,11 +1,11 @@
 name: Build packages
 
-# Builds dpm packages and publishes them to a SEPARATE repository that holds
+# Builds nawa packages and publishes them to a SEPARATE repository that holds
 # packages only. The package repo is a flat GitHub Release (one fixed tag,
 # default `stable`): every archive is an asset, next to a signed index.toml.
 # Clients use it with
 #
-#   dpm upgrade --repo https://github.com/<PKG_REPO>/releases/download/stable
+#   nawa upgrade --repo https://github.com/<PKG_REPO>/releases/download/stable
 #
 # (the package repository must be PUBLIC for that URL to work without a token)
 #
@@ -14,8 +14,8 @@ name: Build packages
 #                            (e.g. mrdevmohamed/faseela-repo)
 #   variable PKG_TAG         release tag used as the repo (optional, default stable)
 #   secret   PKG_REPO_TOKEN  fine-grained token: Contents read+write on PKG_REPO only
-#   secret   DPM_SIGN_KEY_B64   base64 of dpm.sec   (dpm keygen --out <dir>; base64 -w0 dpm.sec)
-# The matching dpm.pub is what the distribution trusts (`dpm trust dpm.pub`).
+#   secret   NAWA_SIGN_KEY_B64   base64 of nawa.sec   (nawa keygen --out <dir>; base64 -w0 nawa.sec)
+# The matching nawa.pub is what the distribution trusts (`nawa trust nawa.pub`).
 #
 # WHICH PACKAGES  (Actions > Build packages > Run workflow > packages)
 #   (push)        the recipes changed by the push
@@ -26,7 +26,7 @@ name: Build packages
 #
 # `@toolchain` is left out of ALL on purpose: rebuilding glibc/gcc/binutils
 # inside the very root that is running the build replaces the libc under the
-# running dpm. The toolchain is built by the ISO workflow (stage 2 / stage 3).
+# running nawa. The toolchain is built by the ISO workflow (stage 2 / stage 3).
 #
 # BUILDING EVERYTHING TAKES LONGER THAN ONE RUN. So the workflow is resumable:
 #   * a package whose archive (name-version-rel) is already in the package
@@ -41,9 +41,9 @@ name: Build packages
 #     is published (prune).
 #
 # Build environment: the rootfs of the newest release of THIS repository
-#   min   mydistro-x86_64-rootfs-min.tar.zst   base-devel + dpm, small, NO rust
+#   min   mydistro-x86_64-rootfs-min.tar.zst   base-devel + nawa, small, NO rust
 #   seed  mydistro-x86_64-rootfs.tar.zst       the full system incl. rust
-#   auto  (default) seed when rust or dpm is in the list, else min
+#   auto  (default) seed when rust or nawa is in the list, else min
 # Both come from the ISO workflow (release.yml) on a `v*` tag: run that once
 # before the first package build.
 
@@ -63,7 +63,7 @@ on:
         options: [auto, min, seed]
         default: auto
       isolation:
-        description: "dpm build isolation"
+        description: "nawa build isolation"
         type: choice
         options: [sandbox, env, closure, none]
         default: sandbox
@@ -146,11 +146,11 @@ jobs:
           rootfs="$INPUT_ROOTFS"
           if [[ "$rootfs" == auto ]]; then
             rootfs=min
-            for p in $pkgs; do [[ "$p" == rust || "$p" == dpm ]] && rootfs=seed; done
+            for p in $pkgs; do [[ "$p" == rust || "$p" == nawa ]] && rootfs=seed; done
           fi
           if [[ "$rootfs" == min ]]; then
             for p in $pkgs; do
-              [[ "$p" == rust || "$p" == dpm ]] && echo "::warning::$p is in the list but the min rootfs has no rust: it would be compiled first (hours). Use rootfs=seed."
+              [[ "$p" == rust || "$p" == nawa ]] && echo "::warning::$p is in the list but the min rootfs has no rust: it would be compiled first (hours). Use rootfs=seed."
             done
           fi
           echo "pkgs=$pkgs" >> "$GITHUB_OUTPUT"
@@ -187,12 +187,12 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.PKG_REPO_TOKEN }}
           HAVE_TOKEN: ${{ secrets.PKG_REPO_TOKEN != '' }}
-          HAVE_KEY: ${{ secrets.DPM_SIGN_KEY_B64 != '' }}
+          HAVE_KEY: ${{ secrets.NAWA_SIGN_KEY_B64 != '' }}
         run: |
           set -euo pipefail
           [[ -n "$PKG_REPO" ]]          || { echo "::error::repository variable PKG_REPO (owner/name) is not set"; exit 1; }
           [[ "$HAVE_TOKEN" == true ]]   || { echo "::error::secret PKG_REPO_TOKEN is not set"; exit 1; }
-          [[ "$HAVE_KEY" == true ]]     || { echo "::error::secret DPM_SIGN_KEY_B64 is not set"; exit 1; }
+          [[ "$HAVE_KEY" == true ]]     || { echo "::error::secret NAWA_SIGN_KEY_B64 is not set"; exit 1; }
           [[ "$BUDGET_MIN" =~ ^[0-9]+$ ]] || { echo "::error::budget must be a number of minutes"; exit 1; }
 
           # The token must really reach the package repository ...
@@ -204,13 +204,13 @@ jobs:
             echo "$PKG_REPO is empty: creating the first commit"
             gh api -X PUT "repos/$PKG_REPO/contents/README.md" \
               -f message="Initialise the package repository" \
-              -f content="$(printf '# %s\n\nFlat dpm package repository: the packages are the assets of the `%s` release. Written by CI.\n' "$PKG_REPO" "$PKG_TAG" | base64 -w0)" \
+              -f content="$(printf '# %s\n\nFlat nawa package repository: the packages are the assets of the `%s` release. Written by CI.\n' "$PKG_REPO" "$PKG_TAG" | base64 -w0)" \
               > /dev/null \
               || { echo "::error::cannot write to $PKG_REPO - the token needs Contents: read AND write"; exit 1; }
           fi
           if ! gh release view "$PKG_TAG" --repo "$PKG_REPO" > /dev/null 2>&1; then
-            gh release create "$PKG_TAG" --repo "$PKG_REPO" --title "dpm package repository" \
-              --notes "Flat dpm repository: *.dpm.tar.zst plus a signed index.toml. Written by CI, do not edit."
+            gh release create "$PKG_TAG" --repo "$PKG_REPO" --title "nawa package repository" \
+              --notes "Flat nawa repository: *.nawa.tar.zst plus a signed index.toml. Written by CI, do not edit."
           fi
 
       - name: Download the build rootfs from the newest release
@@ -264,10 +264,10 @@ jobs:
           sudo mkdir -p "$T/build/out"
           sudo chown "$(id -u):$(id -g)" "$T/build/out"
           n="$(gh release view "$PKG_TAG" --repo "$PKG_REPO" --json assets \
-                 --jq '[.assets[].name | select(endswith(".dpm.tar.zst"))] | length')"
+                 --jq '[.assets[].name | select(endswith(".nawa.tar.zst"))] | length')"
           if (( n > 0 )); then
             gh release download "$PKG_TAG" --repo "$PKG_REPO" --dir "$T/build/out" \
-              --pattern '*.dpm.tar.zst' --clobber
+              --pattern '*.nawa.tar.zst' --clobber
           fi
           echo "published=$n" >> "$GITHUB_OUTPUT"
           echo "$n archive(s) already in $PKG_REPO ($PKG_TAG)"
@@ -279,7 +279,7 @@ jobs:
         timeout-minutes: 320 # leaves ~35 min of the 355 for publishing and logs
         run: |
           sudo bash bootstrap/enter-root.sh "$T" /usr/bin/env -i \
-            HOME=/root TERM=dumb DPM_JOBS="$(nproc)" PKGS="$PKGS" ISOLATION="$ISOLATION" \
+            HOME=/root TERM=dumb NAWA_JOBS="$(nproc)" PKGS="$PKGS" ISOLATION="$ISOLATION" \
             BUDGET_MIN="$BUDGET_MIN" KEEP_GOING="$KEEP_GOING" \
             bash /mydistro/bootstrap/build-packages-inner.sh
 
@@ -290,21 +290,21 @@ jobs:
         if: ${{ always() && steps.published.conclusion == 'success' }}
         env:
           GH_TOKEN: ${{ secrets.PKG_REPO_TOKEN }}
-          SIGN_KEY_B64: ${{ secrets.DPM_SIGN_KEY_B64 }}
+          SIGN_KEY_B64: ${{ secrets.NAWA_SIGN_KEY_B64 }}
         run: |
           set -euo pipefail
           shopt -s nullglob
           out="$T/build/out"
           new=()
           while IFS= read -r -d '' f; do new+=("$f"); done \
-            < <(find "$out" -maxdepth 1 -name '*.dpm.tar.zst' -newer "$T/build/.run-start" -print0)
+            < <(find "$out" -maxdepth 1 -name '*.nawa.tar.zst' -newer "$T/build/.run-start" -print0)
           echo "new archives: ${#new[@]}"
           echo "built=${#new[@]}" >> "$GITHUB_OUTPUT"
           # names of the assets the release holds right now
           have="$(gh release view "$PKG_TAG" --repo "$PKG_REPO" --json assets --jq '.assets[].name')"
           # archives published earlier WITHOUT a detached .sig must still get one
           missing=0
-          for f in "$out"/*.dpm.tar.zst; do
+          for f in "$out"/*.nawa.tar.zst; do
             grep -qxF "$(basename "$f").sig" <<< "$have" || missing=1
           done
           if (( ${#new[@]} == 0 && missing == 0 )); then
@@ -317,7 +317,7 @@ jobs:
           # archives can be hardlinked instead of copied (same filesystem).
           repo="$T/repo"
           sudo rm -rf "$repo"; sudo mkdir -p "$repo"
-          sudo cp -al "$out"/*.dpm.tar.zst "$repo/"
+          sudo cp -al "$out"/*.nawa.tar.zst "$repo/"
           sudo chown -R "$(id -u):$(id -g)" "$repo"
           stale=()
           if [[ "$PRUNE" == 1 ]]; then
@@ -326,18 +326,18 @@ jobs:
             if (( ${#stale[@]} )); then printf 'superseded: %s\n' "${stale[@]}"; fi
           fi
 
-          # sign the index inside the root (dpm links against the distro's libc)
-          printf '%s' "$SIGN_KEY_B64" | base64 -d | sudo install -m 600 /dev/stdin "$T/root/dpm.sec"
-          sudo bash bootstrap/enter-root.sh "$T" /usr/bin/dpm repo-create /repo \
-            --out index.toml --sign --key /root/dpm.sec
-          # dpm refuses an archive without a detached <archive>.sig when the
+          # sign the index inside the root (nawa links against the distro's libc)
+          printf '%s' "$SIGN_KEY_B64" | base64 -d | sudo install -m 600 /dev/stdin "$T/root/nawa.sec"
+          sudo bash bootstrap/enter-root.sh "$T" /usr/bin/nawa repo-create /repo \
+            --out index.toml --sign --key /root/nawa.sec
+          # nawa refuses an archive without a detached <archive>.sig when the
           # client has a trusted key, so every archive is signed as well
           sudo bash bootstrap/enter-root.sh "$T" /usr/bin/env bash -c '
             set -e
-            for f in /repo/*.dpm.tar.zst; do
-              /usr/bin/dpm sign "$f" --key /root/dpm.sec
+            for f in /repo/*.nawa.tar.zst; do
+              /usr/bin/nawa sign "$f" --key /root/nawa.sec
             done'
-          sudo shred -u "$T/root/dpm.sec" || sudo rm -f "$T/root/dpm.sec"
+          sudo shred -u "$T/root/nawa.sec" || sudo rm -f "$T/root/nawa.sec"
           sudo chown -R "$(id -u):$(id -g)" "$repo"
           [[ -s "$repo/index.toml" && -s "$repo/index.toml.sig" ]] \
             || { echo "::error::repo-create left no signed index.toml"; exit 1; }
@@ -358,7 +358,7 @@ jobs:
           declare -A isnew=()
           for f in "${new[@]}"; do isnew[$(basename "$f")]=1; done
           sigs=()
-          for a in "$repo"/*.dpm.tar.zst; do
+          for a in "$repo"/*.nawa.tar.zst; do
             b="$(basename "$a")"
             [[ -s "$a.sig" ]] || { echo "::error::no signature was written for $b"; exit 1; }
             if [[ -n "${isnew[$b]:-}" ]] || ! grep -qxF "$b.sig" <<< "$have"; then
@@ -379,7 +379,7 @@ jobs:
             echo "### Published ${#new[@]} archive(s) to $PKG_REPO ($PKG_TAG)"
             echo
             echo '```'
-            echo "dpm upgrade --repo https://github.com/$PKG_REPO/releases/download/$PKG_TAG"
+            echo "nawa upgrade --repo https://github.com/$PKG_REPO/releases/download/$PKG_TAG"
             echo '```'
             if (( ${#stale[@]} )); then echo "Removed ${#stale[@]} superseded archive(s)."; fi
           } >> "$GITHUB_STEP_SUMMARY"

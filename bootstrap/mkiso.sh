@@ -30,7 +30,7 @@ ROOT="${1:?usage: mkiso.sh /mnt/mydistro out.iso}"
 OUT_ISO="${2:?usage: mkiso.sh /mnt/mydistro out.iso}"
 VOL_ID="${VOL_ID:-MYDISTRO}"
 SQUASH_COMP="${SQUASH_COMP:-gzip}"
-JOBS="${DPM_JOBS:-4}"
+JOBS="${NAWA_JOBS:-4}"
 
 [[ $EUID -eq 0 ]] || echo "mkiso: WARNING: not root — squashfs will record the invoking user's ownership" >&2
 [[ -d $ROOT ]] || { echo "mkiso: $ROOT is not a directory"; exit 1; }
@@ -70,7 +70,7 @@ echo "== stage4: building initramfs"
 # 2) squashfs of the whole target root; the repo/build scratch and the
 #    duplicate kernel image stay out of the image (build3 is stage3's
 #    build dir — its archives are already installed and cached in
-#    /var/cache/dpm, which the disk installer copies for rollback)
+#    /var/cache/nawa, which the disk installer copies for rollback)
 # The squashfs must NEVER contain the host's /dev or a live /proc: mksquashfs
 # reads through mountpoints, so leftover stage-1 pseudo-fs mounts would bake
 # host device nodes and proc entries into the ISO.  Unmount them first
@@ -91,7 +91,7 @@ echo "== stage4: mksquashfs of $ROOT"
 # Excludes are relative to ROOT and only passed when they exist (a clean
 # two-root final root has none of the build dirs; the legacy single root does).
 EXCL=()
-for d in build build3 mydistro sources boot .dpm; do
+for d in build build3 mydistro sources boot .nawa; do
     [[ -e $ROOT/$d ]] && EXCL+=("$d")
 done
 mksquashfs "$ROOT" "$ISO/live/rootfs.squashfs" \

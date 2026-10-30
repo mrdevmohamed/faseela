@@ -1,12 +1,16 @@
 # Rust
-pkgmgr/target/
 **/*.rs.bk
+
+# nawa source, unpacked from the pinned tarball by bootstrap/fetch-nawa.sh
+/nawa/
+/srccache/
+.nawa-fetch.*/
 
 # Build scratch & outputs
 build/
 out/
-*.dpm.tar.zst
-*.dpm.tar
+*.nawa.tar.zst
+*.nawa.tar
 
 # Bootstrap artifacts
 bootstrap/seed/seed-root/
@@ -20,9 +24,3 @@ bootstrap/seed/seed.tar*
 
 __pycache__/
 *.pyc
-
-# Vendored crates (scripts/vendor-dpm.sh) must be committed verbatim: cargo
-# verifies a checksum for every file, so a build/, out/ or *.log directory or
-# file dropped by the patterns above breaks the offline build. Keep LAST.
-!/pkgmgr/vendor/
-!/pkgmgr/vendor/**

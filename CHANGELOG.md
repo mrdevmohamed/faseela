@@ -1,5 +1,26 @@
 # Changelog
 
+## Unreleased — the package manager moves to its own repository (dpm → nawa)
+
+`pkgmgr/` (DPM) is gone from this repository. The package manager is now
+**nawa**, developed in github.com/mrdevmohamed/nawa; everything here was
+renamed accordingly. This is a clean break, not a drop-in upgrade:
+
+- recipes `dpm`, `dpm-recipes`, `dpm-repo` → `nawa`, `nawa-recipes`, `nawa-repo`;
+  `nawa` builds from the nawa tarball pinned in its recipe
+  (`scripts/pin-nawa-source.py`), no longer from a local directory.
+- `bootstrap/fetch-nawa.sh` unpacks that same pin into `nawa/` for stage 2;
+  `sync-repo.sh` calls it.
+- binary/crate `dpm` → `nawa`, `DPM_*` → `NAWA_*`, `dpm.toml` → `nawa.toml`,
+  `/etc/dpm`, `/var/lib/dpm`, `/var/cache/dpm` → `/etc/nawa`, … ,
+  archives `*.dpm.tar.zst` → `*.nawa.tar.zst`.
+- the CI secret `DPM_SIGN_KEY_B64` is now `NAWA_SIGN_KEY_B64`; the repository
+  signature format changed (`dpm-v1` → `nawa-v1`), so the package repository
+  must be republished by the packages workflow before nawa will trust it.
+- the public key committed for `nawa-repo` lives in `dist/nawa.pub`.
+- nawa's own cargo tests, isolation matrix and smoke scripts moved to the nawa
+  repository; `ci.yml` here keeps the script and recipe checks.
+
 ## Unreleased — feat: system config `/etc/dpm/dpm.toml`, default repository, install from repo or build
 
 - New config layer `/etc/dpm/dpm.toml` (dir overridable with

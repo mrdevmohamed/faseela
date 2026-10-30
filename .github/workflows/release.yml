@@ -7,7 +7,7 @@ name: Build ISO (CD)
 #   build (matrix)  runs in parallel on the finished core, one runner each:
 #                     iso-nogui   mydistro-x86_64.iso
 #                     iso-gui     mydistro-gui-x86_64.iso   (adds recipes/gui on top of core)
-#                     rootfs-min  mydistro-x86_64-rootfs-min.tar.zst  (base-devel + dpm only)
+#                     rootfs-min  mydistro-x86_64-rootfs-min.tar.zst  (base-devel + nawa only)
 #   boot-test       boots each ISO in QEMU, waits for the login prompt (gates the release)
 #   image           rootfs-min -> ghcr.io/<owner>/mydistro-build (container build environment)
 #   release         one GitHub Release with everything above (tags only)
@@ -360,13 +360,13 @@ jobs:
       # The GUI stack is installed into the same two-root layout as the core
       # (build root + clean /sysroot). stage 2 skips every package the core
       # already installed, so only recipes/gui is compiled. Re-running stage 2
-      # after stage 3 is supported (stage2.sh keeps the installed dpm).
+      # after stage 3 is supported (stage2.sh keeps the installed nawa).
       - name: Build the GUI stack on top of the core
         if: ${{ matrix.gui == '1' }}
         run: |
           # stage 2 never uses `closure` (that level is stage 3 only)
           iso="$ISOLATION"; [[ "$iso" == closure ]] && iso=sandbox
-          sudo env WITH_GUI=1 DPM_JOBS="$(nproc)" STAGE2_ISOLATION="$iso" \
+          sudo env WITH_GUI=1 NAWA_JOBS="$(nproc)" STAGE2_ISOLATION="$iso" \
             bash bootstrap/stage2.sh "$TARGET"
 
       - name: Make the ISO
@@ -376,7 +376,7 @@ jobs:
           VOL_ID: ${{ matrix.vol }}
         run: |
           mkdir -p out
-          sudo env VOL_ID="$VOL_ID" DPM_JOBS="$(nproc)" \
+          sudo env VOL_ID="$VOL_ID" NAWA_JOBS="$(nproc)" \
             bash bootstrap/mkiso.sh "$TARGET/sysroot" "$PWD/out/$ISO_NAME"
           sudo chown -R "$(id -u):$(id -g)" out
           cd out
@@ -533,7 +533,7 @@ jobs:
           |---|---|
           | \`mydistro-x86_64.iso\` | live ISO, no GUI |
           | \`mydistro-gui-x86_64.iso\` | live ISO with the sway/Wayland stack |
-          | \`mydistro-x86_64-rootfs-min.tar.zst\` | small rootfs: base-devel + dpm (build environment, also \`ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/mydistro-build\`) |
+          | \`mydistro-x86_64-rootfs-min.tar.zst\` | small rootfs: base-devel + nawa (build environment, also \`ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/mydistro-build\`) |
           | \`mydistro-x86_64-rootfs.tar.zst\` | full rootfs incl. rust: the seed of the next build (\`build-all.sh --seed-rootfs\`) |
 
           This release was built from: ${SEED}.
