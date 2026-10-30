@@ -35,6 +35,10 @@ mkroot() {  # mkroot DIR [--no-rust]
              usr/bin/curl usr/bin/pkg-config usr/lib/libc.so.6; do
         mkdir -p "$r/$(dirname "$f")"; printf '#!/bin/sh\n' > "$r/$f"; chmod 755 "$r/$f"
     done
+    # the compiler proper: mkrootfs.sh / seed-from-rootfs.sh refuse a root without it
+    for f in usr/libexec/gcc/x86_64-pc-linux-gnu/14.2.0/cc1 usr/libexec/gcc/x86_64-pc-linux-gnu/14.2.0/cc1plus; do
+        mkdir -p "$r/$(dirname "$f")"; printf '#!/bin/sh\n' > "$r/$f"; chmod 755 "$r/$f"
+    done
     if [[ ${2:-} != --no-rust ]]; then
         for f in usr/bin/rustc usr/bin/cargo; do printf '#!/bin/sh\n' > "$r/$f"; chmod 755 "$r/$f"; done
     fi
@@ -149,6 +153,9 @@ bash "$SEEDPREP" "$WORK/seedE3" > "$WORK/e3.log" 2>&1; RC=$?
 check "E4 the Debian seed is not a rootfs seed" "[[ $RC -eq 1 ]] && grep -q 'Debian seed' $WORK/e3.log"
 bash "$SEEDPREP" "$WORK/not-a-dir" > "$WORK/e4.log" 2>&1; RC=$?
 check "E5 missing directory refused"       "[[ $RC -eq 1 ]]"
+mkroot "$WORK/seedE6"; rm -rf "$WORK/seedE6/usr/libexec"
+bash "$SEEDPREP" "$WORK/seedE6" > "$WORK/e6.log" 2>&1; RC=$?
+check "E6 gcc driver without cc1: refused, names it" "[[ $RC -eq 1 ]] && grep -q 'cc1' $WORK/e6.log"
 
 # ===================================================== fetch-rootfs-seed.sh ==
 say "F. fetch-rootfs-seed: newest release that carries a rootfs"
