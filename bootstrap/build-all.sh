@@ -279,6 +279,16 @@ if (( ! OPT_DRYRUN && ! OPT_LIST )); then
     fi
 fi
 
+# ------------------------------------------------------------- recipe tree --
+# The recipes live in faseela-repo. Get them before anything hashes them: a
+# no-op once fetched (see fetch-recipes.sh); the read-only modes never write,
+# so they only say so.
+if (( ! OPT_DRYRUN && ! OPT_LIST )); then
+    bash "$HERE/fetch-recipes.sh" || die "cannot get the recipes (see above)"
+elif [[ ! -d $REPO/recipes ]]; then
+    echo "note: $REPO/recipes is missing; a real run fetches it with bootstrap/fetch-recipes.sh" >&2
+fi
+
 # ------------------------------------------------------------------- stamps --
 # A stamp is only trustworthy together with the inputs that produced it.
 # Every finished stage records a fingerprint of its contract (stage scripts,
