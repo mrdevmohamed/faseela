@@ -10,7 +10,7 @@
 # archives.  Set it to "" to switch repositories off.
 # Remote repositories need a trusted key (`dpm trust <key.pub>`) unless you
 # pass --allow-unsigned.
-repo = "https://raw.githubusercontent.com/mrdevmohamed/faseela-repo/main"
+repo = "https://github.com/mrdevmohamed/faseela-repo/releases/download/stable"
 
 # Where `dpm install <name>` gets packages (env: DPM_INSTALL_MODE):
 #   auto  - install from the repository when it has the package, otherwise
@@ -21,8 +21,9 @@ repo = "https://raw.githubusercontent.com/mrdevmohamed/faseela-repo/main"
 # Per command: `dpm install --build foo` / `--from-repo foo` / `--from ask foo`.
 install_mode = "auto"
 
-# Recipes used for building and for dependency resolution (env: DPM_RECIPES)
-#recipes = "/usr/share/dpm/recipes"
+# Recipes used for building and for dependency resolution (env: DPM_RECIPES).
+# The dpm-recipes package installs the recipe tree here.
+recipes = "/usr/share/dpm/recipes"
 #builddir = "/var/tmp/dpm-build"
 #profiles = "/etc/dpm/profiles"
 #jobs = 8

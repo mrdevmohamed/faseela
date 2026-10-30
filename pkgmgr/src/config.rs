@@ -36,7 +36,7 @@ pub const SYSCONF_DIR: &str = "/etc/dpm";
 /// optional `index.toml.sig` and the `*.dpm.tar.zst` archives are expected
 /// directly under this URL.
 pub const DEFAULT_REPO: &str =
-    "https://raw.githubusercontent.com/mrdevmohamed/faseela-repo/main";
+    "https://github.com/mrdevmohamed/faseela-repo/releases/download/stable";
 
 /// Where `dpm install <name>` gets a package from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -383,8 +383,9 @@ repo = "{DEFAULT_REPO}"
 # Per command: `dpm install --build foo` / `--from-repo foo` / `--from ask foo`.
 install_mode = "auto"
 
-# Recipes used for building and for dependency resolution (env: DPM_RECIPES)
-#recipes = "/usr/share/dpm/recipes"
+# Recipes used for building and for dependency resolution (env: DPM_RECIPES).
+# The dpm-recipes package installs the recipe tree here.
+recipes = "/usr/share/dpm/recipes"
 #builddir = "/var/tmp/dpm-build"
 #profiles = "/etc/dpm/profiles"
 #jobs = 8

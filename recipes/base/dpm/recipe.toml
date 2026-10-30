@@ -6,7 +6,7 @@
 [package]
 name = "dpm"
 version = "0.8.0"
-rel = 2
+rel = 3
 arch = ["x86_64"]
 summary = "DPM — this distribution's source-based package manager (self-hosting build)"
 license = ["GPL-3.0"]
