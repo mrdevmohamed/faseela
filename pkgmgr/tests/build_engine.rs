@@ -16,10 +16,14 @@ fn dpm() -> Command {
     let mut c = Command::new(dpm_bin());
     for k in [
         "DPM_CONFIG", "DPM_ROOT", "DPM_RECIPES", "DPM_BUILDDIR",
-        "DPM_PROFILES", "DPM_JOBS", "DPM_REPO",
+        "DPM_PROFILES", "DPM_JOBS", "DPM_REPO", "DPM_INSTALL_MODE",
     ] {
         c.env_remove(k);
     }
+    // never read the host's /etc/dpm/dpm.toml, and keep installs by name
+    // deterministic (no network): these tests exercise the build path
+    c.env("DPM_SYSCONFDIR", std::env::temp_dir().join("dpm-test-no-sysconf"));
+    c.env("DPM_INSTALL_MODE", "build");
     c.current_dir(std::env::temp_dir());
     c
 }

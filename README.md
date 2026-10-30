@@ -58,6 +58,10 @@ dpm update [name...]                           # rebuild + reinstall the outdate
 dpm autoremove                                 # remove dependency packages nothing needs
 dpm build --install <name>                     # build ONE recipe and install it (no dependency handling)
 dpm install <archive.dpm.tar.zst>              # install a built archive into --root
+dpm install <name>                             # from the repo if it has it, else build (deps included)
+dpm install --build <name>                     # always build from the recipes
+dpm install --from-repo <name>                 # repository only (error if it is not there)
+dpm install --from ask <name>                  # on a terminal: asked "repository or build?"
 dpm search <term>                              # find recipes by name/summary (--glob for patterns)
 dpm info <name>                                # everything known about a package
 dpm why <name>                                 # who depends on it (--tree also scans recipes)
@@ -72,6 +76,7 @@ dpm rollback <name>                            # restore previous version
 dpm service list                               # runit services
 dpm config show                                # effective config + where each value came from
 dpm init                                       # write a commented dpm.toml template
+dpm init --system                              # write /etc/dpm/dpm.toml (as root)
 dpm completions bash|zsh|fish                  # shell completion scripts
 ```
 
@@ -117,26 +122,59 @@ any more, dependents first. Build-only dependencies of packages you keep
 (compilers, headers) are **kept** unless you pass `--build-deps`, since the next
 rebuild needs them.
 
-### Configuration (dpm.toml)
+### Configuration (/etc/dpm/dpm.toml and dpm.toml)
 
-dpm reads the nearest `dpm.toml` at or above the current directory (like git;
-`DPM_CONFIG` names one directly) and merges it **under** the command-line
-flags:
+dpm reads two config files and merges them **under** the environment and the
+command-line flags:
+
+1. the nearest `dpm.toml` at or above the current directory (like git;
+   `DPM_CONFIG` names one directly) — per project / per checkout;
+2. the system-wide `/etc/dpm/dpm.toml` (the directory can be moved with
+   `DPM_SYSCONFDIR`) — installed by the `dpm` package, edit it to change the
+   defaults for the whole machine.
 
 ```toml
-root      = "/"                                  # env: DPM_ROOT
-recipes   = "recipes"                            # env: DPM_RECIPES
-builddir  = "build"                              # env: DPM_BUILDDIR
-profiles  = "profiles"                           # env: DPM_PROFILES
-jobs      = 8                                    # env: DPM_JOBS
-repo      = "https://mirror.example.com/stable"  # env: DPM_REPO — default for `dpm upgrade`
+root         = "/"                                  # env: DPM_ROOT
+recipes      = "recipes"                            # env: DPM_RECIPES
+builddir     = "build"                              # env: DPM_BUILDDIR
+profiles     = "profiles"                           # env: DPM_PROFILES
+jobs         = 8                                    # env: DPM_JOBS
+repo         = "https://raw.githubusercontent.com/mrdevmohamed/faseela-repo/main"
+                                                    # env: DPM_REPO — "" switches it off
+install_mode = "auto"                               # env: DPM_INSTALL_MODE
 ```
 
-Precedence per key: **flag > env var > dpm.toml > default**. Relative paths
-inside the file resolve against the file's own directory, so the config means
-the same thing from any subdirectory. `dpm init` writes a commented template;
-`dpm config show` prints the effective values annotated with where each one
-came from.
+Precedence per key: **flag > env var > dpm.toml > /etc/dpm/dpm.toml >
+built-in default**. Relative paths inside a file resolve against that file's
+own directory. `dpm init` writes a commented project template, `dpm init
+--system` writes `/etc/dpm/dpm.toml`; `dpm config show` prints the effective
+values annotated with where each one came from.
+
+### Install from the repository or build — `dpm install <name>`
+
+`install_mode` (or a flag on the command) decides where packages come from:
+
+| mode    | flag                      | behaviour |
+|---------|---------------------------|-----------|
+| `auto`  | *(default)*               | per package: take it from the repository when the repo has it **and** it is at least as new as the recipe, otherwise build it from the recipe |
+| `repo`  | `--from-repo` / `-r`      | repository only — a package the repo lacks is an error, reported **before** anything is installed |
+| `build` | `--build` / `-b`          | always build from the recipes (the pre-repository behaviour; `dpm update` and the bootstrap scripts always do this) |
+| `ask`   | `--from ask`              | like `auto`, but on a terminal you are asked "repository (r) or build (b)?" after seeing the plan |
+
+The plan shows the source of every package (`[repo ]` / `[build]`). Dependencies
+are resolved from the recipes, so each of them is also taken from the
+repository or built. A name that has **no recipe** but exists in the repository
+is installed as a binary-only package (its dependencies are not resolved).
+`--repo <dir-or-url>` overrides the repository for one run.
+
+In `auto` mode an unusable repository (offline, empty, not yet trusted,
+switched off) is one `note:` line and everything is built from source; a
+repository archive that fails to download or verify falls back to building
+that package. `repo` mode never builds behind your back.
+
+Remote repositories must be authenticated: add the repository's public key with
+`dpm trust <key.pub>` (or pass `--allow-unsigned` and accept the risk). Until a
+key is trusted, the default repository is skipped and packages are built.
 
 ### Confirmations, colors, suggestions
 
