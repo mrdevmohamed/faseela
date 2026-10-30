@@ -140,9 +140,23 @@ jobs:
           path="$(bash scripts/fetch-rootfs-seed.sh "$RUNNER_TEMP/rootfs-seed")" || rc=$?
           case "$rc" in
             0)
-              echo "path=$path" >> "$GITHUB_OUTPUT"
-              echo "### Seed: previous release's rootfs (self-hosting)" >> "$GITHUB_STEP_SUMMARY"
-              echo "sha256: $(cut -d' ' -f1 "$path.sha256")" >> "$GITHUB_STEP_SUMMARY" ;;
+              # A rootfs is only a usable seed if it can compile: the gcc
+              # driver alone is not enough (stage1 dies on "cannot execute
+              # 'cc1'"). Check the archive listing before committing to it.
+              listing="$(zstd -dc "$path" | tar -t 2>/dev/null || true)"
+              if grep -qE '/libexec/gcc/[^/]+/[^/]+/cc1$' <<< "$listing" \
+                 && grep -qE '/libexec/gcc/[^/]+/[^/]+/cc1plus$' <<< "$listing"; then
+                echo "path=$path" >> "$GITHUB_OUTPUT"
+                echo "### Seed: previous release's rootfs (self-hosting)" >> "$GITHUB_STEP_SUMMARY"
+                echo "sha256: $(cut -d' ' -f1 "$path.sha256")" >> "$GITHUB_STEP_SUMMARY"
+              elif [[ "$SEED_MODE" == rootfs ]]; then
+                echo "::error::the previous release's rootfs has no gcc cc1/cc1plus - it cannot seed a build"
+                exit 1
+              else
+                echo "::warning::the previous release's rootfs has no gcc cc1/cc1plus (unusable seed) - falling back to the Debian seed"
+                echo "### Seed: Debian-based (previous rootfs is broken: no cc1/cc1plus)" >> "$GITHUB_STEP_SUMMARY"
+                rm -f "$path" "$path.sha256"
+              fi ;;
             3)
               if [[ "$SEED_MODE" == rootfs ]]; then
                 echo "::error::seed=rootfs, but no release carries $ROOTFS_ASSET"
