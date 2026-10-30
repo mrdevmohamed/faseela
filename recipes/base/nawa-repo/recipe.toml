@@ -15,13 +15,13 @@
 [package]
 name = "nawa-repo"
 version = "2026.10.30"
-rel = 8
+rel = 9
 arch = ["x86_64"]
 summary = "nawa-repo — public key of the distribution's package repository"
 license = ["MIT"]
-source = "https://github.com/mrdevmohamed/faseela/archive/97927b4ed3a26efbc143fdcaf657c7c42fbb9bc9.tar.gz"
-sha256 = "56b74c54ac485dc16ac63c06b31bf0a2531d8fd252bfe2f7e181bcbd55338620"
-source_dir = "faseela-97927b4ed3a26efbc143fdcaf657c7c42fbb9bc9"
+source = "https://github.com/mrdevmohamed/faseela/archive/16fbe42d940a55b21d15ff03406b359af0e1bbcc.tar.gz"
+sha256 = "471114fdd9e7d7abc31f254d43161d3404094b51455c9c59b1e56691c7f83a67"
+source_dir = "faseela-16fbe42d940a55b21d15ff03406b359af0e1bbcc"
 
 [depends]
 build = []
