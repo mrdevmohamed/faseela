@@ -300,7 +300,14 @@ jobs:
             < <(find "$out" -maxdepth 1 -name '*.dpm.tar.zst' -newer "$T/build/.run-start" -print0)
           echo "new archives: ${#new[@]}"
           echo "built=${#new[@]}" >> "$GITHUB_OUTPUT"
-          if (( ${#new[@]} == 0 )); then
+          # names of the assets the release holds right now
+          have="$(gh release view "$PKG_TAG" --repo "$PKG_REPO" --json assets --jq '.assets[].name')"
+          # archives published earlier WITHOUT a detached .sig must still get one
+          missing=0
+          for f in "$out"/*.dpm.tar.zst; do
+            grep -qxF "$(basename "$f").sig" <<< "$have" || missing=1
+          done
+          if (( ${#new[@]} == 0 && missing == 0 )); then
             echo "### Nothing new to publish" >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
@@ -323,6 +330,13 @@ jobs:
           printf '%s' "$SIGN_KEY_B64" | base64 -d | sudo install -m 600 /dev/stdin "$T/root/dpm.sec"
           sudo bash bootstrap/enter-root.sh "$T" /usr/bin/dpm repo-create /repo \
             --out index.toml --sign --key /root/dpm.sec
+          # dpm refuses an archive without a detached <archive>.sig when the
+          # client has a trusted key, so every archive is signed as well
+          sudo bash bootstrap/enter-root.sh "$T" /usr/bin/env bash -c '
+            set -e
+            for f in /repo/*.dpm.tar.zst; do
+              /usr/bin/dpm sign "$f" --key /root/dpm.sec
+            done'
           sudo shred -u "$T/root/dpm.sec" || sudo rm -f "$T/root/dpm.sec"
           sudo chown -R "$(id -u):$(id -g)" "$repo"
           [[ -s "$repo/index.toml" && -s "$repo/index.toml.sig" ]] \
@@ -340,11 +354,25 @@ jobs:
             return 1
           }
           for f in "${new[@]}"; do upload "$repo/$(basename "$f")"; done
+          # signatures: for new archives, and for old ones that have none yet
+          declare -A isnew=()
+          for f in "${new[@]}"; do isnew[$(basename "$f")]=1; done
+          sigs=()
+          for a in "$repo"/*.dpm.tar.zst; do
+            b="$(basename "$a")"
+            [[ -s "$a.sig" ]] || { echo "::error::no signature was written for $b"; exit 1; }
+            if [[ -n "${isnew[$b]:-}" ]] || ! grep -qxF "$b.sig" <<< "$have"; then
+              sigs+=("$a.sig")
+            fi
+          done
+          echo "signatures to upload: ${#sigs[@]}"
+          if (( ${#sigs[@]} )); then upload "${sigs[@]}"; fi
           upload "$repo/index.toml" "$repo/index.toml.sig"
 
           # only now remove superseded archives from the release
           for s in "${stale[@]}"; do
             gh release delete-asset "$PKG_TAG" "$s" --repo "$PKG_REPO" --yes || true
+            gh release delete-asset "$PKG_TAG" "$s.sig" --repo "$PKG_REPO" --yes || true
           done
 
           {
