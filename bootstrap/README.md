@@ -2,12 +2,12 @@
 
 The pipeline that turns an empty directory into a bootable ISO of the
 distribution. Every stage after the seed is performed by the
-distribution's own package manager (DPM).
+distribution's own package manager (NAWA).
 
 ```
 stage 0  seed/build-seed.sh   assemble prebuilt toolchain (gcc, glibc, rustc)
 stage 1  stage1.sh            chroot + verify the seed toolchain (it is the temporary toolchain)
-stage 2  stage2.sh            DPM builds the FULL recipe graph into the target
+stage 2  stage2.sh            NAWA builds the FULL recipe graph into the target
 stage 3  stage3.sh            self-hosting rebuild (toolchain, or STAGE3_WORLD=1 for all)
 stage 4  mkrootfs.sh          final root -> mydistro-x86_64-rootfs.tar.zst (+ .sha256, .packages)
 stage 5  mkiso.sh             squashfs + initramfs + grub -> bootable live ISO
@@ -56,7 +56,7 @@ for you):
 ```bash
 sudo ./seed/build-seed.sh              # -> seed/seed.tar.zst
 sudo ./stage1.sh /mnt/mydistro         # unpack seed, chroot, verify seed toolchain
-sudo ./stage2.sh /mnt/mydistro         # DPM builds + installs all recipes
+sudo ./stage2.sh /mnt/mydistro         # NAWA builds + installs all recipes
 sudo ./stage3.sh /mnt/mydistro         # self-hosting rebuild, seed removed
 sudo ./mkiso.sh /mnt/mydistro out.iso  # bootable image
 ```
@@ -137,8 +137,8 @@ changed recipe tree, as a release build should.
 |-------|----------|----------|--------------------------|
 | seed | Debian `.deb`s via `apt-get download`, rustup | `seed.tar.zst` (+ `.sha256` sidecar, `manifest.txt` inside) | root + x86_64 host, `ldconfig -r` warns loudly, the seed chroots and runs its own gcc/make/ld on its own loader |
 | stage 1 | seed tarball | chroot with seed + repo copy, mounts, DNS, CA bundle | seed zstd frame + sha256 sidecar BEFORE unpacking; seed toolchain compiles/runs C + Rust inside the chroot |
-| stage 2 | seed toolchain, recipes | full graph installed into `/` and `/sysroot`, `dpm` built and installed | per-package archive exists; final root synced + sealed (no `/opt/*`, no build dirs, key files present) |
-| stage 3 | distro's own toolchain | toolchain set (or world) rebuilt from `recipes/toolchain`, seed removed | **self-hosting proofs**: gcc/dpm are db-owned (ours, not the seed's), a pthread C program compiles AND runs with the seed gone, no ELF in the final root references `/opt/{seed,cargo,rustup,cross-tools}` |
+| stage 2 | seed toolchain, recipes | full graph installed into `/` and `/sysroot`, `nawa` built and installed | per-package archive exists; final root synced + sealed (no `/opt/*`, no build dirs, key files present) |
+| stage 3 | distro's own toolchain | toolchain set (or world) rebuilt from `recipes/toolchain`, seed removed | **self-hosting proofs**: gcc/nawa are db-owned (ours, not the seed's), a pthread C program compiles AND runs with the seed gone, no ELF in the final root references `/opt/{seed,cargo,rustup,cross-tools}` |
 | iso | final root | hybrid ISO | xorriso must exist up front; after `grub-mkrescue` the image is structurally validated: `/boot/<kernel>`, `/boot/initramfs.img`, `/boot/grub/grub.cfg`, `/live/rootfs.squashfs` must be IN the image |
 
 ## What lives where
@@ -153,7 +153,7 @@ changed recipe tree, as a release build should.
 | `sync-repo.sh`     | host     | copy repo into the chroot WITHOUT the ~1 GB seed   |
 | `final-root.sh`    | chroot   | two-root helpers: install into / sysroot, sync, seal, seed-ref ELF scan |
 | `stage2.sh`        | host     | chroot entry for stage2                            |
-| `stage2-inner.sh`  | chroot   | compile DPM with seed rustc, build the full graph  |
+| `stage2-inner.sh`  | chroot   | compile NAWA with seed rustc, build the full graph  |
 | `stage3.sh`        | host     | chroot entry for the self-hosting rebuild          |
 | `stage3-inner.sh`  | chroot   | toolchain/world rebuild + self-hosting proofs      |
 | `initramfs.sh`     | host     | static busybox + /init live-boot initramfs builder |
@@ -183,7 +183,7 @@ the Ubuntu seed:
 | build root | `TARGET`            | `/`           | seed toolchain + every package (later builds link against it) |
 | final root | `TARGET/sysroot`    | `/sysroot`    | **clean** system: only distro packages — no seed files, no `/opt/seed`, no build dirs |
 
-* Stage 2 and 3 install each archive into `/` **and** `dpm --root /sysroot`.
+* Stage 2 and 3 install each archive into `/` **and** `nawa --root /sysroot`.
   At the end of each stage the final root is synced (resume-safe), its ld.so
   cache is regenerated, and it is checked for seed/build leaks.
 * The rootfs (stage 4) and the ISO (stage 5) are packed from the **final
@@ -200,7 +200,7 @@ Stage 4 (`mkrootfs.sh`) packs the finished final root — the exact tree the ISO
 squashes — into `mydistro-x86_64-rootfs.tar.zst`, with a `sha256sum -c`
 compatible `.sha256` and a `.packages` inventory. Pseudo-fs content, build
 scratch and seed leftovers are excluded, and a root that fails the sanity checks
-(missing `bash`/`dpm`/`gcc`/libc/db, or `/opt/seed`, `/build`, ... leaked in) is
+(missing `bash`/`nawa`/`gcc`/libc/db, or `/opt/seed`, `/build`, ... leaked in) is
 refused. The archive is re-read after writing and must contain what a consumer
 needs.
 
@@ -215,12 +215,12 @@ sudo ./build-all.sh --seed-rootfs out/mydistro-x86_64-rootfs.tar.zst \
 * stage 1 verifies the file (zstd frame, `.sha256` sidecar, optional pin),
   unpacks it with numeric ids/xattrs and runs `seed-from-rootfs.sh`, which
   checks the toolchain is really there (gcc, make, python, perl, curl,
-  rustc/cargo, ...), **parks the dpm database** (`/var/lib/dpm/seed-local`;
+  rustc/cargo, ...), **parks the nawa database** (`/var/lib/nawa/seed-local`;
   without that, stage 2 would see every package as installed and build
   nothing), drops stale rollback records, and writes `/opt/seed/env.sh` +
   `/opt/seed/manifest.txt` (which rootfs seeded this build);
 * stage 2 then rebuilds the whole graph with the previous build's own
-  toolchain and stage 3 proves it again (db ownership of `gcc`/`dpm`, compile +
+  toolchain and stage 3 proves it again (db ownership of `gcc`/`nawa`, compile +
   run test, ELF scan) — the files left over from the seed are exactly the ones
   *no package owns*, as with the Debian seed;
 * the seed's identity (its checksum) is part of stage 1's input fingerprint:
@@ -240,7 +240,7 @@ falling back.
 The bootstrap is **not** a source-only build. The seed (`bootstrap/seed/`)
 ships **prebuilt binaries from the host distro** — Debian `.deb` packages
 extracted verbatim with `dpkg -x` (gcc, glibc, binutils, make, ...) plus a
-**rustup-installed rustc** used to compile DPM. Trust flows:
+**rustup-installed rustc** used to compile NAWA. Trust flows:
 
 * Everything built in stages 2-3 is compiled by the seed's gcc, whose
   provenance is your Debian mirror, not this repository.
@@ -295,7 +295,6 @@ bash scripts/test-mkiso.sh                     # ISO gate + structural
                                                 #  validation, stubbed (27)
 bash scripts/validate-install.sh               # installer dry validation
 bash bootstrap/build-all.sh --dry-run /tmp/x   # end-to-end dry run
-cd pkgmgr && cargo test --release --locked     # DPM: 109 tests
 ```
 
 The real `stage1-3`/`mkiso` need root and a Debian-ish x86_64 host and are
@@ -305,7 +304,7 @@ and by the author's VM runs.
 ## Known limitations
 
 * No source-tarball cache across rebuilds (each stage-2/3 run re-downloads;
-  `dpm` has a per-package retry, a shared cache is future work).
+  `nawa` has a per-package retry, a shared cache is future work).
 * Stage scripts other than `build-all.sh` keep no state: running them by
   hand bypasses stamps/input tracking (documented contract — use
   `build-all.sh --from-stage` instead).
@@ -313,6 +312,6 @@ and by the author's VM runs.
 * Stage 2 does not rebuild packages whose recipes changed after install
   (the db records names, not build ids); deliberate procedures:
   `build-all.sh --from-stage 2` for everything, or
-  `dpm remove --yes --root / <pkg>` + re-run for one package.
+  `nawa remove --yes --root / <pkg>` + re-run for one package.
 * A seed adopted without a sidecar is trusted by size only (legacy path,
   announced in the log).

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # stage2-inner.sh — runs INSIDE the chroot (invoked by stage2.sh).
-# 1. compile DPM (the package manager) with the seed rustc
-# 2. install DPM into the target system
+# 1. compile NAWA (the package manager) with the seed rustc
+# 2. install NAWA into the target system
 # 3. build + install the FULL recipe graph (without recipes/gui unless WITH_GUI=1)
 #    in resolved order
 set -euo pipefail
@@ -39,11 +39,11 @@ exit 0
 EOF_MI
 chmod 755 /usr/bin/makeinfo
 fi
-export DPM_JOBS="${DPM_JOBS:-4}"
+export NAWA_JOBS="${NAWA_JOBS:-4}"
 REPO=/mydistro
-# overridable so tests can drive this script with a stub dpm (same pattern
-# as final-root.sh); in the real chroot /usr/bin/dpm is used
-DPM_BIN="${DPM_BIN:-/usr/bin/dpm}"
+# overridable so tests can drive this script with a stub nawa (same pattern
+# as final-root.sh); in the real chroot /usr/bin/nawa is used
+NAWA_BIN="${NAWA_BIN:-/usr/bin/nawa}"
 
 # Seed fix-ups. dpkg -x never ran the Debian maintainer scripts, so the
 # update-alternatives symlinks are missing from the seed. `c++` is needed by
@@ -54,7 +54,7 @@ DPM_BIN="${DPM_BIN:-/usr/bin/dpm}"
 [ -e /usr/bin/cc  ] || { [ -x /usr/bin/gcc ] && ln -s gcc /usr/bin/cc; }
 
 # The build root's /etc/group comes from the seed (stage1 writes only root and
-# nogroup; base-files' own group file lands as /etc/group.dpm-new there).
+# nogroup; base-files' own group file lands as /etc/group.nawa-new there).
 # util-linux's install runs `chgrp tty .../wall`, which fails with
 # "invalid group: 'tty'". Make sure the groups that install steps chgrp to
 # exist. Idempotent; same gid as base-files.
@@ -73,39 +73,40 @@ else
     echo "== stage2-inner: single-root layout (legacy): installing into / only"
 fi
 
-echo "== [1/3] compiling DPM with seed rustc"
+echo "== [1/3] compiling NAWA with seed rustc"
 if command -v cargo >/dev/null 2>&1; then
-    cd "$REPO/pkgmgr"
-    # Offline build from the vendored crates (scripts/vendor-dpm.sh). This is
-    # only the bootstrap dpm: step 3 rebuilds it from its recipe with the
+    cd "$REPO/nawa"
+    # Offline build from the crates vendored in the nawa repository (unpacked
+    # by bootstrap/fetch-nawa.sh from the commit pinned in the recipe). This is
+    # only the bootstrap nawa: step 3 rebuilds it from its recipe with the
     # distro's own `rust` package.
     if [ ! -f .cargo/config.toml ] || [ ! -d vendor ]; then
-        echo "stage2-inner: pkgmgr/vendor or pkgmgr/.cargo/config.toml is missing —" >&2
-        echo "stage2-inner: run scripts/vendor-dpm.sh and commit the result" >&2
+        echo "stage2-inner: nawa/vendor or nawa/.cargo/config.toml is missing —" >&2
+        echo "stage2-inner: run bootstrap/fetch-nawa.sh on the host and sync the repo again" >&2
         exit 1
     fi
     cargo build --release --offline --locked
-    install -Dm755 target/release/dpm /usr/bin/dpm
+    install -Dm755 target/release/nawa /usr/bin/nawa
 else
     # No cargo on PATH: the seed is gone and the `rust` recipe is not
     # installed yet (e.g. a partial `--from-stage 2` rerun). The installed
-    # /usr/bin/dpm keeps serving; step 3 then builds `rust` and rebuilds dpm.
-    if [ ! -x /usr/bin/dpm ]; then
-        echo "stage2-inner: no cargo (seed gone?) and no installed /usr/bin/dpm —" >&2
+    # /usr/bin/nawa keeps serving; step 3 then builds `rust` and rebuilds nawa.
+    if [ ! -x /usr/bin/nawa ]; then
+        echo "stage2-inner: no cargo (seed gone?) and no installed /usr/bin/nawa —" >&2
         echo "stage2-inner: run stage 1 first (unpack the seed), then re-run stage 2" >&2
         exit 1
     fi
-    echo "stage2-inner: no cargo on PATH — keeping the installed /usr/bin/dpm"
+    echo "stage2-inner: no cargo on PATH — keeping the installed /usr/bin/nawa"
 fi
 
-echo "== [2/3] verifying DPM"
-"$DPM_BIN" --version
+echo "== [2/3] verifying NAWA"
+"$NAWA_BIN" --version
 
 echo "== [3/3] building + installing ALL recipes (resolved order)"
 cd "$REPO"
-# dpm deps-all prints the full-graph topological order (bare names, one
+# nawa deps-all prints the full-graph topological order (bare names, one
 # per line), skipping anything already recorded in the local db.
-ORDER=$("$DPM_BIN" --recipes "$REPO/recipes" deps-all)
+ORDER=$("$NAWA_BIN" --recipes "$REPO/recipes" deps-all)
 # the optional GUI stack (recipes/gui) is opt-in: WITH_GUI=1
 if [[ "${WITH_GUI:-0}" != "1" && -d "$REPO/recipes/gui" ]]; then
     GUI_PKGS=" $(ls "$REPO/recipes/gui" | tr '\n' ' ') "
@@ -121,7 +122,7 @@ COUNT=$(echo "$ORDER" | awk 'NF{n++} END{print n+0}')
 # new archives). Dependents are NOT rebuilt: list them too if they must be.
 # --------------------------------------------------------------------------
 if [ -n "${STAGE2_REBUILD:-}" ]; then
-    ALL_ORDER=$("$DPM_BIN" --recipes "$REPO/recipes" deps-all --include-installed)
+    ALL_ORDER=$("$NAWA_BIN" --recipes "$REPO/recipes" deps-all --include-installed)
     for want in $STAGE2_REBUILD; do
         case $'\n'"$ALL_ORDER"$'\n' in
             *$'\n'"$want"$'\n'*) ;;
@@ -139,7 +140,7 @@ fi
 
 # --------------------------------------------------------------------------
 # The seed's Debian g++ searches /usr/include/x86_64-linux-gnu BEFORE
-# /usr/include. Once DPM has installed OUR glibc (headers in /usr/include),
+# /usr/include. Once NAWA has installed OUR glibc (headers in /usr/include),
 # Debian's own glibc headers there (bits/, sys/, gnu/, asm/, ...) would be a
 # second, different glibc header set: g++ then fails on <memory>/<mutex>
 # ("cannot convert '<brace-enclosed initializer list>' to 'unsigned int'").
@@ -148,7 +149,7 @@ fi
 # Idempotent: runs before every package build.
 # --------------------------------------------------------------------------
 purge_seed_libc_headers() {
-    [ -d /var/lib/dpm/local/glibc ] || return 0     # our glibc not installed yet
+    [ -d /var/lib/nawa/local/glibc ] || return 0     # our glibc not installed yet
     local d=/usr/include/x86_64-linux-gnu
     if [ -d "$d/bits" ] || [ -d "$d/sys" ] || [ -d "$d/gnu" ] || [ -d "$d/asm" ]; then
         echo "== stage2-inner: removing the seed's glibc headers from $d"
@@ -187,7 +188,7 @@ seed_glibc_relink() {
             new=/usr/lib/$b; old=/usr/lib/x86_64-linux-gnu/$b
             if [ -e "$new" ] && { [ -e "$old" ] || [ -L "$old" ]; }; then
                 if [ "$(readlink -f "$old")" != "$(readlink -f "$new")" ]; then
-                    ln -s "$new" "$old.dpm-tmp" && mv -T "$old.dpm-tmp" "$old"
+                    ln -s "$new" "$old.nawa-tmp" && mv -T "$old.nawa-tmp" "$old"
                 fi
             fi
         done
@@ -215,12 +216,12 @@ seed_libs_relink() {
         new="$new_dir/${old##*/}"
         [ -e "$new" ] || continue
         [ "$old" -ef "$new" ] && continue
-        ln -s "$new" "$old.dpm-tmp" && mv -T "$old.dpm-tmp" "$old"
+        ln -s "$new" "$old.nawa-tmp" && mv -T "$old.nawa-tmp" "$old"
     done
 }
 
 switch_to_new_glibc() {
-    [ -d /var/lib/dpm/local/glibc ] || return 0
+    [ -d /var/lib/nawa/local/glibc ] || return 0
     [ -e /usr/lib/ld-linux-x86-64.so.2 ] || return 0
     local want=../lib/ld-linux-x86-64.so.2 cur
     cur=$(readlink /usr/lib64/ld-linux-x86-64.so.2 2>/dev/null || true)
@@ -274,18 +275,18 @@ build_one() {
     local pkg="$1"
     purge_seed_libc_headers
     switch_to_new_glibc
-    "$DPM_BIN" --recipes "$REPO/recipes" --profiles "$REPO/profiles" --builddir /build \
-        --jobs "$DPM_JOBS" build ${ISOLATION:+--isolation "$ISOLATION"} "$pkg"
+    "$NAWA_BIN" --recipes "$REPO/recipes" --profiles "$REPO/profiles" --builddir /build \
+        --jobs "$NAWA_JOBS" build ${ISOLATION:+--isolation "$ISOLATION"} "$pkg"
     local archive
     # `|| true`: with pipefail a missing archive makes `ls` fail and the
     # assignment would kill the script silently (exit 2) before the
     # diagnostic below could run — the check must stay reachable
-    archive=$(ls /build/out/"$pkg"-[0-9]*.dpm.tar.zst 2>/dev/null | sort -V | tail -1 || true)
+    archive=$(ls /build/out/"$pkg"-[0-9]*.nawa.tar.zst 2>/dev/null | sort -V | tail -1 || true)
     if [ -z "$archive" ]; then
         echo "stage2-inner: no archive built for $pkg" >&2
         exit 1
     fi
-    "$DPM_BIN" --root / install --force "$archive"
+    "$NAWA_BIN" --root / install --force "$archive"
     switch_to_new_glibc
     install_final "$archive"
 }
@@ -298,11 +299,11 @@ mkdir -p /build
 # stage2's isolation level, so editing a recipe does NOT rebuild an installed
 # package here. Deliberate procedures (use one):
 #   * rebuild everything from the current recipes:  build-all.sh --from-stage 2
-#   * rebuild ONE package:  dpm remove --yes --root / <pkg> && re-run stage 2
+#   * rebuild ONE package:  nawa remove --yes --root / <pkg> && re-run stage 2
 #     (--yes: stage 2 runs non-interactively; deps-all then re-orders it,
 #     and stage 2's final-root sync picks it up)
 # A proper build-id-driven world rebuild is stage3 --isolation closure
-# territory (dpm's build cache already records build ids at `env` and above).
+# territory (nawa's build cache already records build ids at `env` and above).
 # --------------------------------------------------------------------------
 
 i=0
@@ -316,7 +317,7 @@ done <<< "$ORDER"
 # Make sure the final root has EVERY package the build root has (resume after
 # a layout switch or an interrupted run), then seal it.
 if final_root_enabled; then
-    ALL=$("$DPM_BIN" --recipes "$REPO/recipes" deps-all --include-installed)
+    ALL=$("$NAWA_BIN" --recipes "$REPO/recipes" deps-all --include-installed)
     if [[ "${WITH_GUI:-0}" != "1" && -d "$REPO/recipes/gui" ]]; then
         GUI_PKGS=" $(ls "$REPO/recipes/gui" | tr '\n' ' ') "
         ALL=$(for p in $ALL; do [[ "$GUI_PKGS" == *" $p "* ]] || echo "$p"; done)

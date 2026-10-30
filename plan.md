@@ -1,7 +1,7 @@
 # plan.md — Faseela bootstrap audit & repair
 
 Scope: `bootstrap/`, orchestration state handling, seed provenance, final-root
-boundary, ISO validation, tests, docs. The Rust package manager (pkgmgr) is
+boundary, ISO validation, tests, docs. The Rust package manager (nawa) is
 NOT modified: all 109 cargo tests, clippy and the recipe validation pass on the
 pristine tree; every confirmed defect below lives in the shell layer or in the
 orchestration contracts around it.
@@ -17,7 +17,7 @@ orchestration contracts around it.
 | final-root | `bash scripts/test-final-root.sh` | 15 PASS / 0 FAIL |
 | installer | `bash scripts/validate-install.sh` | PASSED |
 | dry run | `bash bootstrap/build-all.sh --dry-run --isolation closure /tmp/mydistro-dry` | exit 0 |
-| rust | `cargo build/clippy -D warnings/test --release --locked` (pkgmgr) | build OK, clippy clean, 109/109 tests |
+| rust | `cargo build/clippy -D warnings/test --release --locked` (nawa) | build OK, clippy clean, 109/109 tests |
 
 No failing build log ships in the tree (no state dir, no logs). Working tree
 is the pristine zip: one snapshot commit `f7f9e86` (local only, nothing pushed).
@@ -66,23 +66,23 @@ before unpacking.
 ### D5 — Stage2 re-run after stage3 crashes on the deleted seed (MED)
 stage3 removes `/opt/{seed,cargo,rustup,cross-tools}`; a later
 `--from-stage 2` then dies at `. /opt/seed/env.sh` (stage2.sh:61) — and would
-die again at `cargo build` (stage2-inner.sh:65) even though `/usr/bin/dpm` is
+die again at `cargo build` (stage2-inner.sh:65) even though `/usr/bin/nawa` is
 installed and the distro's own toolchain is in place.
-**Fix**: source `env.sh` only when present; skip the DPM rebuild when cargo is
-unavailable but a working installed dpm exists (fail loudly otherwise).
+**Fix**: source `env.sh` only when present; skip the NAWA rebuild when cargo is
+unavailable but a working installed nawa exists (fail loudly otherwise).
 
 ### D6 — Leftover one-time migration hack `REBUILD_AFTER_CHANGE="readline"` (LOW-MED)
 stage2-inner.sh:144-165 hardcodes a readline rebuild on every resume —
 leftover from the SHLIB_LIBS fix, incomplete by design (dependents are not
 rebuilt) and confusing. **Fix**: remove; document the correct procedures
-(`--from-stage 2` for everything, `dpm remove --yes <pkg>` + re-run for one package).
+(`--from-stage 2` for everything, `nawa remove --yes <pkg>` + re-run for one package).
 
 ### D7 — ~1 GB seed tarball (and seed-root scratch) copied into the chroot at every stage (MED)
 stage1/2/3 `cp -a "$REPO/bootstrap" ...` includes `bootstrap/seed/seed.tar.zst`
 plus possibly `bootstrap/seed/seed-root` (multi-GB) and the host's
-`pkgmgr/target`. With the documented ~10 GB budget this can starve the build.
+`nawa/target`. With the documented ~10 GB budget this can starve the build.
 **Fix**: new `bootstrap/sync-repo.sh` — tar-based copy with excludes
-(`pkgmgr/target`, `bootstrap/seed`, `srccache`, `out`, initramfs scratch);
+(`nawa/target`, `bootstrap/seed`, `srccache`, `out`, initramfs scratch);
 merge semantics preserved.
 
 ### D8 — `--wipe` protected-path list too narrow (HIGH if hit)
@@ -103,7 +103,7 @@ db-owned (i.e. ours, not the Debian seed's), no ELF scan for /opt/seed
 references in the final root.
 **Fix** (stage3-inner, after seed removal):
 1. compile+run a pthread C program with `/usr/bin/cc` (PATH has no /opt);
-2. `dpm owner` proves /usr/bin/gcc, /usr/bin/dpm are package-owned;
+2. `nawa owner` proves /usr/bin/gcc, /usr/bin/nawa are package-owned;
 3. readelf-based scan of final-root ELFs for interpreter/NEEDED/RPATH
    referencing /opt/{seed,cargo,rustup,cross-tools} (helper in final-root.sh,
    unit-tested with a deliberately poisoned rpath binary).
@@ -166,7 +166,7 @@ changed)`/`pending` separately.
    xorriso for iso), log header with tool versions
 3. `bootstrap/stage1.sh`: seed verification (D4), sync-repo
 4. `bootstrap/stage2.sh` + `stage2-inner.sh`: conditional env.sh + cargo
-   guard (D5), remove the readline hack (D6), DPM_BIN override
+   guard (D5), remove the readline hack (D6), NAWA_BIN override
 5. `bootstrap/stage3.sh` + new `stage3-inner.sh`: extraction, derived
    toolchain order (D9), self-hosting verification (D10)
 6. `bootstrap/final-root.sh`: `verify_final_root_no_seed_refs` helper (D10)
@@ -191,7 +191,7 @@ changed)`/`pending` separately.
 - `--wipe` refuses FHS roots/ancestors; lock rejects concurrent builds.
 - Seed adoption is checksum-verified when a sidecar exists; stage1 verifies
   before unpacking.
-- Stage2 can re-run after stage3 (no seed, installed dpm reused).
+- Stage2 can re-run after stage3 (no seed, installed nawa reused).
 - Stage3 asserts self-hosting with real checks (compile+run, db ownership,
   ELF /opt scan) — failing any of them fails the stage.
 - mkiso structurally validates the ISO contents.

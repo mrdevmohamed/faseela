@@ -28,7 +28,7 @@ The `extra/` recipes are generated from a single data table — edit
   Tools provided by the bootstrap seed (bash, coreutils, sed, gawk,
   python3, curl, ...) are implicit and must NOT be declared. The exception
   is the Rust toolchain: it is the `rust` recipe, so a recipe that needs
-  cargo (today only `dpm`) declares `build = ["rust"]`.
+  cargo (today only `nawa`) declares `build = ["rust"]`.
 * `source` URLs point at proven-reachable mirrors: `mirrors.kernel.org`
   for GNU software, upstream hosts elsewhere. Substitutions used where an
   upstream host is unreachable from the build farm (documented per recipe):
@@ -56,7 +56,7 @@ mpc → gcc → make → pkgconf
 expat → gdbm → gperf → coreutils → bash → tar → gzip → xz → zstd →
 grep → gawk → sed → flex → bison → bc → diffutils → findutils →
 gettext → texinfo → util-linux → perl → python → openssl → sqlite →
-libunistring → libidn2 → less → rust → dpm (self-hosting)
+libunistring → libidn2 → less → rust → nawa (self-hosting)
 
 **system** — libpsl → curl → git → shadow → procps-ng → psmisc →
 e2fsprogs → eudev → kmod → libpipeline → groff → man-db → libmnl →
@@ -83,6 +83,6 @@ Cross-group examples: `curl` (system) pulls `pkgconf` (toolchain);
 Verify any chain — or the whole 114-package graph at once — with:
 
 ```
-dpm --recipes recipes deps <name>
-dpm --recipes recipes deps-all        # full-tree topological order
+nawa --recipes recipes deps <name>
+nawa --recipes recipes deps-all        # full-tree topological order
 ```

@@ -30,7 +30,7 @@ done
 mkroot() {  # mkroot DIR [--no-rust]
     local r="$1" f p
     rm -rf "$r"; mkdir -p "$r"
-    for f in usr/bin/env usr/bin/bash usr/bin/sh usr/bin/dpm usr/bin/gcc usr/bin/g++ \
+    for f in usr/bin/env usr/bin/bash usr/bin/sh usr/bin/nawa usr/bin/gcc usr/bin/g++ \
              usr/bin/make usr/bin/ld usr/bin/ldconfig usr/bin/python3 usr/bin/perl \
              usr/bin/curl usr/bin/pkg-config usr/lib/libc.so.6; do
         mkdir -p "$r/$(dirname "$f")"; printf '#!/bin/sh\n' > "$r/$f"; chmod 755 "$r/$f"
@@ -42,13 +42,13 @@ mkroot() {  # mkroot DIR [--no-rust]
     if [[ ${2:-} != --no-rust ]]; then
         for f in usr/bin/rustc usr/bin/cargo; do printf '#!/bin/sh\n' > "$r/$f"; chmod 755 "$r/$f"; done
     fi
-    mkdir -p "$r/etc" "$r/usr/lib64" "$r/var/lib/dpm/local" "$r/dev" "$r/proc" "$r/sys" "$r/run" "$r/tmp" "$r/root" "$r/boot"
+    mkdir -p "$r/etc" "$r/usr/lib64" "$r/var/lib/nawa/local" "$r/dev" "$r/proc" "$r/sys" "$r/run" "$r/tmp" "$r/root" "$r/boot"
     echo 'root:x:0:0:root:/root:/bin/bash' > "$r/etc/passwd"
     ln -s usr/bin "$r/bin"; ln -s usr/lib64 "$r/lib64"
-    for p in glibc-2.40 gcc-15.1 bash-5.3 dpm-1; do
-        mkdir -p "$r/var/lib/dpm/local/$p"; echo "name=$p" > "$r/var/lib/dpm/local/$p/desc"
+    for p in glibc-2.40 gcc-15.1 bash-5.3 nawa-1; do
+        mkdir -p "$r/var/lib/nawa/local/$p"; echo "name=$p" > "$r/var/lib/nawa/local/$p/desc"
     done
-    mkdir -p "$r/var/lib/dpm/undo/gcc-15.1"; echo old > "$r/var/lib/dpm/undo/gcc-15.1/desc"
+    mkdir -p "$r/var/lib/nawa/undo/gcc-15.1"; echo old > "$r/var/lib/nawa/undo/gcc-15.1/desc"
     echo kernel > "$r/boot/vmlinuz-6.10"
     chmod 1777 "$r/tmp"
 }
@@ -70,7 +70,7 @@ check "A5 sidecar uses the bare file name" "grep -q ' mydistro-x86_64-rootfs.tar
 check "A6 package inventory lists the db"  "grep -qx 'glibc-2.40' $WORK/out/mydistro-x86_64-rootfs.packages && [[ \$(wc -l < $WORK/out/mydistro-x86_64-rootfs.packages) -eq 4 ]]"
 zstd -dc "$OUTA" | tar -t > "$WORK/a.list"
 zstd -dc "$OUTA" | tar -tv > "$WORK/a.vlist"   # verbose list (grep it from a file: grep -q on a pipe + pipefail = SIGPIPE race)
-check "A7 system files are inside"         "grep -qxF ./usr/bin/bash $WORK/a.list && grep -qxF ./var/lib/dpm/local/gcc-15.1/desc $WORK/a.list && grep -qxF ./boot/vmlinuz-6.10 $WORK/a.list"
+check "A7 system files are inside"         "grep -qxF ./usr/bin/bash $WORK/a.list && grep -qxF ./var/lib/nawa/local/gcc-15.1/desc $WORK/a.list && grep -qxF ./boot/vmlinuz-6.10 $WORK/a.list"
 check "A8 merged-usr symlinks kept"        "grep -q 'lib64 -> usr/lib64' $WORK/a.vlist"
 check "A9 /proc content NOT archived"      "! grep -q 'proc/cpuinfo' $WORK/a.list"
 check "A10 /dev, /run, /tmp content NOT archived" "! grep -qE 'dev/null.fake|run/pid|tmp/scratch' $WORK/a.list"
@@ -85,7 +85,7 @@ zstd -dc "$OUTA" | tar -x -C "$WORK/unpackB" --numeric-owner 2>/dev/null
 check "B1 file contents identical"         "cmp $WORK/rootA/usr/bin/bash $WORK/unpackB/usr/bin/bash"
 check "B2 modes preserved"                 "[[ \$(stat -c %a $WORK/unpackB/usr/bin/bash) == 755 ]]"
 check "B3 symlink target preserved"        "[[ \$(readlink $WORK/unpackB/lib64) == usr/lib64 ]]"
-check "B4 the db is intact"                "[[ \$(ls $WORK/unpackB/var/lib/dpm/local | wc -l) -eq 4 ]]"
+check "B4 the db is intact"                "[[ \$(ls $WORK/unpackB/var/lib/nawa/local | wc -l) -eq 4 ]]"
 if [[ $EUID -eq 0 ]]; then
     chown 1234:5678 "$WORK/rootA/usr/bin/curl"
     bash "$MKROOTFS" "$WORK/rootA" "$WORK/out/owner.tar.zst" > /dev/null 2>&1
@@ -96,9 +96,9 @@ else
 fi
 
 say "C. mkrootfs refuses what must not be shipped"
-mkroot "$WORK/rootC1"; rm "$WORK/rootC1/usr/bin/dpm"
+mkroot "$WORK/rootC1"; rm "$WORK/rootC1/usr/bin/nawa"
 bash "$MKROOTFS" "$WORK/rootC1" "$WORK/out/c1.tar.zst" > "$WORK/c1.log" 2>&1; RC=$?
-check "C1 missing dpm refused"             "[[ $RC -eq 1 ]] && grep -q '/usr/bin/dpm missing' $WORK/c1.log"
+check "C1 missing nawa refused"             "[[ $RC -eq 1 ]] && grep -q '/usr/bin/nawa missing' $WORK/c1.log"
 check "C2 nothing was written"             "[[ ! -e $WORK/out/c1.tar.zst && ! -e $WORK/out/c1.tar.zst.sha256 ]]"
 mkroot "$WORK/rootC2"; mkdir -p "$WORK/rootC2/opt/seed"
 bash "$MKROOTFS" "$WORK/rootC2" "$WORK/out/c2.tar.zst" > "$WORK/c2.log" 2>&1; RC=$?
@@ -106,9 +106,9 @@ check "C3 seed leftover (/opt/seed) refused" "[[ $RC -eq 1 ]] && grep -q '/opt/s
 mkroot "$WORK/rootC3"; mkdir -p "$WORK/rootC3/build"
 bash "$MKROOTFS" "$WORK/rootC3" "$WORK/out/c3.tar.zst" > "$WORK/c3.log" 2>&1; RC=$?
 check "C4 build scratch (/build) refused"  "[[ $RC -eq 1 ]]"
-mkroot "$WORK/rootC4"; rm -rf "$WORK/rootC4/var/lib/dpm/local"
+mkroot "$WORK/rootC4"; rm -rf "$WORK/rootC4/var/lib/nawa/local"
 bash "$MKROOTFS" "$WORK/rootC4" "$WORK/out/c4.tar.zst" > "$WORK/c4.log" 2>&1; RC=$?
-check "C5 root without a dpm db refused"   "[[ $RC -eq 1 ]] && grep -q 'no dpm database' $WORK/c4.log"
+check "C5 root without a nawa db refused"   "[[ $RC -eq 1 ]] && grep -q 'no nawa database' $WORK/c4.log"
 bash "$MKROOTFS" "$WORK/rootA" "$WORK/out/wrong.tgz" > "$WORK/c5.log" 2>&1; RC=$?
 check "C6 wrong extension refused (exit 2)" "[[ $RC -eq 2 ]]"
 bash "$MKROOTFS" "$WORK/no-such-root" "$WORK/out/c7.tar.zst" > "$WORK/c7.log" 2>&1; RC=$?
@@ -125,9 +125,9 @@ rm -rf "$WORK/seedD"; mkdir -p "$WORK/seedD"
 zstd -dc "$OUTA" | tar -x -C "$WORK/seedD" --numeric-owner 2>/dev/null
 bash "$SEEDPREP" "$WORK/seedD" "$OUTA" > "$WORK/d.log" 2>&1; RC=$?
 check "D1 exit 0"                          "[[ $RC -eq 0 ]]"
-check "D2 db is EMPTY (stage 2 will rebuild everything)" "[[ -d $WORK/seedD/var/lib/dpm/local && -z \$(ls -A $WORK/seedD/var/lib/dpm/local) ]]"
-check "D3 old db parked intact"            "[[ \$(ls $WORK/seedD/var/lib/dpm/seed-local | wc -l) -eq 4 && -f $WORK/seedD/var/lib/dpm/seed-local/glibc-2.40/desc ]]"
-check "D4 env.sh written"                  "grep -q DPM_JOBS $WORK/seedD/opt/seed/env.sh"
+check "D2 db is EMPTY (stage 2 will rebuild everything)" "[[ -d $WORK/seedD/var/lib/nawa/local && -z \$(ls -A $WORK/seedD/var/lib/nawa/local) ]]"
+check "D3 old db parked intact"            "[[ \$(ls $WORK/seedD/var/lib/nawa/seed-local | wc -l) -eq 4 && -f $WORK/seedD/var/lib/nawa/seed-local/glibc-2.40/desc ]]"
+check "D4 env.sh written"                  "grep -q NAWA_JOBS $WORK/seedD/opt/seed/env.sh"
 check "D5 env.sh sets no CARGO_HOME/RUSTUP_HOME/PATH (toolchain is in /usr)" "! grep -qE '^[[:space:]]*export (CARGO_HOME|RUSTUP_HOME|PATH)=' $WORK/seedD/opt/seed/env.sh"
 check "D6 manifest: kind + rootfs name"    "grep -q '^kind = rootfs' $WORK/seedD/opt/seed/manifest.txt && grep -q '^rootfs = mydistro-x86_64-rootfs.tar.zst' $WORK/seedD/opt/seed/manifest.txt"
 check "D7 manifest: sha256 from the sidecar" "grep -q \"^rootfs-sha256 = \$(cut -d' ' -f1 $OUTA.sha256)\" $WORK/seedD/opt/seed/manifest.txt"
@@ -135,15 +135,15 @@ check "D8 manifest lists the parked packages" "grep -qx 'gcc-15.1' $WORK/seedD/o
 check "D9 files themselves untouched"      "cmp $WORK/rootA/usr/bin/gcc $WORK/seedD/usr/bin/gcc"
 bash "$SEEDPREP" "$WORK/seedD" "$OUTA" > "$WORK/d2.log" 2>&1; RC=$?
 check "D10 idempotent: second run exits 0" "[[ $RC -eq 0 ]]"
-check "D11 ... and keeps the parked db"    "[[ \$(ls $WORK/seedD/var/lib/dpm/seed-local | wc -l) -eq 4 ]]"
-check "D12 ... and the live db stays empty" "[[ -z \$(ls -A $WORK/seedD/var/lib/dpm/local) ]]"
-check "D13 stale rollback records dropped" "[[ ! -e $WORK/seedD/var/lib/dpm/undo ]]"
+check "D11 ... and keeps the parked db"    "[[ \$(ls $WORK/seedD/var/lib/nawa/seed-local | wc -l) -eq 4 ]]"
+check "D12 ... and the live db stays empty" "[[ -z \$(ls -A $WORK/seedD/var/lib/nawa/local) ]]"
+check "D13 stale rollback records dropped" "[[ ! -e $WORK/seedD/var/lib/nawa/undo ]]"
 
 say "E. seed-from-rootfs refuses roots that cannot seed a build"
 mkroot "$WORK/seedE1" --no-rust
 bash "$SEEDPREP" "$WORK/seedE1" > "$WORK/e1.log" 2>&1; RC=$?
 check "E1 no rustc/cargo: refused"         "[[ $RC -eq 1 ]] && grep -q '/usr/bin/rustc' $WORK/e1.log"
-check "E2 db NOT touched on refusal"       "[[ \$(ls $WORK/seedE1/var/lib/dpm/local | wc -l) -eq 4 && ! -e $WORK/seedE1/var/lib/dpm/seed-local ]]"
+check "E2 db NOT touched on refusal"       "[[ \$(ls $WORK/seedE1/var/lib/nawa/local | wc -l) -eq 4 && ! -e $WORK/seedE1/var/lib/nawa/seed-local ]]"
 mkroot "$WORK/seedE2"; rm "$WORK/seedE2/usr/bin/gcc"
 bash "$SEEDPREP" "$WORK/seedE2" > "$WORK/e2.log" 2>&1; RC=$?
 check "E3 no compiler: refused, names it"  "[[ $RC -eq 1 ]] && grep -q '/usr/bin/gcc' $WORK/e2.log"

@@ -22,7 +22,7 @@ make defconfig
 # live-boot prerequisites: overlay root from squashfs on iso9660/usb
 scripts/config -e OVERLAY_FS -e ISO9660_FS -e SQUASHFS -e BLK_DEV_LOOP -e DEVTMPFS -e DEVTMPFS_MOUNT
 # build-isolation.md §9: the sandbox's user/pid/net/ipc/uts namespaces
-# (USER_NS defaults to n on x86_64 defconfig — without it dpm's `sandbox`
+# (USER_NS defaults to n on x86_64 defconfig — without it nawa's `sandbox`
 # and `closure` isolation levels cannot work on this distro's own kernel)
 scripts/config -e USER_NS -e PID_NS -e NET_NS -e IPC_NS -e UTS_NS
 # fresh /proc and /dev/pts for sandboxed builds; loopback for test suites

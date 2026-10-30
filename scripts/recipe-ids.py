@@ -3,11 +3,11 @@
 
     scripts/recipe-ids.py [RECIPES_DIR]
         one line per recipe: "<category> <name> <id>"
-        id = <name>-<version>-<rel>, the stem of the archive dpm builds
-        (<id>.dpm.tar.zst, see Recipe::id in pkgmgr)
+        id = <name>-<version>-<rel>, the stem of the archive nawa builds
+        (<id>.nawa.tar.zst, see Recipe::id in nawa)
 
     scripts/recipe-ids.py --stale PKG_DIR [RECIPES_DIR]
-        names of the *.dpm.tar.zst files in PKG_DIR that belong to a package
+        names of the *.nawa.tar.zst files in PKG_DIR that belong to a package
         which still has a recipe but whose version/rel has since changed, i.e.
         archives a newer build has replaced. Archives of packages that no
         longer have a recipe are NOT reported (removing a package is a
@@ -21,7 +21,7 @@ import sys
 import tomllib
 from pathlib import Path
 
-SUFFIX = ".dpm.tar.zst"
+SUFFIX = ".nawa.tar.zst"
 
 
 def load(root: Path):

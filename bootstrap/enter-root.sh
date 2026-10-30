@@ -3,7 +3,7 @@
 # `chroot`, but via a private mount namespace + pivot_root(2).
 #
 # Why not chroot: the kernel refuses unshare(CLONE_NEWUSER) from a chrooted
-# process (EPERM), so `dpm build --isolation sandbox|closure` cannot work
+# process (EPERM), so `nawa build --isolation sandbox|closure` cannot work
 # inside a chroot. After pivot_root in its own mount namespace the process's
 # root IS the namespace root, so user namespaces are allowed again.
 #

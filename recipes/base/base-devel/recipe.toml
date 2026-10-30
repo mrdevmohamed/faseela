@@ -30,9 +30,9 @@ run = [
 [build]
 # meta package: no sources, ships the manifest so the set is introspectable
 install = """
-mkdir -p %{pkgdir}/usr/share/dpm
+mkdir -p %{pkgdir}/usr/share/nawa
 for p in base-files binutils gcc glibc linux-headers make bash coreutils sed grep \\
          gawk findutils diffutils tar gzip xz zstd patch pkgconf file perl python; do
     echo "$p"
-done > %{pkgdir}/usr/share/dpm/base-devel.list
+done > %{pkgdir}/usr/share/nawa/base-devel.list
 """

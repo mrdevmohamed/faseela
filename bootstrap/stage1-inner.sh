@@ -3,7 +3,7 @@
 #
 # The seed already contains a complete, working native toolchain (Debian's
 # binutils/gcc/g++/glibc + make, bash, coreutils, python3, perl, rustc/cargo).
-# That IS the temporary toolchain: stage2 uses it to build DPM and then every
+# That IS the temporary toolchain: stage2 uses it to build NAWA and then every
 # recipe (including recipes/toolchain/*), and stage3 rebuilds without the seed.
 #
 # Cross-compiling a second glibc/gcc over the seed's /usr (LFS=/) mixes two

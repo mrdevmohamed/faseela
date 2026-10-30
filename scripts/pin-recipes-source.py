@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/pin-recipes-source.py — pin dpm-recipes and dpm-repo to one commit
+"""scripts/pin-recipes-source.py — pin nawa-recipes and nawa-repo to one commit
 of the official repository (github.com/mrdevmohamed/faseela).
 
 Both recipes download  https://github.com/<REPO>/archive/<commit>.tar.gz  and
@@ -11,7 +11,7 @@ and the tarball hash. This script writes all of them:
     python3 scripts/pin-recipes-source.py --no-fill     # skip the download/hash
 
 The commit must already be PUSHED to GitHub (the hash is computed from the
-tarball GitHub serves) and, for dpm-repo, must contain pkgmgr/dist/dpm.pub.
+tarball GitHub serves) and, for nawa-repo, must contain dist/nawa.pub.
 
 A commit cannot contain the hash of its own tarball, so the tree that gets
 shipped is the one at the pinned commit - normally one commit behind the
@@ -29,7 +29,7 @@ import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-RECIPES = ["dpm-recipes", "dpm-repo"]
+RECIPES = ["nawa-recipes", "nawa-repo"]
 REPO = "mrdevmohamed/faseela"
 ZERO = "0" * 64
 
@@ -84,7 +84,7 @@ def main():
         print(f"{name}: version {version} rel {rel} -> {commit[:12]}")
 
     if a.no_fill:
-        print("sha256 left as the placeholder; run scripts/fill-sha256.py -r dpm-recipes -r dpm-repo")
+        print("sha256 left as the placeholder; run scripts/fill-sha256.py -r nawa-recipes -r nawa-repo")
         return
     cmd = [sys.executable, str(ROOT / "scripts" / "fill-sha256.py")]
     for name in RECIPES:

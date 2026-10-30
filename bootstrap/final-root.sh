@@ -2,7 +2,7 @@
 # bootstrap/final-root.sh — helpers for the TWO-ROOT layout (sourced INSIDE
 # the chroot by stage2-inner.sh and stage3.sh; not meant to be run directly).
 #
-#   build root   /          seed toolchain + everything dpm builds against.
+#   build root   /          seed toolchain + everything nawa builds against.
 #                           Packages are installed here so later builds can
 #                           link against them (unchanged from the old layout).
 #   final root   $FINAL_ROOT  (default /sysroot) a CLEAN system: only distro
@@ -13,8 +13,8 @@
 
 FINAL_ROOT="${FINAL_ROOT:-}"
 # overridable so scripts/test-final-root.sh can run the helpers against a
-# throwaway tree with a stub dpm; in the real chroot the defaults apply
-DPM_BIN="${DPM_BIN:-/usr/bin/dpm}"
+# throwaway tree with a stub nawa; in the real chroot the defaults apply
+NAWA_BIN="${NAWA_BIN:-/usr/bin/nawa}"
 BUILD_ROOT="${BUILD_ROOT:-}"        # prefix of the build root ("" = "/")
 
 final_root_enabled() { [ -n "$FINAL_ROOT" ]; }
@@ -23,7 +23,7 @@ final_root_enabled() { [ -n "$FINAL_ROOT" ]; }
 # `--force` mirrors the build-root install (stage 3 reinstalls over stage 2).
 # The loader directories must be a real usr/lib64 plus a RELATIVE lib64 link.
 # An absolute link (e.g. lib64 -> /usr/lib) resolves against the BUILD root
-# while dpm runs inside the chroot, so an install into $FINAL_ROOT would write
+# while nawa runs inside the chroot, so an install into $FINAL_ROOT would write
 # the loader link into the build root's /usr/lib. Repairs older sysroots too.
 repair_final_layout() {
     final_root_enabled || return 0
@@ -44,18 +44,18 @@ install_final() {
     final_root_enabled || return 0
     mkdir -p "$FINAL_ROOT"
     repair_final_layout
-    "$DPM_BIN" --root "$FINAL_ROOT" install --force "$1"
+    "$NAWA_BIN" --root "$FINAL_ROOT" install --force "$1"
 }
 
 # Newest archive of package $1 from the known build dirs / the local cache.
 find_archive() {
     local pkg="$1" d a
-    for d in "$BUILD_ROOT/build3/out" "$BUILD_ROOT/build/out" "$BUILD_ROOT/var/cache/dpm"; do
+    for d in "$BUILD_ROOT/build3/out" "$BUILD_ROOT/build/out" "$BUILD_ROOT/var/cache/nawa"; do
         # `|| true`: with pipefail a missing dir makes `ls` fail; this only
         # works today because the sole caller invokes us inside a `||` list
         # (which disables set -e in here) — make that an implementation
         # detail, not a survival requirement
-        a=$(ls "$d"/"$pkg"-[0-9]*.dpm.tar.zst 2>/dev/null | sort -V | tail -1 || true)
+        a=$(ls "$d"/"$pkg"-[0-9]*.nawa.tar.zst 2>/dev/null | sort -V | tail -1 || true)
         if [ -n "$a" ]; then echo "$a"; return 0; fi
     done
     return 1
@@ -71,11 +71,11 @@ sync_final_root() {
     local order="$1" pkg archive n=0
     while IFS= read -r pkg; do
         [ -z "$pkg" ] && continue
-        [ -d "$BUILD_ROOT/var/lib/dpm/local/$pkg" ] || continue  # not built yet
-        [ -d "$FINAL_ROOT/var/lib/dpm/local/$pkg" ] && continue # already there
+        [ -d "$BUILD_ROOT/var/lib/nawa/local/$pkg" ] || continue  # not built yet
+        [ -d "$FINAL_ROOT/var/lib/nawa/local/$pkg" ] && continue # already there
         archive=$(find_archive "$pkg") || {
             echo "final-root: no archive for $pkg to install into $FINAL_ROOT" >&2
-            echo "final-root: rebuild it (delete /var/lib/dpm/local/$pkg and re-run stage 2)" >&2
+            echo "final-root: rebuild it (delete /var/lib/nawa/local/$pkg and re-run stage 2)" >&2
             return 1; }
         echo "== final-root: syncing $pkg into $FINAL_ROOT"
         install_final "$archive"
@@ -97,7 +97,7 @@ finalize_final_root() {
     [ -e "$FINAL_ROOT/usr/lib64/ld-linux-x86-64.so.2" ] || [ -L "$FINAL_ROOT/usr/lib64/ld-linux-x86-64.so.2" ] \
         || ln -s ../lib/ld-linux-x86-64.so.2 "$FINAL_ROOT/usr/lib64/ld-linux-x86-64.so.2"
     chmod 0750 "$FINAL_ROOT/root"
-    # glibc's post_install hook (`ldconfig`) is SKIPPED by dpm for a non-"/"
+    # glibc's post_install hook (`ldconfig`) is SKIPPED by nawa for a non-"/"
     # root while the root has no shell yet (glibc installs before bash), and
     # later installs add libraries too — so regenerate the cache once, here.
     if command -v ldconfig >/dev/null 2>&1; then
@@ -111,11 +111,11 @@ finalize_final_root() {
             echo "final-root: ERROR /$d leaked into $FINAL_ROOT" >&2; bad=1
         fi
     done
-    for d in usr/bin/bash usr/bin/dpm usr/lib/libc.so.6; do
+    for d in usr/bin/bash usr/bin/nawa usr/lib/libc.so.6; do
         [ -e "$FINAL_ROOT/$d" ] || { echo "final-root: ERROR /$d missing in $FINAL_ROOT" >&2; bad=1; }
     done
     [ "$bad" -eq 0 ] || return 1
-    echo "== final-root: $FINAL_ROOT is clean ($(ls "$FINAL_ROOT/var/lib/dpm/local" 2>/dev/null | wc -l) packages)"
+    echo "== final-root: $FINAL_ROOT is clean ($(ls "$FINAL_ROOT/var/lib/nawa/local" 2>/dev/null | wc -l) packages)"
 }
 
 # Scan the ELF files of a root for references to the bootstrap seed

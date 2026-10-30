@@ -5,45 +5,45 @@ Status: **implemented** — Phases 1–7 are in: env, sandbox, closure v1
 builds as a first-class mode. `scripts/spike-sandbox.sh` remains the
 Phase 0 host check. The layer cache needs overlayfs inside a user
 namespace (kernel ≥ 5.11) and silently falls back to extract-per-build
-when the probe says no (`dpm sandbox-probe overlay`).
+when the probe says no (`nawa sandbox-probe overlay`).
 
 Implementation notes that refine the text below:
 
 * The sandbox spec is **TOML**, not JSON: `toml` is already a dependency and
-  `serde_json` is not, and dpm's own offline vendored bootstrap must not
+  `serde_json` is not, and nawa's own offline vendored bootstrap must not
   gain crates.
 * The `live`-mode sandbox keeps the current root and overlays it (a
-  recursive self-bind that dpm then marks read-only) instead of pivoting;
+  recursive self-bind that nawa then marks read-only) instead of pivoting;
   `closure` mode binds the assembled root onto itself, `pivot_root`s into it
   with a `chroot` fallback, masks `/old`, and only then marks `/` read-only
   (pivot into a read-only tree is refused).
 * **Layer cache (Phase 5, implemented):** `closure::assemble_cached` keeps
   one extracted directory per archive under
-  `<cache>/layers/<archive-sha256>/` (`DPM_LAYER_CACHE` overrides the
-  location, default `<root>/var/cache/dpm`, so the layers land at
-  `<root>/var/cache/dpm/layers/<sha>`; `DPM_NO_LAYER_CACHE=1` disables
+  `<cache>/layers/<archive-sha256>/` (`NAWA_LAYER_CACHE` overrides the
+  location, default `<root>/var/cache/nawa`, so the layers land at
+  `<root>/var/cache/nawa/layers/<sha>`; `NAWA_NO_LAYER_CACHE=1` disables
   the feature). The build root is mounted as an **overlayfs**
   (lowerdirs = layers, throw-away upper/work under the sandbox scratch)
   instead of being extracted per build. Because the overlay mount happens
   *inside* the sandbox, its lowerdirs must be traversable by the §4.3
-  mapped identity, not by whoever ran dpm: `dpm build` checks
+  mapped identity, not by whoever ran nawa: `nawa build` checks
   `sandbox::first_untraversable_ancestor` before choosing the layered
   strategy and falls back to extract-per-build with a note when the cache
   sits under a tree the map cannot reach (e.g. a mode-700 `$HOME` in a
   `sudo` run — keep the rootfs under the build dir, or point
-  `DPM_LAYER_CACHE` at a reachable path). The archive is signature-verified
+  `NAWA_LAYER_CACHE` at a reachable path). The archive is signature-verified
   on *every* assembly — cache hits included — so the trust guarantee is
-  identical to `dpm install`. The extract-per-build fallback never touches
+  identical to `nawa install`. The extract-per-build fallback never touches
   the cache. Paths containing `,` or
   `:` cannot be expressed in an overlayfs data string; the builder falls
   back to v1 for them (with a note).
-* **build_id cache hits (implemented, opt-in):** `dpm build --use-cache`
+* **build_id cache hits (implemented, opt-in):** `nawa build --use-cache`
   compares the `build_id` recorded next to the archive (`<out>/<archive>.buildid`)
   with the id the current inputs produce (recipe bytes, source sha256,
   closure archive set, profile flags). On a match the build is skipped
   entirely — before even downloading the source. `--rebuild-check` always
   ignores the cache (it exists to prove builds reproduce).
-* **Rootless (Phase 7, implemented):** `dpm build` works unchanged as a
+* **Rootless (Phase 7, implemented):** `nawa build` works unchanged as a
   normal user at every level including `closure`: the sandbox self-writes
   its `0 → <caller-uid>` map, `/build` falls back to a base on the
   sandbox's private `/tmp`, and packages land as the caller (the archive
@@ -51,19 +51,19 @@ Implementation notes that refine the text below:
   closure dance as an unprivileged user (as `nobody` when the runner is
   root).
 * The build's `/build` is `/build` where that exists or is creatable (stage
-  chroots, root dpm); an unprivileged host stages under the sandbox's fresh
+  chroots, root nawa); an unprivileged host stages under the sandbox's fresh
   `/tmp` instead, with `%{srcdir}`/`%{pkgdir}` still expanding to whatever
   the build actually sees. Recipes must never hardcode `/build`.
 * Integration tests (tests/sandbox.rs, tests/isolation.rs, tests/rootless.rs)
-  probe the kernel first (`dpm sandbox-probe`) and skip with a message on
+  probe the kernel first (`nawa sandbox-probe`) and skip with a message on
   restricted hosts.
 
-Scope: `dpm build` and the bootstrap stages. Install-time behaviour is unchanged.
+Scope: `nawa build` and the bootstrap stages. Install-time behaviour is unchanged.
 
 ## 1. The problem today
 
 `build.rs` runs each recipe section as `bash -e -c <script>` in the source
-directory, with dpm's own environment, as whatever user runs dpm (root in the
+directory, with nawa's own environment, as whatever user runs nawa (root in the
 stage chroots), against the live system. Consequences:
 
 | # | What happens today | Why it hurts |
@@ -79,8 +79,8 @@ stage chroots), against the live system. Consequences:
 Facts about the current tree that shape the design (measured on this repo):
 
 * 147 recipes; **53 declare no build dependencies at all**, so they rely entirely on the implicit seed.
-* Only one recipe (`dpm`) needs a build tool that fetches (cargo) and it already builds `--offline` from a vendored config — **no recipe needs network access to build**.
-* `libc 0.2.191` is already in `Cargo.lock` (via `tar`), so adding it as a direct dependency of dpm costs nothing in the offline/vendored bootstrap.
+* Only one recipe (`nawa`) needs a build tool that fetches (cargo) and it already builds `--offline` from a vendored config — **no recipe needs network access to build**.
+* `libc 0.2.191` is already in `Cargo.lock` (via `tar`), so adding it as a direct dependency of nawa costs nothing in the offline/vendored bootstrap.
 * The `linux` recipe enables `OVERLAY_FS` but does not set `USER_NS` (it defaults to *off*) — must be added for the distro's own kernel (see §9).
 
 ## 2. Goals and non-goals
@@ -110,16 +110,16 @@ One setting, ordered from cheap to strict. Each level includes the previous ones
 | `sandbox` | user+mount+pid+net+ipc+uts namespaces over the **existing** root: no network, read-only root, private `/tmp`, `/dev`, `/proc`, PID-namespace cleanup | P3, P4, P5 |
 | `closure` | root = **assembled build root** (base set + declared deps only), not the live system | P1, P2, P7 |
 
-Selected by `[build] isolation` in the profile, overridable with `dpm build --isolation <level>`.
+Selected by `[build] isolation` in the profile, overridable with `nawa build --isolation <level>`.
 Default stays `none` until Phase 4 has rebuilt the whole tree cleanly, then flips to `closure`.
 
 ## 4. The sandbox
 
 ### 4.1 Mechanism
 
-dpm implements it itself (no `bubblewrap` dependency — bwrap would itself have to be bootstrapped before the build that needs it).
+nawa implements it itself (no `bubblewrap` dependency — bwrap would itself have to be bootstrapped before the build that needs it).
 
-* A hidden subcommand `dpm sandbox-init` is the sandbox's PID 1. `build.rs` spawns `dpm sandbox-init <spec.json>` instead of `bash` directly.
+* A hidden subcommand `nawa sandbox-init` is the sandbox's PID 1. `build.rs` spawns `nawa sandbox-init <spec.json>` instead of `bash` directly.
 * `sandbox-init` does `unshare(CLONE_NEWUSER|NEWNS|NEWPID|NEWNET|NEWIPC|NEWUTS)`, the parent writes the uid/gid maps, then it forks the real build process as PID 1 of the new PID namespace and `wait`s. When PID 1 exits the kernel kills every straggler (background daemons started by test suites).
 * Mount setup (all inside the new mount namespace): make `/` private → bind the build root onto itself → add the mounts of §4.2 → `pivot_root` into it (fall back to `chroot`; in a stage chroot `pivot_root` is not always possible, and with all capabilities dropped `chroot` is adequate for this threat model) → drop capabilities → `exec bash -e -c …`.
 * Implemented with the `libc` crate (`unshare`, `mount`, `pivot_root`, `prctl`, `ioctl`). The one `unsafe` surface is confined to `sandbox.rs`.
@@ -137,7 +137,7 @@ dpm implements it itself (no `bubblewrap` dependency — bwrap would itself have
 /proc        fresh procfs for the new PID namespace
 /sys         not mounted (opt-in read-only for the few packages that probe it)
 /etc/passwd, /etc/group   synthesised: root + nobody (+ "builder")
-masked       /mydistro /build* /opt/seed /root /home /mnt /var/lib/dpm /var/cache/dpm  (empty tmpfs)
+masked       /mydistro /build* /opt/seed /root /home /mnt /var/lib/nawa /var/cache/nawa  (empty tmpfs)
 ```
 
 `%{srcdir}` and `%{pkgdir}` expand to `/build/src` and `/build/pkg` inside the sandbox
@@ -157,7 +157,7 @@ files belong to an unprivileged id and the process has no power over the real sy
 ### 4.4 Network
 
 New net namespace, only `lo`, brought up with `ioctl(SIOCSIFFLAGS)` (many test suites need loopback). No resolv.conf.
-Escape hatch for a recipe that truly needs network: `[sandbox] network = true` **and** the user passes `--allow-network`; the archive's `.PKGINFO` records `impure = network` so it is visible. Today no recipe needs it. The intended answer for language ecosystems (cargo/go/pip) is a second pinned source (`[[source.extra]]`, vendored tarball + sha256) fetched *before* the sandbox, which is what the `dpm` recipe already does with its vendored cargo config.
+Escape hatch for a recipe that truly needs network: `[sandbox] network = true` **and** the user passes `--allow-network`; the archive's `.PKGINFO` records `impure = network` so it is visible. Today no recipe needs it. The intended answer for language ecosystems (cargo/go/pip) is a second pinned source (`[[source.extra]]`, vendored tarball + sha256) fetched *before* the sandbox, which is what the `nawa` recipe already does with its vendored cargo config.
 
 ### 4.5 Limits
 
@@ -180,9 +180,9 @@ closure(S)   = S plus, transitively, each member's depends.run
 
 ### 5.2 Where the dependencies come from: archives, not the live system
 
-The closure is assembled from **built archives** (`<builddir>/out/*.dpm.tar.zst`, or a signed repo), not from what happens to be installed in `/`. Consequences:
+The closure is assembled from **built archives** (`<builddir>/out/*.nawa.tar.zst`, or a signed repo), not from what happens to be installed in `/`. Consequences:
 
-* Stage2 no longer needs to `dpm install` each package before building the next. It builds the whole graph into the archive cache, then installs once into the target. The build no longer needs the DB lock at all (P7 solved).
+* Stage2 no longer needs to `nawa install` each package before building the next. It builds the whole graph into the archive cache, then installs once into the target. The build no longer needs the DB lock at all (P7 solved).
 * Resolution maps `name → archive` through the recipe version (`<name>-<version>-<rel>`); a missing archive means "build that dependency first", which is what `deps-all` ordering already guarantees.
 * Archives are verified (`sign::verify_for_install`) before being unpacked into a layer — the same trust policy as install.
 
@@ -218,14 +218,14 @@ Environment passed to every section — nothing else is inherited:
 PATH=/usr/bin:/usr/sbin        HOME=/build/home     TMPDIR=/tmp
 LC_ALL=C                       TZ=UTC               SHELL=/bin/bash
 SOURCE_DATE_EPOCH=<see below>  CFLAGS/CXXFLAGS/LDFLAGS from the profile
-DPM_JOBS  DPM_PKGDIR  DPM_SRCDIR   (existing; recipes pass -j%{jobs} themselves, MAKEFLAGS is not set)
+NAWA_JOBS  NAWA_PKGDIR  NAWA_SRCDIR   (existing; recipes pass -j%{jobs} themselves, MAKEFLAGS is not set)
 umask 022
 ```
 
 * `SOURCE_DATE_EPOCH` = newest mtime found in the extracted source tree (recorded in `.PKGINFO` as `source_date_epoch`); a recipe may pin it with `[package] source_date_epoch`.
 * `.PKGINFO` loses the wall-clock `build_date`; install time is recorded in the DB at install (it already has `install_date`).
 * `archive::create`: `uid=gid=0`, empty uname/gname, mtime = `min(mtime, SOURCE_DATE_EPOCH)`, entries sorted (already), fixed zstd level/params. The build-id (`sha256` of inputs, §7) goes in `.PKGINFO`.
-* `dpm build --rebuild-check` builds twice in different directories at different times and compares archive hashes; on mismatch it lists the differing members. This is the regression test for everything above.
+* `nawa build --rebuild-check` builds twice in different directories at different times and compares archive hashes; on mismatch it lists the differing members. This is the regression test for everything above.
 
 ## 7. Post-build checks ("lint")
 
@@ -268,9 +268,9 @@ Cross-compilation later: split `build` into `tools` (run on the build machine, i
 | `CONFIG_USER_NS`, `PID_NS`, `NET_NS`, `UTS_NS`, `IPC_NS` | sandbox | `USER_NS` defaults to **n** — add `-e USER_NS` (and verify the others) to `recipes/boot/linux`; the seed host's kernel must have them too |
 | `CONFIG_UNIX98_PTYS`, `TMPFS` | `/dev/pts`, `/tmp` | check test suites that need ptys |
 | `CONFIG_OVERLAY_FS` | layer cache (Phase 5) | already enabled; **user-namespace overlay needs kernel ≥ 5.11** |
-| util-linux `unshare` | only `scripts/spike-sandbox.sh` | dpm itself does not use it |
+| util-linux `unshare` | only `scripts/spike-sandbox.sh` | nawa itself does not use it |
 
-If a requirement is missing, dpm reports it and **falls back one level** (`closure → sandbox → env`) only with `--allow-degraded`; by default it refuses, because silently weaker isolation defeats the purpose.
+If a requirement is missing, nawa reports it and **falls back one level** (`closure → sandbox → env`) only with `--allow-degraded`; by default it refuses, because silently weaker isolation defeats the purpose.
 
 ## 10. Phases (one commit/PR per phase, tests with each)
 
@@ -278,12 +278,12 @@ If a requirement is missing, dpm reports it and **falls back one level** (`closu
 |-------|-------------|-------|--------|
 | **0** | `scripts/spike-sandbox.sh` ✔ — run it on the bootstrap host *and* inside the stage chroot to confirm §9 before writing code | — | done |
 | **1** `env` | environment whitelist, umask, `SOURCE_DATE_EPOCH`, archive normalisation, drop `build_date`, `--rebuild-check` | nothing new | **done** |
-| **2** `sandbox` (net + pid) | `libc` dep, `sandbox.rs`, `dpm sandbox-init`, net/pid/ipc/uts/user namespaces over the current root, timeouts, `/build/{src,pkg}` paths | Phase 0 green | **done** |
+| **2** `sandbox` (net + pid) | `libc` dep, `sandbox.rs`, `nawa sandbox-init`, net/pid/ipc/uts/user namespaces over the current root, timeouts, `/build/{src,pkg}` paths | Phase 0 green | **done** |
 | **3** `sandbox` (fs) | read-only root, private `/tmp`,`/dev`,`/proc`, host-path masking | Phase 2 | **done** |
 | **4** `closure` v1 | `base-devel` recipe, `depends.check`, closure resolver, extract-per-build root, archive-based dependency source, stage3 switched to `closure`, recipe audit fixes | Phases 1–3 | **done** (stage3 opt-in via `STAGE3_ISOLATION=closure`; flipping the default needs the full-tree rebuild first, §3) |
-| **5** layer cache | `/var/cache/dpm/layers` (`DPM_LAYER_CACHE`), overlayfs build root, `build_id` cache hits (`--use-cache`, opt-in) | Phase 4, kernel ≥ 5.11 | **done** (runtime probe per build; graceful extract-per-build fallback on older kernels — that path is what the restricted-container CI exercises) |
+| **5** layer cache | `/var/cache/nawa/layers` (`NAWA_LAYER_CACHE`), overlayfs build root, `build_id` cache hits (`--use-cache`, opt-in) | Phase 4, kernel ≥ 5.11 | **done** (runtime probe per build; graceful extract-per-build fallback on older kernels — that path is what the restricted-container CI exercises) |
 | **6** lint | ELF `NEEDED` vs `depends.run`, leaked paths, layout checks (warn → error) | Phase 4 | **done** (rundep check warns — 6a; leaks/layout error) |
-| **7** rootless | uid map to caller, `dpm build` as a normal user; groundwork for cross `tools`/`host` split | Phase 4 | **done** (tests/rootless.rs runs the full closure build unprivileged; `setpriv --reuid nobody` when the runner is root) |
+| **7** rootless | uid map to caller, `nawa build` as a normal user; groundwork for cross `tools`/`host` split | Phase 4 | **done** (tests/rootless.rs runs the full closure build unprivileged; `setpriv --reuid nobody` when the runner is root) |
 
 Phases 1–3 do not change what a recipe may *use*, only what a build may *do*, so they can land and be
 used in stage2 immediately. Phase 4 is the only one that forces recipe edits.

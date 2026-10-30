@@ -12,14 +12,14 @@
 #   6. grub-install (BIOS: MBR / UEFI: removable ESP) + static grub.cfg
 #      passing root=UUID=... so the initramfs boots straight off disk
 #   7. hostname + root password (interactive chroot)
-#   8. package cache (/var/cache/dpm) — kept on the installed system so
-#      `dpm rollback <pkg>` and offline reinstalls work there too
+#   8. package cache (/var/cache/nawa) — kept on the installed system so
+#      `nawa rollback <pkg>` and offline reinstalls work there too
 #
 # Env overrides (mainly for testing):
 #   MNT      mountpoint prefix    (default /mnt)
 #   FW_FORCE bios|uefi            skip firmware autodetection
-#   DPM_PKG_CACHE_SRC             package cache source (default /var/cache/dpm)
-#   DPM_INSTALL_DRYRUN=1          log mutating commands instead of running them
+#   NAWA_PKG_CACHE_SRC             package cache source (default /var/cache/nawa)
+#   NAWA_INSTALL_DRYRUN=1          log mutating commands instead of running them
 #
 # Usage:
 #   sudo install.sh /dev/vda [--hostname myhost] [--yes] [--no-pkg-cache]
@@ -31,7 +31,7 @@ DISK=""
 HOSTNAME_ARG=""
 ASSUME_YES=0
 PKG_CACHE=1
-DRYRUN="${DPM_INSTALL_DRYRUN:-0}"
+DRYRUN="${NAWA_INSTALL_DRYRUN:-0}"
 
 log()  { echo "install: $*"; }
 die()  { echo "install: error: $*" >&2; exit 1; }
@@ -67,10 +67,10 @@ while [ $# -gt 0 ]; do
     esac
 done
 
-# DPM_INSTALL_TEST=1 relaxes the root + block-device checks for stub-based validation
-[ "$(id -u)" = 0 ] || [ "${DPM_INSTALL_TEST:-0}" = 1 ] || die "must run as root (boot the ISO and log in as root)"
+# NAWA_INSTALL_TEST=1 relaxes the root + block-device checks for stub-based validation
+[ "$(id -u)" = 0 ] || [ "${NAWA_INSTALL_TEST:-0}" = 1 ] || die "must run as root (boot the ISO and log in as root)"
 [ -n "$DISK" ] || { sed -n '2,20p' "$0"; exit 1; }
-[ -b "$DISK" ] || [ "${DPM_INSTALL_TEST:-0}" = 1 ] || die "$DISK is not a block device"
+[ -b "$DISK" ] || [ "${NAWA_INSTALL_TEST:-0}" = 1 ] || die "$DISK is not a block device"
 
 # only whole disks, never partitions
 case "$DISK" in
@@ -80,7 +80,7 @@ esac
 
 # never touch a disk that is in use — most importantly the boot medium (/cdrom)
 # or the disk the running system lives on
-if [ "${DPM_INSTALL_TEST:-0}" != 1 ] && \
+if [ "${NAWA_INSTALL_TEST:-0}" != 1 ] && \
    awk -v d="$DISK" 'index($1, d) == 1 { found = 1 } END { exit !found }' /proc/mounts; then
     die "$DISK (or one of its partitions) is mounted — is it the live medium or the running system? refusing"
 fi
@@ -159,32 +159,32 @@ run rsync -aHAX --numeric-ids \
     --exclude=/dev/* --exclude=/proc/* --exclude=/sys/* --exclude=/run/* \
     --exclude=/tmp/* --exclude=/media/* --exclude=/cdrom/* \
     --exclude="${MNT%/}" --exclude="${MNT%/}"/* \
-    --exclude=/lost+found --exclude=/var/cache/dpm \
-    --exclude=/build --exclude=/build3 --exclude=/sources --exclude=/.dpm \
+    --exclude=/lost+found --exclude=/var/cache/nawa \
+    --exclude=/build --exclude=/build3 --exclude=/sources --exclude=/.nawa \
     / "$MNT/"
 
 # mountpoint skeleton must exist on the target even though we excluded
 # the contents (base-files normally provides the dirs; be safe anyway)
-run mkdir -p "$MNT"/{proc,sys,dev,run,tmp,cdrom,media,mnt,boot,var/cache/dpm}
+run mkdir -p "$MNT"/{proc,sys,dev,run,tmp,cdrom,media,mnt,boot,var/cache/nawa}
 run chmod 1777 "$MNT/tmp"
 
 # --- 3b) package cache (rollback support) --------------------------------------
-# dpm install keeps every installed archive in /var/cache/dpm so
-# `dpm rollback <pkg>` can restore the previous version offline. The main
+# nawa install keeps every installed archive in /var/cache/nawa so
+# `nawa rollback <pkg>` can restore the previous version offline. The main
 # rsync excludes the cache (it would double the disk usage through the
 # non-hardlinked copy) — copy it explicitly, minus the re-downloadable
 # remote/ subcache. Opt out with --no-pkg-cache.
-CACHE_SRC="${DPM_PKG_CACHE_SRC:-/var/cache/dpm}"
+CACHE_SRC="${NAWA_PKG_CACHE_SRC:-/var/cache/nawa}"
 if [ "$PKG_CACHE" = 1 ] && [ -d "$CACHE_SRC" ]; then
-    n=$(find "$CACHE_SRC" -maxdepth 1 -name '*.dpm.tar.zst' 2>/dev/null | wc -l)
+    n=$(find "$CACHE_SRC" -maxdepth 1 -name '*.nawa.tar.zst' 2>/dev/null | wc -l)
     if [ "$n" -gt 0 ]; then
         log "copying the package cache ($n archive(s)) — rollback support"
-        run rsync -a --exclude=remote "$CACHE_SRC/" "$MNT/var/cache/dpm/"
+        run rsync -a --exclude=remote "$CACHE_SRC/" "$MNT/var/cache/nawa/"
     else
         log "note: package cache has no archives — skipping the copy"
     fi
 elif [ "$PKG_CACHE" != 1 ]; then
-    log "note: package cache copy disabled (--no-pkg-cache) — 'dpm rollback' \
+    log "note: package cache copy disabled (--no-pkg-cache) — 'nawa rollback' \
 will need a repository"
 fi
 

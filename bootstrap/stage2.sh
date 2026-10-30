@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# bootstrap/stage2.sh — STAGE 2: build & install the core system with DPM.
+# bootstrap/stage2.sh — STAGE 2: build & install the core system with NAWA.
 #
-# Runs inside the chroot (after stage1). Builds DPM itself first (with the
+# Runs inside the chroot (after stage1). Builds NAWA itself first (with the
 # seed's rustc), installs it, then walks the toolchain recipes in
 # dependency order and builds + installs every one of them.
 #
@@ -16,7 +16,7 @@ LFS="${1:?usage: stage2.sh /mnt/mydistro}"
 # refresh the repo copy inside the chroot: stage1 copied it once, so edits made
 # on the host since then would otherwise never reach the chroot. The tar
 # extract merges (like cp -a did), so build output already in the chroot
-# (pkgmgr/target) is kept, while the seed tarball and the host's cargo
+# (nawa/target) is kept, while the seed tarball and the host's cargo
 # output are excluded (see sync-repo.sh).
 bash "$HERE/sync-repo.sh" "$LFS"
 
@@ -25,11 +25,11 @@ bash "$HERE/sync-repo.sh" "$LFS"
 # overwritten cargo considers its existing target up to date and relinks a
 # binary built from NO-LONGER-EXISTING sources (observed: a `--no-same-owner`
 # tar argv from a discarded patch, which GNU tar then mis-parsed as the
-# archive name). Re-stamping the copy's dpm sources beats every cached
+# archive name). Re-stamping the copy's nawa sources beats every cached
 # artifact mtime, so cargo genuinely recompiles the crate on each stage2 run;
 # dependencies stay cached, so this costs seconds.
-find "$LFS/mydistro/pkgmgr/src" -type f -exec touch -- {} +
-touch -- "$LFS/mydistro/pkgmgr/Cargo.toml" 2>/dev/null
+find "$LFS/mydistro/nawa/src" -type f -exec touch -- {} +
+touch -- "$LFS/mydistro/nawa/Cargo.toml" 2>/dev/null
 
 
 [[ -x "$LFS/usr/bin/env" && -x "$LFS/usr/bin/bash" ]] || {
@@ -57,10 +57,10 @@ fi
 # `. /opt/seed/env.sh` is conditional: a re-run AFTER stage 3 (e.g.
 # `--from-stage 2` for a world rebuild with the distro's own toolchain)
 # finds no seed — stage 3 deleted /opt. stage2-inner then keeps the
-# installed /usr/bin/dpm instead of rebuilding it with the seed's cargo.
+# installed /usr/bin/nawa instead of rebuilding it with the seed's cargo.
 # A FRESH target without a seed fails loudly in stage 1 instead.
 bash "$HERE/enter-root.sh" "$LFS" /usr/bin/env -i \
-    HOME=/root PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin TERM="${TERM:-dumb}" DPM_JOBS="${DPM_JOBS:-4}" WITH_GUI="${WITH_GUI:-0}" \
+    HOME=/root PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin TERM="${TERM:-dumb}" NAWA_JOBS="${NAWA_JOBS:-4}" WITH_GUI="${WITH_GUI:-0}" \
     FINAL_ROOT="$FINAL_ROOT" \
     STAGE2_ISOLATION="${STAGE2_ISOLATION:-none}" \
     bash -c 'if [ -r /opt/seed/env.sh ]; then . /opt/seed/env.sh; else echo "stage2: NOTE: no /opt/seed/env.sh (seed removed by stage 3?) — using the installed toolchain" >&2; fi; bash /mydistro/bootstrap/stage2-inner.sh'

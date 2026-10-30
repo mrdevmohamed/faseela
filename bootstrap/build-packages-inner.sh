@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # bootstrap/build-packages-inner.sh — runs INSIDE a rootfs (invoked by
 # .github/workflows/packages.yml via enter-root.sh): build the packages named
-# in $PKGS with dpm and leave the archives in $BUILD/out.
+# in $PKGS with nawa and leave the archives in $BUILD/out.
 #
 # Differences from "just loop over the names":
-#   * packages are built in DEPENDENCY order (dpm deps-all), whatever order
+#   * packages are built in DEPENDENCY order (nawa deps-all), whatever order
 #     $PKGS lists them in, so a whole-tree build works;
 #   * an archive that is already in $BUILD/out (the workflow pre-loads
 #     everything already PUBLISHED there) is never rebuilt: its package is
@@ -19,10 +19,10 @@
 #
 # Env:  PKGS         space-separated recipe names (required)
 #       ISOLATION    none|env|sandbox|closure          (default sandbox)
-#       DPM_JOBS     parallel jobs per build           (default 4)
+#       NAWA_JOBS     parallel jobs per build           (default 4)
 #       BUDGET_MIN   stop starting packages after N min (default 0 = no limit)
 #       KEEP_GOING   1 = continue after a failure       (default 1)
-#       REPO BUILD DPM_BIN   overridable for tests (/mydistro, /build, /usr/bin/dpm)
+#       REPO BUILD NAWA_BIN   overridable for tests (/mydistro, /build, /usr/bin/nawa)
 #
 # Writes $BUILD/report.txt (human readable) and $BUILD/status (KEY=value:
 # BUILT FAILED SKIPPED UPTODATE INCOMPLETE). Exit 1 if anything failed.
@@ -31,16 +31,16 @@ set -euo pipefail
 export PATH=/usr/bin:/bin:/usr/sbin:/sbin
 REPO="${REPO:-/mydistro}"
 BUILD="${BUILD:-/build}"
-DPM_BIN="${DPM_BIN:-/usr/bin/dpm}"
+NAWA_BIN="${NAWA_BIN:-/usr/bin/nawa}"
 : "${PKGS:?PKGS is empty}"
 ISOLATION="${ISOLATION:-sandbox}"
 BUDGET_MIN="${BUDGET_MIN:-0}"
 KEEP_GOING="${KEEP_GOING:-1}"
 OUT="$BUILD/out"
 
-dpm() {
-    "$DPM_BIN" --recipes "$REPO/recipes" --profiles "$REPO/profiles" \
-        --builddir "$BUILD" --jobs "${DPM_JOBS:-4}" "$@"
+nawa() {
+    "$NAWA_BIN" --recipes "$REPO/recipes" --profiles "$REPO/profiles" \
+        --builddir "$BUILD" --jobs "${NAWA_JOBS:-4}" "$@"
 }
 
 # <name>-<version>-<rel> of a recipe = the stem of its archive (Recipe::id).
@@ -68,7 +68,7 @@ START=$SECONDS
 note() { echo "$*" | tee -a "$BUILD/report.txt"; }
 
 # ---- what to build, in dependency order ----------------------------------
-ALL_ORDER="$(dpm deps-all --include-installed)"
+ALL_ORDER="$(nawa deps-all --include-installed)"
 for want in $PKGS; do
     grep -qxF -- "$want" <<< "$ALL_ORDER" || {
         echo "build-packages: no recipe named '$want'" >&2; exit 1; }
@@ -89,7 +89,7 @@ for p in $ORDER; do
     i=$((i + 1))
     id="$(rid "$p")" || { note "FAILED   $p (cannot read its recipe)"; failed_l+=("$p"); failed[$p]=1; continue; }
 
-    if [[ -f $OUT/$id.dpm.tar.zst ]]; then
+    if [[ -f $OUT/$id.nawa.tar.zst ]]; then
         uptodate+=("$id")
         continue
     fi
@@ -101,18 +101,18 @@ for p in $ORDER; do
 
     echo "::group::[$i/$total] $id (isolation=$ISOLATION)"
     # ---- dependencies: reuse published archives, compile only the rest ----
-    # `dpm deps` lists what is NOT installed yet, dependencies first, the
+    # `nawa deps` lists what is NOT installed yet, dependencies first, the
     # package itself last: "  3. name-1.2-1 (build deps: a, b)".
     need=()
-    mapfile -t need < <(dpm deps "$p" 2>/dev/null \
+    mapfile -t need < <(nawa deps "$p" 2>/dev/null \
         | sed -E 's/^[[:space:]]*[0-9]+\.[[:space:]]+//; s/[[:space:]]+\(build deps:.*$//' || true)
     missing=() depfail=""
     for d in "${need[@]}"; do
         [[ -n $d && $d != "$id" ]] || continue
         if [[ -n ${failed[$d]:-} ]]; then depfail="$d"; break; fi
-        if [[ -f $OUT/$d.dpm.tar.zst ]]; then
+        if [[ -f $OUT/$d.nawa.tar.zst ]]; then
             echo "-- dependency $d: installing the published archive"
-            dpm install --yes --force --allow-unsigned "$OUT/$d.dpm.tar.zst" \
+            nawa install --yes --force --allow-unsigned "$OUT/$d.nawa.tar.zst" \
                 || missing+=("$d")
         else
             missing+=("$d")
@@ -128,14 +128,14 @@ for p in $ORDER; do
     fi
 
     ok=0
-    if (( ${#missing[@]} )) && [[ ! -d /var/lib/dpm/local/$p ]]; then
+    if (( ${#missing[@]} )) && [[ ! -d /var/lib/nawa/local/$p ]]; then
         # `install` builds the package AND the dependencies nobody has built yet
-        dpm install --build --yes --force --isolation "$ISOLATION" "$p" && ok=1
+        nawa install --build --yes --force --isolation "$ISOLATION" "$p" && ok=1
     else
-        dpm build --install --force --isolation "$ISOLATION" "$p" && ok=1
+        nawa build --install --force --isolation "$ISOLATION" "$p" && ok=1
     fi
-    if (( ok )) && [[ ! -f $OUT/$id.dpm.tar.zst ]]; then
-        echo "-- dpm succeeded but left no $id.dpm.tar.zst in $OUT"
+    if (( ok )) && [[ ! -f $OUT/$id.nawa.tar.zst ]]; then
+        echo "-- nawa succeeded but left no $id.nawa.tar.zst in $OUT"
         ok=0
     fi
     echo "::endgroup::"

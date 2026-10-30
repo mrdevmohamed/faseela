@@ -5,7 +5,7 @@
 # the distro's own gcc, removes the seed toolchain, and then PROVES the
 # result instead of trusting the exit code:
 #   1. every rebuilt tool actually comes from the distro (db ownership of
-#      /usr/bin/gcc and /usr/bin/dpm — seed files are owned by nobody)
+#      /usr/bin/gcc and /usr/bin/nawa — seed files are owned by nobody)
 #   2. the system can compile, link and run C code with its own toolchain
 #      after the seed is gone
 #   3. no ELF in the final root references the deleted /opt/* seed dirs
@@ -13,10 +13,10 @@
 set -euo pipefail
 
 export PATH="/usr/bin:/bin:/usr/sbin:/sbin"
-export DPM_JOBS="${DPM_JOBS:-4}"
-# overridable so tests can drive this script with a stub dpm (same pattern
-# as final-root.sh); in the real chroot /usr/bin/dpm is used
-DPM_BIN="${DPM_BIN:-/usr/bin/dpm}"
+export NAWA_JOBS="${NAWA_JOBS:-4}"
+# overridable so tests can drive this script with a stub nawa (same pattern
+# as final-root.sh); in the real chroot /usr/bin/nawa is used
+NAWA_BIN="${NAWA_BIN:-/usr/bin/nawa}"
 REPO=/mydistro
 
 . "$REPO/bootstrap/final-root.sh"
@@ -38,9 +38,9 @@ if [[ "${STAGE3_WORLD:-0}" == "1" ]]; then
     # --include-installed: every package IS installed at this point, and
     # deps-all skips what the db records — without the flag the order would
     # come back empty and nothing would be rebuilt
-    ORDER=$("$DPM_BIN" --recipes "$REPO/recipes" deps-all --include-installed) || {
-        echo "stage3: deps-all --include-installed failed — the installed dpm" >&2
-        echo "stage3: may predate the flag; re-run stage2 (it rebuilds dpm) first" >&2
+    ORDER=$("$NAWA_BIN" --recipes "$REPO/recipes" deps-all --include-installed) || {
+        echo "stage3: deps-all --include-installed failed — the installed nawa" >&2
+        echo "stage3: may predate the flag; re-run stage2 (it rebuilds nawa) first" >&2
         exit 1
     }
     if [[ "${WITH_GUI:-0}" != "1" && -d "$REPO/recipes/gui" ]]; then
@@ -57,7 +57,7 @@ else
         exit 1
     fi
     TOOLCHAIN_PKGS=" $(ls "$REPO/recipes/toolchain" | tr '\n' ' ') "
-    ORDER=$("$DPM_BIN" --recipes "$REPO/recipes" deps-all --include-installed \
+    ORDER=$("$NAWA_BIN" --recipes "$REPO/recipes" deps-all --include-installed \
         | while IFS= read -r p; do
               case "$TOOLCHAIN_PKGS" in *" $p "*) echo "$p" ;; esac
           done) || { echo "stage3: deps-all failed" >&2; exit 1; }
@@ -70,7 +70,7 @@ mkdir -p /build3
 # two-root: make sure the final root already holds every installed package
 # (e.g. `--from-stage 3` after a build made before the two-root layout)
 if final_root_enabled; then
-    SYNC_ORDER=$("$DPM_BIN" --recipes "$REPO/recipes" deps-all --include-installed) || SYNC_ORDER=""
+    SYNC_ORDER=$("$NAWA_BIN" --recipes "$REPO/recipes" deps-all --include-installed) || SYNC_ORDER=""
     if [[ "${WITH_GUI:-0}" != "1" && -d "$REPO/recipes/gui" ]]; then
         GUI_PKGS=" $(ls "$REPO/recipes/gui" | tr '\n' ' ') "
         SYNC_ORDER=$(for p in $SYNC_ORDER; do [[ "$GUI_PKGS" == *" $p "* ]] || echo "$p"; done)
@@ -92,31 +92,31 @@ if [ "$ISOLATION" = "closure" ]; then
     # /build. Seed /build3/out with it (a real copy, never a hardlink: stage 3
     # rewrites same-named archives as it rebuilds, which must not touch
     # stage 2's files; -n keeps anything stage 3 already built on a resume).
-    if ! compgen -G "/build/out/*.dpm.tar.zst" >/dev/null; then
+    if ! compgen -G "/build/out/*.nawa.tar.zst" >/dev/null; then
         echo "stage3: closure needs stage 2's archives in /build/out — none found" >&2
         echo "stage3: re-run from stage 2: build-all.sh --from-stage 2 ..." >&2
         exit 1
     fi
     mkdir -p /build3/out
     cp -an --reflink=auto /build/out/. /build3/out/
-    echo "== stage3: seeded /build3/out with stage 2's archives ($(ls /build3/out/*.dpm.tar.zst | wc -l))"
+    echo "== stage3: seeded /build3/out with stage 2's archives ($(ls /build3/out/*.nawa.tar.zst | wc -l))"
 fi
 
 i=0
 for pkg in $ORDER; do
     i=$((i+1))
     echo "== stage3: [$i/$COUNT] $pkg"
-    "$DPM_BIN" --recipes "$REPO/recipes" --profiles "$REPO/profiles" --builddir /build3 \
-        --jobs "$DPM_JOBS" build ${ISOLATION:+--isolation "$ISOLATION"} "$pkg"
+    "$NAWA_BIN" --recipes "$REPO/recipes" --profiles "$REPO/profiles" --builddir /build3 \
+        --jobs "$NAWA_JOBS" build ${ISOLATION:+--isolation "$ISOLATION"} "$pkg"
     # match "<pkg>-<digit>..." with a glob (grep -E would misparse names
     # containing '+' etc. as regex metacharacters); e.g. `linux` never picks
     # up `linux-headers-*`
     # `|| true`: with pipefail a missing archive makes `ls` fail and the
     # assignment would kill the script silently (exit 2) before the
     # diagnostic below could run — the check must stay reachable
-    ARCHIVE=$(ls /build3/out/"$pkg"-[0-9]*.dpm.tar.zst 2>/dev/null | sort -V | tail -1 || true)
+    ARCHIVE=$(ls /build3/out/"$pkg"-[0-9]*.nawa.tar.zst 2>/dev/null | sort -V | tail -1 || true)
     [ -n "$ARCHIVE" ] || { echo "stage3: no archive built for $pkg" >&2; exit 1; }
-    "$DPM_BIN" --root / install --force "$ARCHIVE"
+    "$NAWA_BIN" --root / install --force "$ARCHIVE"
     install_final "$ARCHIVE"
 done
 
@@ -129,12 +129,12 @@ rm -rf /opt/cross-tools /opt/cargo /opt/rustup /opt/seed
 # ==========================================================================
 echo "== stage3: verifying self-hosting"
 
-# (1) attribution: the tools must be OURS. Files installed by dpm are
+# (1) attribution: the tools must be OURS. Files installed by nawa are
 # recorded in the local db; anything the seed's dpkg -x left behind is owned
-# by no package. If gcc/dpm are not db-owned, the "rebuild" never replaced
+# by no package. If gcc/nawa are not db-owned, the "rebuild" never replaced
 # the seed's copies and the claim below would be a lie.
-for f in /usr/bin/gcc /usr/bin/dpm; do
-    if ! "$DPM_BIN" --root / owner "$f" 2>/dev/null | grep -q "is owned by"; then
+for f in /usr/bin/gcc /usr/bin/nawa; do
+    if ! "$NAWA_BIN" --root / owner "$f" 2>/dev/null | grep -q "is owned by"; then
         echo "stage3: SELF-HOST FAILED: $f is not owned by any package —" >&2
         echo "stage3: the seed's copy was never replaced by a distro build." >&2
         echo "stage3: check the rebuild order (recipes/toolchain) and re-run stage 3." >&2
@@ -194,8 +194,8 @@ if [ -n "${FINAL_ROOT:-}" ]; then
             echo "stage3: FINAL ROOT BROKEN: gcc's $cc is missing in $FINAL_ROOT" >&2
             echo "stage3: build root has:  $(ls /usr/libexec/gcc/*/*/ 2>&1 | tr '\n' ' ')" >&2
             echo "stage3: final root has:  $(ls "$FINAL_ROOT"/usr/libexec/gcc/*/*/ 2>&1 | tr '\n' ' ')" >&2
-            echo "stage3: files dpm recorded for gcc in the final root:" >&2
-            "$DPM_BIN" --root "$FINAL_ROOT" files gcc 2>&1 | grep -E 'libexec|cc1' >&2 || true
+            echo "stage3: files nawa recorded for gcc in the final root:" >&2
+            "$NAWA_BIN" --root "$FINAL_ROOT" files gcc 2>&1 | grep -E 'libexec|cc1' >&2 || true
             exit 1
         fi
     done
