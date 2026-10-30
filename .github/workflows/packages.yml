@@ -318,7 +318,21 @@ jobs:
           for f in "$out"/*.nawa.tar.zst; do
             grep -qxF "$(basename "$f").sig" <<< "$have" || missing=1
           done
-          if (( ${#new[@]} == 0 && missing == 0 )); then
+          # the recipe tree rides in the signed index (`nawa sync`). The nawa in
+          # the build root comes from the PREVIOUS release, so it may predate
+          # `repo-create --recipes`: then publish without it (and say so).
+          rev="${GITHUB_SHA}"
+          rfile="recipes-${rev}.recipes.tar.zst"
+          withrecipes=0
+          if sudo bash bootstrap/enter-root.sh "$T" /usr/bin/nawa repo-create --help 2>/dev/null \
+               | grep -q -- '--recipes-rev'; then
+            withrecipes=1
+          else
+            echo "::warning::the nawa in the build root has no 'repo-create --recipes' - publishing without the recipe tree (release a new nawa first: push a v* tag)"
+          fi
+          rmissing=0
+          if (( withrecipes )) && ! grep -qxF "$rfile" <<< "$have"; then rmissing=1; fi
+          if (( ${#new[@]} == 0 && missing == 0 && rmissing == 0 )); then
             echo "### Nothing new to publish" >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
@@ -339,8 +353,10 @@ jobs:
 
           # sign the index inside the root (nawa links against the distro's libc)
           printf '%s' "$SIGN_KEY_B64" | base64 -d | sudo install -m 600 /dev/stdin "$T/root/nawa.sec"
+          rargs=()
+          if (( withrecipes )); then rargs=(--recipes /mydistro/recipes --recipes-rev "$rev"); fi
           sudo bash bootstrap/enter-root.sh "$T" /usr/bin/nawa repo-create /repo \
-            --out index.toml --sign --key /root/nawa.sec
+            --out index.toml --sign --key /root/nawa.sec "${rargs[@]}"
           # nawa refuses an archive without a detached <archive>.sig when the
           # client has a trusted key, so every archive is signed as well
           sudo bash bootstrap/enter-root.sh "$T" /usr/bin/env bash -c '
@@ -365,6 +381,10 @@ jobs:
             return 1
           }
           for f in "${new[@]}"; do upload "$repo/$(basename "$f")"; done
+          if (( withrecipes )); then
+            [[ -s "$repo/$rfile" ]] || { echo "::error::repo-create wrote no $rfile"; exit 1; }
+            upload "$repo/$rfile"
+          fi
           # signatures: for new archives, and for old ones that have none yet
           declare -A isnew=()
           for f in "${new[@]}"; do isnew[$(basename "$f")]=1; done
@@ -380,7 +400,13 @@ jobs:
           if (( ${#sigs[@]} )); then upload "${sigs[@]}"; fi
           upload "$repo/index.toml" "$repo/index.toml.sig"
 
-          # only now remove superseded archives from the release
+          # only now remove superseded archives (and older recipe trees)
+          if (( withrecipes )); then
+            while IFS= read -r a; do
+              [[ "$a" == "$rfile" ]] && continue
+              gh release delete-asset "$PKG_TAG" "$a" --repo "$PKG_REPO" --yes || true
+            done < <(grep -E '^recipes-.*\.recipes\.tar\.zst$' <<< "$have" || true)
+          fi
           for s in "${stale[@]}"; do
             gh release delete-asset "$PKG_TAG" "$s" --repo "$PKG_REPO" --yes || true
             gh release delete-asset "$PKG_TAG" "$s.sig" --repo "$PKG_REPO" --yes || true
