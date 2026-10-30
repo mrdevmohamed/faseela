@@ -184,6 +184,23 @@ verify_final_root_needed_resolved "$R" || {
     exit 1
 }
 
+# (5) the proofs above ran against the BUILD root. The rootfs that gets
+# published (and seeds the next build) is the FINAL root, so it must hold a
+# real compiler too — not just the gcc driver. Fail here, with a listing,
+# instead of publishing a rootfs whose next build dies in stage 1.
+if [ -n "${FINAL_ROOT:-}" ]; then
+    for cc in cc1 cc1plus; do
+        if ! compgen -G "$FINAL_ROOT/usr/libexec/gcc/*/*/$cc" >/dev/null; then
+            echo "stage3: FINAL ROOT BROKEN: gcc's $cc is missing in $FINAL_ROOT" >&2
+            echo "stage3: build root has:  $(ls /usr/libexec/gcc/*/*/ 2>&1 | tr '\n' ' ')" >&2
+            echo "stage3: final root has:  $(ls "$FINAL_ROOT"/usr/libexec/gcc/*/*/ 2>&1 | tr '\n' ' ')" >&2
+            echo "stage3: files dpm recorded for gcc in the final root:" >&2
+            "$DPM_BIN" --root "$FINAL_ROOT" files gcc 2>&1 | grep -E 'libexec|cc1' >&2 || true
+            exit 1
+        fi
+    done
+fi
+
 # the final root never contained the seed; verify that and refresh ld.so.cache
 finalize_final_root
 echo "== stage3: self-hosted (rebuilt with its own compiler, seed removed, proofs passed)"
