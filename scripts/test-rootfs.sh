@@ -206,6 +206,17 @@ check "F10 no releases at all: exit 3"     "[[ $RC -eq 3 ]]"
 PATH="$WORK/fakebin:$PATH" FAKE_FAIL_DOWNLOAD=1 bash "$FETCH" "$WORK/dlF6" > "$WORK/f6.out" 2> "$WORK/f6.err"; RC=$?
 check "F11 download failure is an error (exit 5), not 'none found'" "[[ $RC -eq 5 ]]"
 
+# ================================================== chroot environment (PATH) ==
+say "G. chroot entry exports PATH"
+# `env -i` + a bash whose default PATH is not exported leaves gcc without PATH;
+# gcc then cannot locate itself and searches ../libexec relative to the cwd:
+#   cc: fatal error: cannot execute 'cc1': posix_spawnp: No such file or directory
+# (the Debian seed hid this: its env.sh does `export PATH=...`; a rootfs seed's does not)
+for s in stage1 stage2 stage3 rebuild; do
+    check "G1 $s.sh passes PATH to env -i" \
+        "grep -A2 'env -i' $REPO/bootstrap/$s.sh | grep -qE 'PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'"
+done
+
 echo
 printf '=====================\n  PASS: %d   FAIL: %d\n=====================\n' "$PASS" "$FAIL"
 [[ $FAIL -eq 0 ]]
