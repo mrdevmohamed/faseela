@@ -1,5 +1,32 @@
 # Changelog
 
+## Unreleased — feat: system config `/etc/dpm/dpm.toml`, default repository, install from repo or build
+
+- New config layer `/etc/dpm/dpm.toml` (dir overridable with
+  `DPM_SYSCONFDIR`) below the project `dpm.toml`: precedence is now
+  flag > env > dpm.toml > /etc/dpm/dpm.toml > default. `dpm init --system`
+  writes it; the `dpm` package ships it (`pkgmgr/dist/dpm.toml`, kept in sync
+  with `config::system_template()` by a unit test; recipe rel 2).
+- Built-in default repository
+  `https://raw.githubusercontent.com/mrdevmohamed/faseela-repo/main`
+  (`repo = ""` / `none` switches it off). `dpm upgrade` uses it too.
+- New key `install_mode` (`DPM_INSTALL_MODE`): `auto` (default) | `repo` |
+  `build` | `ask`. `dpm install <name>` takes each package from the
+  repository when it has it (at least as new as the recipe, right
+  architecture), otherwise builds it. Flags: `--build/-b`, `--from-repo/-r`,
+  `--from <mode>`, `--repo <dir-or-url>`. The plan lists `[repo ]`/`[build]` per
+  package; `repo` mode fails before touching anything; `auto` falls back to a
+  build when the repository is unusable or a download/verification fails.
+  Repository-only packages (no recipe) install as binary packages.
+- `upgrade::open_repo` / `fetch_entry` extracted from `upgrade` (same
+  trust, signature, freshness and archive checks) and shared with `install`.
+- `dpm update` and `bootstrap/build-packages-inner.sh` always build
+  (`--build`), so stage builds stay reproducible source builds.
+- Tests: config layering/defaults (config.rs), `choose` prompt (confirm.rs),
+  `tests/repo_install.rs` (auto / --build / --from-repo / binary-only /
+  fallback / system-config precedence). Existing integration test helpers pin
+  `DPM_SYSCONFDIR` and `DPM_INSTALL_MODE=build`.
+
 ## Unreleased — feat: per-recipe download mirrors (`package.mirrors`)
 
 - A release build died in stage2 at `rsync` (102/118): `download.samba.org`

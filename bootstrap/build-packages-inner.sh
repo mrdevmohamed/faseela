@@ -130,7 +130,7 @@ for p in $ORDER; do
     ok=0
     if (( ${#missing[@]} )) && [[ ! -d /var/lib/dpm/local/$p ]]; then
         # `install` builds the package AND the dependencies nobody has built yet
-        dpm install --yes --force --isolation "$ISOLATION" "$p" && ok=1
+        dpm install --build --yes --force --isolation "$ISOLATION" "$p" && ok=1
     else
         dpm build --install --force --isolation "$ISOLATION" "$p" && ok=1
     fi

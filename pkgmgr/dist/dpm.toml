@@ -1,0 +1,28 @@
+# /etc/dpm/dpm.toml — system-wide DPM configuration
+#
+# Precedence (highest wins): command-line flag > DPM_* environment variable >
+# the nearest dpm.toml in or above the working directory > this file >
+# built-in default.  Inspect the result with `dpm config show`.
+# Relative paths in this file resolve against /etc/dpm.
+
+# Default binary repository (env: DPM_REPO).  A local directory or an
+# http(s) URL that serves index.toml, index.toml.sig and the *.dpm.tar.zst
+# archives.  Set it to "" to switch repositories off.
+# Remote repositories need a trusted key (`dpm trust <key.pub>`) unless you
+# pass --allow-unsigned.
+repo = "https://raw.githubusercontent.com/mrdevmohamed/faseela-repo/main"
+
+# Where `dpm install <name>` gets packages (env: DPM_INSTALL_MODE):
+#   auto  - install from the repository when it has the package, otherwise
+#           build it from the recipe (default)
+#   repo  - repository only; a package the repository lacks is an error
+#   build - always build from source
+#   ask   - like auto, but asks "repository or build?" in a terminal
+# Per command: `dpm install --build foo` / `--from-repo foo` / `--from ask foo`.
+install_mode = "auto"
+
+# Recipes used for building and for dependency resolution (env: DPM_RECIPES)
+#recipes = "/usr/share/dpm/recipes"
+#builddir = "/var/tmp/dpm-build"
+#profiles = "/etc/dpm/profiles"
+#jobs = 8

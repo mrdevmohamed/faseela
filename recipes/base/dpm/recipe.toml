@@ -6,7 +6,7 @@
 [package]
 name = "dpm"
 version = "0.8.0"
-rel = 1
+rel = 2
 arch = ["x86_64"]
 summary = "DPM — this distribution's source-based package manager (self-hosting build)"
 license = ["GPL-3.0"]
@@ -20,4 +20,8 @@ run = []
 # local: sources are copied verbatim — drop any host-built target/ so we never package stale artifacts
 prepare = "rm -rf target"
 compile = "cargo build --release --offline --locked"
-install = "install -Dm755 target/release/dpm %{pkgdir}/usr/bin/dpm"
+install = """
+install -Dm755 target/release/dpm %{pkgdir}/usr/bin/dpm
+# system-wide configuration: default repository + install mode
+install -Dm644 dist/dpm.toml %{pkgdir}/etc/dpm/dpm.toml
+"""

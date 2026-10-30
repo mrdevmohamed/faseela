@@ -29,6 +29,11 @@ fn recipe(dir: &Path, name: &str, version: &str, build: &[&str], run: &[&str]) {
 fn dpm(dir: &Path, args: &[&str]) -> Output {
     Command::new(dpm_bin())
         .env_remove("DPM_CONFIG")
+        .env_remove("DPM_REPO")
+        // never read the host's /etc/dpm/dpm.toml; these tests cover the
+        // build path (the repository path lives in tests/repo_install.rs)
+        .env("DPM_SYSCONFDIR", std::env::temp_dir().join("dpm-test-no-sysconf"))
+        .env("DPM_INSTALL_MODE", "build")
         .env("NO_COLOR", "1")
         .current_dir(dir)
         .args(["--recipes", dir.join("recipes").to_str().unwrap()])
