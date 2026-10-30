@@ -194,11 +194,12 @@ jobs:
 
       # Resume = restore the whole build target (/mnt/mydistro + its state dir)
       # saved by the previous dispatch run, even if that run failed or timed
-      # out. Stage 2 skips packages that are already installed. Tag (release)
-      # builds are always clean.
+      # out. Stage 2 skips packages that are already installed. A fresh tag
+      # build is always clean; only "Re-run failed jobs" of a tag run
+      # (run_attempt > 1) resumes from what the failed attempt saved.
       - name: Restore the previous build target
         id: tgtcache
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.resume }}
+        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.resume) || (github.event_name == 'push' && github.run_attempt > 1) }}
         uses: actions/cache/restore@v4
         with:
           path: ${{ runner.temp }}/target.tar.zst
@@ -226,6 +227,11 @@ jobs:
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
           # a crash loop must not spend ~1 s per crash writing cores
           sudo sysctl -w kernel.core_pattern='|/bin/false' || true
+
+      # Minutes, not hours: an unreachable source host fails here instead of
+      # at package 102 of stage 2. Needs only python3 (preinstalled).
+      - name: Check that every recipe source is reachable
+        run: python3 scripts/check-sources.py
 
       - name: Build the core (seed -> stage1 -> stage2 -> stage3 -> rootfs)
         id: build
@@ -256,7 +262,7 @@ jobs:
       # dispatch run may resume from it.
       - name: Pack the build target
         id: packtgt
-        if: ${{ always() && steps.build.conclusion != 'skipped' && (github.event_name == 'workflow_dispatch' || steps.build.outcome == 'success') }}
+        if: ${{ always() && steps.build.conclusion != 'skipped' && (github.event_name == 'workflow_dispatch' || github.event_name == 'push' || steps.build.outcome == 'success') }}
         continue-on-error: true
         run: |
           sudo ./bootstrap/umount-chroot.sh "$TARGET" || true
@@ -266,7 +272,7 @@ jobs:
           ls -lh "$RUNNER_TEMP/target.tar.zst"
 
       - name: Save the build target cache (resume)
-        if: ${{ always() && github.event_name == 'workflow_dispatch' && steps.packtgt.outcome == 'success' }}
+        if: ${{ always() && steps.packtgt.outcome == 'success' }}
         continue-on-error: true
         uses: actions/cache/save@v4
         with:
