@@ -1,5 +1,26 @@
 # Changelog
 
+## Unreleased — the recipes move to faseela-repo
+
+- **Moved** `recipes/`, `.github/workflows/packages.yml` and the recipe tooling
+  (`check-recipes.py`, `recipe-ids.py`, `fill-sha256.py`, `gen-recipes-extra.py`,
+  `recipe_data_extra.py`, `pin-nawa-source.py`) to
+  [faseela-repo](https://github.com/mrdevmohamed/faseela-repo), with their git
+  history. `check-sources.py` and `rootfs-closure.py` stay: the ISO build uses them.
+- **Added** `bootstrap/fetch-recipes.sh`: no pin file. A build fetches faseela-repo
+  `main` once and records the commit in `.recipes-rev`; a sibling
+  `../faseela-repo` checkout, `RECIPES_DIR` and `RECIPES_REF` override it.
+  `build-all.sh`, `sync-repo.sh` and `mkrootfs-min.sh` call it; `recipes/` is
+  git-ignored.
+- `release.yml` has a `recipes` job that fixes the faseela-repo commit for the
+  whole run (`recipes_ref` input), and the release notes name it. `ci.yml`
+  fetches the recipes and tests `fetch-recipes.sh` (`test-fetch-recipes.sh`).
+- The final root also gets `/usr/share/nawa/recipes-source` (which faseela-repo
+  commit the snapshot is).
+- `packages.yml` now runs in faseela-repo, publishes to that repository's
+  releases with its own `GITHUB_TOKEN` (no `PKG_REPO` / `PKG_REPO_TOKEN`), and
+  takes `bootstrap/`, `profiles/` and the rootfs from this repository.
+
 ## Unreleased — the recipe tree comes from `nawa sync`, not from a pinned package
 
 - **Removed** the `nawa-recipes` and `nawa-repo` recipes and

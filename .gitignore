@@ -6,6 +6,12 @@
 /srccache/
 .nawa-fetch.*/
 
+# the recipe tree lives in faseela-repo; bootstrap/fetch-recipes.sh puts it here
+/recipes/
+/.recipes-rev
+/.recipes-new.*/
+/.recipes-fetch.*/
+
 # Build scratch & outputs
 build/
 out/

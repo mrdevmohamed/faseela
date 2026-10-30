@@ -7,16 +7,27 @@ This repository holds the distribution itself:
 
 ```
 mydistro/
-├── recipes/     Source recipes for every package in the distribution
+├── recipes/     Source recipes for every package (fetched from faseela-repo, git-ignored)
 ├── bootstrap/   Stage 0-4 scripts that build the distribution from nothing
 └── profiles/    Per-architecture build profiles (CFLAGS, toolchain choices)
 ```
 
 The package manager, **nawa**, lives in its own repository,
 [github.com/mrdevmohamed/nawa](https://github.com/mrdevmohamed/nawa). This
-repository pins one nawa commit in `recipes/base/nawa/recipe.toml` (re-pin with
-`python3 scripts/pin-nawa-source.py [<commit>]`); `bootstrap/fetch-nawa.sh`
-unpacks exactly that commit into `nawa/` (git-ignored) for the stage-2 build.
+repository ships the nawa commit pinned in `recipes/base/nawa/recipe.toml`
+(re-pin in faseela-repo with `python3 scripts/pin-nawa-source.py [<commit>]`);
+`bootstrap/fetch-nawa.sh` unpacks exactly that commit into `nawa/`
+(git-ignored) for the stage-2 build.
+
+The **recipes** live in
+[github.com/mrdevmohamed/faseela-repo](https://github.com/mrdevmohamed/faseela-repo),
+which also builds and publishes the packages. There is no pin file:
+`bootstrap/fetch-recipes.sh` (called by `build-all.sh`, `sync-repo.sh` and
+`mkrootfs-min.sh`) takes the newest default branch (`main`) once and records the commit it took
+in `.recipes-rev`; release builds resolve it once per run and name it in the
+release notes. Locally a sibling `../faseela-repo` checkout is used as it is
+(`RECIPES_DIR=<path>` picks another), `RECIPES_REF=<branch|tag|commit>` takes
+a specific revision and `--update` fetches the newest again.
 
 ## Design decisions (locked in)
 
@@ -490,7 +501,7 @@ See `bootstrap/README.md` for details and host requirements.
 Every recipe outside `recipes/gui` carries a sha256 computed from the actual
 upstream tarball (no copied-and-pasted hashes). The 32 GUI recipes ship a
 zero placeholder instead and fail loudly at source verification until
-`scripts/fill-sha256.py` pins them — an unpinned source is never silently
+`scripts/fill-sha256.py` (in faseela-repo) pins them — an unpinned source is never silently
 built. Full graph sanity check: `nawa --recipes recipes deps-all` — all 148
 packages resolve in topological order (base-files #5, runit-services right
 after runit).

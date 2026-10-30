@@ -5,8 +5,8 @@
 # bootstrap compiles it from $REPO/nawa (offline: the crates are vendored in
 # that repository), so before the repo is synced into the chroot this script
 # makes sure $REPO/nawa holds EXACTLY the commit pinned in
-# recipes/base/nawa/recipe.toml — the same pin the `nawa` recipe builds from
-# (see scripts/pin-nawa-source.py).
+# recipes/base/nawa/recipe.toml (faseela-repo) — the same pin the `nawa` recipe
+# builds from (see scripts/pin-nawa-source.py in faseela-repo).
 #
 # Behaviour:
 #   * the tarball is downloaded once to $REPO/srccache and verified against the
@@ -33,7 +33,7 @@ SHA="$(field sha256)"
 TOP="$(field source_dir)"
 [[ -n $URL && -n $TOP ]] || { echo "fetch-nawa: no source/source_dir in $RECIPE" >&2; exit 1; }
 [[ $SHA =~ ^[0-9a-f]{64}$ && $SHA != 0000000000000000000000000000000000000000000000000000000000000000 ]] || {
-    echo "fetch-nawa: the nawa recipe has no sha256 pin yet — run: python3 scripts/pin-nawa-source.py" >&2
+    echo "fetch-nawa: the nawa recipe has no sha256 pin yet — in faseela-repo run: python3 scripts/pin-nawa-source.py" >&2
     exit 1
 }
 

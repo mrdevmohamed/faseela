@@ -102,6 +102,12 @@ install_recipes_snapshot() {
         find "$dst" -type d -exec chmod 755 {} +
         rev="snapshot-$(cd "$src/recipes" && find . -type f -print0 | LC_ALL=C sort -z \
             | xargs -0 -r sha256sum | sha256sum | cut -c1-12)"
+        # which faseela-repo commit the tree is (bootstrap/fetch-recipes.sh);
+        # kept in its own file so `nawa sync`, which compares recipes.rev with
+        # the repository, still always replaces the snapshot
+        if [ -s "$src/.recipes-rev" ]; then
+            install -Dm644 "$src/.recipes-rev" "$FINAL_ROOT/usr/share/nawa/recipes-source"
+        fi
         mkdir -p "$FINAL_ROOT/var/lib/nawa"
         printf '%s\n' "$rev" > "$FINAL_ROOT/var/lib/nawa/recipes.rev"
         echo "== final-root: recipe snapshot $rev -> /usr/share/nawa/recipes"

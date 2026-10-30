@@ -32,16 +32,24 @@ set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 REPO="$(cd "$HERE/.." && pwd)"
 LFS="${1:?usage: sync-repo.sh TARGET}"
+# the recipes live in faseela-repo: make sure $REPO/recipes holds them (a no-op
+# once fetched, see fetch-recipes.sh)
+bash "$HERE/fetch-recipes.sh"
 [[ -d $REPO/recipes && -d $REPO/bootstrap ]] || {
     echo "sync-repo: $REPO does not look like the repo root (no recipes/ or bootstrap/)" >&2
     exit 1
 }
 # nawa is not part of this repository: unpack the commit pinned in
-# recipes/base/nawa/recipe.toml into $REPO/nawa (no-op when already there)
+# recipes/base/nawa/recipe.toml (faseela-repo) into $REPO/nawa (no-op when
+# already there)
 bash "$HERE/fetch-nawa.sh"
 [[ -d $REPO/nawa ]] || { echo "sync-repo: $REPO/nawa is missing after fetch-nawa" >&2; exit 1; }
 
 mkdir -p "$LFS/mydistro"
+# .recipes-rev says which faseela-repo commit the recipes are (final-root.sh
+# records it); it is absent when recipes/ is somebody's own copy
+stamp=()
+[[ -f $REPO/.recipes-rev ]] && stamp=(.recipes-rev)
 # shellcheck disable=SC2016  # excludes are tar patterns, not shell globs
 tar -C "$REPO" -cf - \
     --exclude='nawa/target' \
@@ -49,5 +57,5 @@ tar -C "$REPO" -cf - \
     --exclude='bootstrap/.initramfs-build' \
     --exclude='srccache' \
     --exclude='out' \
-    nawa recipes profiles bootstrap |
+    nawa recipes profiles bootstrap "${stamp[@]}" |
     tar -C "$LFS/mydistro" -xf -
