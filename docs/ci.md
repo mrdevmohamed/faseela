@@ -18,7 +18,7 @@ recipes ─ ci ─ plan ─ core (seed → stage1 → stage2 → stage3 → root
 ```
 
 * `recipes` fixes the faseela-repo commit once for the whole run (`recipes_ref`
-  input, default `master`); every job fetches exactly that commit with
+  input, default: its default branch); every job fetches exactly that commit with
   `bootstrap/fetch-recipes.sh`, and the release notes name it. To rebuild a
   release from the same recipes, run the workflow with that commit as
   `recipes_ref`.

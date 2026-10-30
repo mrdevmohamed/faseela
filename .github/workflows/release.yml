@@ -24,7 +24,7 @@ name: Build ISO (CD)
 # carries one (scripts/fetch-rootfs-seed.sh) instead of the Debian-based seed.
 #
 # The recipes are NOT in this repository: they live in faseela-repo. The first
-# job resolves the commit of its master branch (or the `recipes_ref` you give)
+# job resolves the commit of its default branch (or the `recipes_ref` you give)
 # once, every job fetches exactly that commit (bootstrap/fetch-recipes.sh), and
 # the release notes name it, so a release can be rebuilt from the same recipes.
 #
@@ -66,7 +66,7 @@ on:
         type: boolean
         default: true
       recipes_ref:
-        description: "faseela-repo branch, tag or commit to build the recipes from (empty = master)"
+        description: "faseela-repo branch, tag or commit to build the recipes from (empty = its default branch)"
         type: string
         default: ""
 
@@ -83,7 +83,7 @@ env:
 
 jobs:
   # The ONE place that decides which faseela-repo commit this whole run builds:
-  # a master that moves while the run is going must not split it in two.
+  # a branch that moves while the run is going must not split it in two.
   recipes:
     name: recipes revision
     runs-on: ubuntu-24.04

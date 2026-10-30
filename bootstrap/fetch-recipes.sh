@@ -3,8 +3,8 @@
 #
 # The recipes live in their own repository, github.com/mrdevmohamed/faseela-repo
 # (the package repository of the distribution). There is no pin file to keep
-# up to date: a build takes the newest commit of that repository's master
-# branch and records WHICH commit it took in <repo>/.recipes-rev, so a release
+# up to date: a build takes the newest commit of that repository's default
+# branch (main) and records WHICH commit it took in <repo>/.recipes-rev, so a release
 # can be rebuilt from exactly the same recipes (RECIPES_REF=<commit>).
 #
 # Where the tree comes from (first match wins):
@@ -13,11 +13,12 @@
 #   ../faseela-repo      a sibling checkout: the usual local setup. Copied
 #                        every time, uncommitted changes included, and said so.
 #   GitHub               RECIPES_REPO (default mrdevmohamed/faseela-repo) at
-#                        RECIPES_REF (branch, tag or commit; default master).
+#                        RECIPES_REF (branch, tag or commit; default: the
+#                        repository's default branch).
 #
 # Refreshing. A build has several stages that may run hours apart, so the
 # recipes are fetched ONCE and then kept, never silently moved to a newer
-# master in the middle of a build. They are fetched again when
+# commit in the middle of a build. They are fetched again when
 #   * there is no recipes/ yet,
 #   * you pass --update,
 #   * RECIPES_REF is set and differs from what is recorded.
@@ -62,6 +63,13 @@ resolve() {
     local ref="$1" out line
     if [[ $ref =~ ^[0-9a-f]{40}$ ]]; then echo "$ref"; return 0; fi
     command -v git >/dev/null 2>&1 || die "git is required to resolve '$ref'"
+    if [[ $ref == HEAD ]]; then     # the default branch, whatever it is called
+        out="$(git ls-remote "$BASE/$SLUG" HEAD)" \
+            || die "cannot reach $BASE/$SLUG (is the repository public, and are you online?)"
+        line="$(awk '$2 == "HEAD" { print $1; exit }' <<< "$out")"
+        [[ -n $line ]] || die "$SLUG has no commits yet"
+        echo "$line"; return 0
+    fi
     out="$(git ls-remote "$BASE/$SLUG" "refs/heads/$ref" "refs/tags/$ref^{}" "refs/tags/$ref")" \
         || die "cannot reach $BASE/$SLUG (is the repository public, and are you online?)"
     # prefer a branch, then the commit an annotated tag points to, then a light tag
@@ -75,7 +83,7 @@ resolve() {
 }
 
 if (( resolve_only )); then
-    resolve "${REF:-master}"
+    resolve "${REF:-HEAD}"
     exit 0
 fi
 
@@ -128,7 +136,7 @@ if [[ -n $local_src ]]; then
 fi
 
 # --- GitHub ----------------------------------------------------------------
-want="${REF:-master}"
+want="${REF:-HEAD}"
 if [[ -d $DEST && -f $STAMP && $update -eq 0 ]]; then
     if [[ -z $REF ]]; then
         say "recipes already fetched ($(stamp_get rev)); --update to fetch the newest"
