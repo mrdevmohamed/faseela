@@ -236,6 +236,17 @@ jobs:
           sudo tar -I zstd -xpf "$dir/$asset" -C "$T" --numeric-owner
           rm -rf "$dir"
           df -h /mnt
+          # the build runs /usr/bin/nawa inside this root. A rootfs from a
+          # release made before the dpm -> nawa rename ships /usr/bin/dpm
+          # instead and uses another database layout, so it cannot build.
+          if [[ ! -x "$T/usr/bin/nawa" ]]; then
+            if [[ -x "$T/usr/bin/dpm" ]]; then
+              echo "::error::$asset of the newest release was built before the dpm -> nawa rename (it has /usr/bin/dpm, no /usr/bin/nawa). Publish a new release first: run 'Build ISO (CD)' on a new v* tag - it builds nawa from the pinned source and publishes a rootfs that has it - then re-run this workflow."
+            else
+              echo "::error::$asset of the newest release has no /usr/bin/nawa, so it cannot build packages"
+            fi
+            exit 1
+          fi
 
       - name: Allow unprivileged user namespaces
         run: |
