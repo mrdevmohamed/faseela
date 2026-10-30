@@ -66,7 +66,7 @@ sudo ./mkiso.sh /mnt/mydistro out.iso  # bootable image
 `recipes/` is not part of this repository: `fetch-recipes.sh` fills it from
 faseela-repo (`build-all.sh`, `sync-repo.sh` and `mkrootfs-min.sh` call it, so
 you rarely run it yourself). A sibling `../faseela-repo` checkout is copied as
-it is, uncommitted changes included, every time; otherwise `master` is fetched
+it is, uncommitted changes included, every time; otherwise the default branch (`main`) is fetched
 once and kept (`--update` for the newest, `RECIPES_REF=<branch|tag|commit>` for
 a specific one, `RECIPES_DIR=<path>` for another local tree). The commit is
 recorded in `.recipes-rev`. A `recipes/` without that stamp is your own copy

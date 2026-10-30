@@ -8,7 +8,7 @@
   [faseela-repo](https://github.com/mrdevmohamed/faseela-repo), with their git
   history. `check-sources.py` and `rootfs-closure.py` stay: the ISO build uses them.
 - **Added** `bootstrap/fetch-recipes.sh`: no pin file. A build fetches faseela-repo
-  `master` once and records the commit in `.recipes-rev`; a sibling
+  `main` once and records the commit in `.recipes-rev`; a sibling
   `../faseela-repo` checkout, `RECIPES_DIR` and `RECIPES_REF` override it.
   `build-all.sh`, `sync-repo.sh` and `mkrootfs-min.sh` call it; `recipes/` is
   git-ignored.

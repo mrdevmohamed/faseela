@@ -24,7 +24,7 @@ on:
   workflow_call: # reused by release.yml as a gate before the ISO build
     inputs:
       recipes_ref:
-        description: "faseela-repo branch, tag or commit to take the recipes from (empty = master)"
+        description: "faseela-repo branch, tag or commit to take the recipes from (empty = its default branch)"
         type: string
         default: ""
 

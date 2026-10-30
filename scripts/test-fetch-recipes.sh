@@ -14,7 +14,7 @@ GH="$W/gh/$SLUG"                       # the fake faseela-repo (a normal git rep
 export RECIPES_GIT_BASE="file://$W/gh"
 unset RECIPES_REF RECIPES_DIR RECIPES_REPO
 
-g() { git -C "$GH" -c user.name=t -c user.email=t@t -c init.defaultBranch=master "$@"; }
+g() { git -C "$GH" -c user.name=t -c user.email=t@t -c init.defaultBranch=main "$@"; }
 # commit the current fixture tree and publish its archive the way GitHub serves it
 publish() {
     g add -A && g commit -q -m "$1"
@@ -30,7 +30,7 @@ run() { bash "$R/bootstrap/fetch-recipes.sh" "$@"; }
 stamp() { sed -n "s/^$1=//p" "$R/.recipes-rev"; }
 
 mkdir -p "$GH/recipes/base/foo" "$GH/recipes/extra/bar" "$GH/scripts"
-git -C "$GH" init -q -b master
+git -C "$GH" init -q -b main
 echo 'name = "foo"' > "$GH/recipes/base/foo/recipe.toml"
 echo 'name = "bar"' > "$GH/recipes/extra/bar/recipe.toml"
 echo 'not a recipe' > "$GH/scripts/x.py"
@@ -41,21 +41,21 @@ R="$(newrepo)"
 check "fresh fetch succeeds"                 "run"
 check "recipes unpacked"                     "[[ -s $R/recipes/base/foo/recipe.toml && -s $R/recipes/extra/bar/recipe.toml ]]"
 check "only recipes/ is taken"               "[[ ! -e $R/recipes/x.py && ! -e $R/scripts ]]"
-check "stamp records source and full rev"    "[[ \$(stamp source) == github && \$(stamp rev) == $S1 && \$(stamp ref) == master ]]"
+check "stamp records source and full rev"    "[[ \$(stamp source) == github && \$(stamp rev) == $S1 && \$(stamp ref) == HEAD ]]"
 check "no scratch dirs left behind"          "[[ -z \"\$(ls -A $R | grep -E '^\\.recipes-(new|fetch)')\" ]]"
 
 echo 'name = "foo2"' > "$GH/recipes/base/foo/recipe.toml"
 S2="$(publish two)"
 check "second run keeps the fetched copy"    "run && [[ \$(stamp rev) == $S1 && \$(cat $R/recipes/base/foo/recipe.toml) == 'name = \"foo\"' ]]"
-check "--update takes the newest master"     "run --update && [[ \$(stamp rev) == $S2 && \$(cat $R/recipes/base/foo/recipe.toml) == 'name = \"foo2\"' ]]"
+check "--update takes the newest default branch"     "run --update && [[ \$(stamp rev) == $S2 && \$(cat $R/recipes/base/foo/recipe.toml) == 'name = \"foo2\"' ]]"
 check "RECIPES_REF=<commit> goes back"       "RECIPES_REF=$S1 run && [[ \$(stamp rev) == $S1 && \$(cat $R/recipes/base/foo/recipe.toml) == 'name = \"foo\"' ]]"
 check "same RECIPES_REF again is a no-op"    "RECIPES_REF=$S1 run 2>&1 | grep -q 'already at'"
 check "short commit id resolves to the full" "RECIPES_REF=${S2:0:7} run && [[ \$(stamp rev) == $S2 ]]"
 
 g tag -a v1 -m v1 "$S1"
 check "annotated tag resolves to its commit" "RECIPES_REF=v1 run && [[ \$(stamp rev) == $S1 ]]"
-check "--resolve prints the full commit"     "[[ \$(RECIPES_REF=master run --resolve) == $S2 ]]"
-check "--resolve defaults to master"         "[[ \$(run --resolve) == $S2 ]]"
+check "--resolve prints the full commit"     "[[ \$(RECIPES_REF=main run --resolve) == $S2 ]]"
+check "--resolve defaults to the default branch"         "[[ \$(run --resolve) == $S2 ]]"
 before="$(stamp rev)"
 check "--resolve touches nothing"            "run --resolve >/dev/null && [[ \$(stamp rev) == $before ]]"
 check "unknown ref is an error"              "! RECIPES_REF=no-such-branch run"

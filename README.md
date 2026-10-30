@@ -23,7 +23,7 @@ The **recipes** live in
 [github.com/mrdevmohamed/faseela-repo](https://github.com/mrdevmohamed/faseela-repo),
 which also builds and publishes the packages. There is no pin file:
 `bootstrap/fetch-recipes.sh` (called by `build-all.sh`, `sync-repo.sh` and
-`mkrootfs-min.sh`) takes the newest `master` once and records the commit it took
+`mkrootfs-min.sh`) takes the newest default branch (`main`) once and records the commit it took
 in `.recipes-rev`; release builds resolve it once per run and name it in the
 release notes. Locally a sibling `../faseela-repo` checkout is used as it is
 (`RECIPES_DIR=<path>` picks another), `RECIPES_REF=<branch|tag|commit>` takes
