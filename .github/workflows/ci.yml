@@ -57,25 +57,27 @@ jobs:
       - name: ShellCheck (errors only)
         run: shellcheck --severity=error bootstrap/*.sh bootstrap/seed/*.sh scripts/*.sh
       - name: fetch-recipes.sh tests (local fake GitHub)
-        run: bash scripts/test-fetch-recipes.sh
+        run: bash tests/test-fetch-recipes.sh
       - name: rootfs-min closure resolves (base-devel + nawa + network tools)
         run: python3 scripts/rootfs-closure.py recipes base-devel nawa git curl ca-certificates > /dev/null
       - name: build-all.sh mock pipeline tests
-        run: bash scripts/test-build-all-mock.sh
+        run: bash tests/test-build-all-mock.sh
       - name: build-packages-inner.sh tests (stubbed nawa)
-        run: bash scripts/test-build-packages-inner.sh
+        run: bash tests/test-build-packages-inner.sh
       - name: rootfs artifact + self-hosting seed tests
-        run: bash scripts/test-rootfs.sh
+        run: bash tests/test-rootfs.sh
       - name: final-root helper tests
-        run: bash scripts/test-final-root.sh
+        run: bash tests/test-final-root.sh
       - name: rootfs-min tests (stubbed nawa)
-        run: bash scripts/test-mkrootfs-min.sh
+        run: bash tests/test-mkrootfs-min.sh
       - name: qemu-boot-test.sh tests (fake qemu)
-        run: bash scripts/test-qemu-boot-test.sh
+        run: bash tests/test-qemu-boot-test.sh
       - name: mkiso.sh tests (stubbed host tools)
-        run: bash scripts/test-mkiso.sh
+        run: bash tests/test-mkiso.sh
       - name: installer validation (stubbed disks)
-        run: bash scripts/validate-install.sh
+        run: bash tests/validate-install.sh
+      - name: ci-report.py tests (fixture logs and API answers)
+        run: bash tests/test-ci-report.sh
       - name: build-all.sh dry run at every isolation level
         run: |
           for level in none env sandbox closure; do
@@ -85,11 +87,17 @@ jobs:
           done
 
   # One required check for branch protection: green only if EVERY job above is.
+  # Also the end-of-run report of a plain CI run. Inside release.yml (where
+  # github.workflow is the CALLER's name) the release's own `run report` job
+  # covers it, so no second report is written there.
   ci-ok:
     name: CI passed
     if: always()
     needs: [scripts]
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      actions: read
     steps:
       - name: All jobs must have succeeded
         env:
@@ -99,3 +107,15 @@ jobs:
           for r in $RESULTS; do
             [ "$r" = success ] || { echo "::error::a CI job finished as '$r'"; exit 1; }
           done
+      - uses: actions/checkout@v4
+        if: ${{ always() && github.workflow == 'CI' }}
+      - name: Report
+        if: ${{ always() && github.workflow == 'CI' }}
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          printf '%s' "$NEEDS" > needs.json
+          python3 scripts/ci-report.py report --needs-json needs.json --exclude "CI passed" \
+            | tee run-report.md >> "$GITHUB_STEP_SUMMARY"

@@ -198,7 +198,7 @@ the Ubuntu seed:
   At the end of each stage the final root is synced (resume-safe), its ld.so
   cache is regenerated, and it is checked for seed/build leaks.
 * The rootfs (stage 4) and the ISO (stage 5) are packed from the **final
-  root**; the build root is never shipped. Validate the result with `scripts/validate-install.sh`.
+  root**; the build root is never shipped. Validate the result with `tests/validate-install.sh`.
 * `--single-root` restores the old behaviour (one root, ISO from `TARGET`).
   Switching layouts between runs invalidates stage 2 onward automatically
   (recorded in `<state>/layout`).
@@ -296,17 +296,17 @@ nor the real ISO tooling:
 ```bash
 bash -n bootstrap/*.sh scripts/*.sh            # syntax
 shellcheck --severity=error bootstrap/*.sh scripts/*.sh
-bash scripts/test-fetch-recipes.sh             # fetching the recipes from faseela-repo
+bash tests/test-fetch-recipes.sh             # fetching the recipes from faseela-repo
                                                 #  (local fake GitHub); recipe sanity
                                                 #  itself runs in faseela-repo's CI
-bash scripts/test-build-all-mock.sh            # orchestration: 131 checks
+bash tests/test-build-all-mock.sh            # orchestration: 131 checks
                                                 # (stamps, input invalidation,
                                                 #  resume, lock, wipe, seed)
-bash scripts/test-final-root.sh                # two-root helpers + the
+bash tests/test-final-root.sh                # two-root helpers + the
                                                 #  seed-reference ELF scan (22)
-bash scripts/test-mkiso.sh                     # ISO gate + structural
+bash tests/test-mkiso.sh                     # ISO gate + structural
                                                 #  validation, stubbed (27)
-bash scripts/validate-install.sh               # installer dry validation
+bash tests/validate-install.sh               # installer dry validation
 bash bootstrap/build-all.sh --dry-run /tmp/x   # end-to-end dry run
 ```
 

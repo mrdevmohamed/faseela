@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# scripts/test-build-packages-inner.sh — tests bootstrap/build-packages-inner.sh
+# tests/test-build-packages-inner.sh — tests bootstrap/build-packages-inner.sh
 # (the script faseela-repo's packages.yml runs inside the build root) against a STUB nawa:
 # dependency order, "already published = up to date", installing published
 # dependencies instead of rebuilding them, failure isolation (dependents are
 # skipped, the rest still builds) and the time budget.
 #
-# Usage: scripts/test-build-packages-inner.sh
+# Usage: tests/test-build-packages-inner.sh
 set -uo pipefail
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"

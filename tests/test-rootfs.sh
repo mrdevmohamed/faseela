@@ -6,7 +6,7 @@
 # All against throwaway trees; needs tar and zstd, no root, no network
 # (the release lookup runs against a fake `gh`).
 #
-# Usage: scripts/test-rootfs.sh   (from the repo root or anywhere)
+# Usage: tests/test-rootfs.sh   (from the repo root or anywhere)
 set -uo pipefail
 
 REPO="${MYDISTRO_REPO:-$(cd "$(dirname "$0")/.." && pwd)}"
