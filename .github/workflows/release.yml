@@ -11,6 +11,9 @@ name: Build ISO (CD)
 #   boot-test       boots each ISO in QEMU, waits for the login prompt (gates the release)
 #   image           rootfs-min -> ghcr.io/<owner>/mydistro-build (container build environment)
 #   release         one GitHub Release with everything above (tags only)
+#   report          always last: ONE page (run summary + `run-report` artifact) with the
+#                   verdict, every job and its time, the failed step, the error lines
+#                   of the failing log and the artifacts (scripts/ci-report.py)
 #
 # Why a pipeline and not a plain matrix over "gui: [false, true]": the GUI
 # stack is only extra packages on top of the same system, so a matrix over
@@ -368,6 +371,13 @@ jobs:
           # the rootfs checksum was written by mkrootfs.sh; re-verify it here,
           # because the NEXT build trusts exactly this file as its seed
           sha256sum -c "$ROOTFS_ASSET.sha256"
+          {
+            echo "### Core rootfs"
+            echo "| | |"; echo "|---|---|"
+            echo "| file | \`$ROOTFS_ASSET\` ($(du -h "$ROOTFS_ASSET" | cut -f1)) |"
+            echo "| sha256 | \`$(cut -d' ' -f1 "$ROOTFS_ASSET.sha256")\` |"
+            [[ -f mydistro-x86_64-rootfs.packages ]] && echo "| packages | $(wc -l < mydistro-x86_64-rootfs.packages) |"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload the core target for the matrix jobs
         if: ${{ steps.build.outcome == 'success' && steps.packtgt.outcome == 'success' }}
@@ -402,6 +412,26 @@ jobs:
         with:
           name: build-logs-core
           path: ci-logs
+          if-no-files-found: ignore
+          retention-days: 14
+
+      # Why it failed, without opening a 60 MB log: the stage that died, the
+      # ERROR lines before it and the last lines. Shown in this job's summary
+      # and repeated by the final `run report` job.
+      - name: Failure excerpt
+        if: ${{ always() && steps.build.conclusion != 'skipped' }}
+        continue-on-error: true
+        run: |
+          mkdir -p report
+          log="$(find ci-logs/logs -name 'build-*.log' -printf '%T@ %p\n' 2>/dev/null | sort -n | tail -1 | cut -d' ' -f2-)"
+          if [[ -n "$log" ]]; then
+            python3 scripts/ci-report.py excerpt "$log" --title "core" | tee report/core.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: report-core
+          path: report
           if-no-files-found: ignore
           retention-days: 14
 
@@ -473,6 +503,7 @@ jobs:
           cd out
           sha256sum "$ISO_NAME" | tee "$ISO_NAME.sha256"
           ls -lh .
+          echo "### ${{ matrix.variant }}: \`$ISO_NAME\` ($(du -h "$ISO_NAME" | cut -f1))" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Make the small base-devel rootfs
         if: ${{ matrix.kind == 'rootfs' }}
@@ -500,6 +531,24 @@ jobs:
         with:
           name: build-logs-${{ matrix.variant }}
           path: ci-logs
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Failure excerpt
+        if: ${{ failure() }}
+        continue-on-error: true
+        run: |
+          mkdir -p report
+          log="$(find ci-logs/logs -name 'build-*.log' -printf '%T@ %p\n' 2>/dev/null | sort -n | tail -1 | cut -d' ' -f2-)"
+          if [[ -n "$log" ]]; then
+            python3 scripts/ci-report.py excerpt "$log" --title "${{ matrix.variant }}" \
+              | tee "report/${{ matrix.variant }}.md" >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - uses: actions/upload-artifact@v4
+        if: ${{ failure() }}
+        with:
+          name: report-${{ matrix.variant }}
+          path: report
           if-no-files-found: ignore
           retention-days: 14
 
@@ -539,6 +588,24 @@ jobs:
         env:
           ISO_NAME: ${{ matrix.iso }}
         run: bash scripts/qemu-boot-test.sh "iso/$ISO_NAME" qemu-boot
+      - name: Serial console tail
+        if: ${{ failure() }}
+        continue-on-error: true
+        run: |
+          mkdir -p report
+          {
+            echo "### ❌ boot ${{ matrix.variant }}: no login prompt"
+            echo; echo "<details open><summary>Last serial console lines</summary>"; echo; echo '```'
+            tail -n 40 qemu-boot/serial.log 2>/dev/null | sed 's/\x1b\[[0-9;]*[A-Za-z]//g' || echo "(no serial log)"
+            echo '```'; echo; echo "</details>"
+          } | tee "report/boot-${{ matrix.variant }}.md" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: ${{ failure() }}
+        with:
+          name: report-boot-${{ matrix.variant }}
+          path: report
+          if-no-files-found: ignore
+          retention-days: 14
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -635,3 +702,43 @@ jobs:
           NOTES
           gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
             --generate-notes --notes-file notes.md "${files[@]}"
+
+  # Always runs, last, whatever happened (also on failure and cancel): one page
+  # that says what happened, so nobody has to open the jobs one by one.
+  # Written to the run summary and kept as the `run-report` artifact.
+  report:
+    name: run report
+    if: ${{ always() }}
+    needs: [recipes, ci, plan, core, build, boot-test, image, release]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      actions: read   # list this run's jobs and artifacts
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        continue-on-error: true   # none exist when nothing failed
+        with:
+          pattern: report-*
+          path: report-parts
+          merge-multiple: true
+      - name: Write the report
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NEEDS: ${{ toJSON(needs) }}
+          RECIPES_REV: ${{ needs.plan.outputs.recipes_rev || needs.recipes.outputs.rev }}
+          SEED: ${{ needs.core.outputs.seed }}
+          ISOLATION: ${{ inputs.isolation || 'env' }}
+          OUTPUTS: ${{ inputs.outputs || 'all' }}
+        run: |
+          printf '%s' "$NEEDS" > needs.json
+          facts=(--fact "Outputs=$OUTPUTS" --fact "Isolation=$ISOLATION")
+          [[ -n "$RECIPES_REV" ]] && facts+=(--fact "Recipes=[faseela-repo@${RECIPES_REV:0:12}](https://github.com/mrdevmohamed/faseela-repo/tree/$RECIPES_REV)")
+          [[ -n "$SEED" ]]        && facts+=(--fact "Seed=$SEED")
+          python3 scripts/ci-report.py report --needs-json needs.json --extra report-parts "${facts[@]}" \
+            | tee run-report.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: run-report
+          path: run-report.md
+          retention-days: 30

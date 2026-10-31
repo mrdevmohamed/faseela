@@ -2,11 +2,29 @@
 
 | workflow | when | what |
 |---|---|---|
-| `ci.yml` | push, PR, weekly | script checks against the fetched recipes (nawa's own tests run in the nawa repository, recipe validation in faseela-repo) |
-| `release.yml` | tag `v*`, manual | whole distribution -> ISOs + rootfs tarballs (+ container image, GitHub Release) |
+| `ci.yml` | push, PR, weekly | script checks against the fetched recipes (nawa's own tests run in the nawa repository, recipe validation in faseela-repo); ends with a pass/fail report |
+| `release.yml` | tag `v*`, manual | whole distribution -> ISOs + rootfs tarballs (+ container image, GitHub Release); always ends with the run report |
 
 `packages.yml` (build packages, publish them) lives in
 [faseela-repo](https://github.com/mrdevmohamed/faseela-repo), see the end of this file.
+
+## The run report
+
+Both workflows end with a report, on the run's summary page and as an artifact:
+
+* **verdict** — ✅ succeeded / ❌ failed / 🚫 cancelled (from the results of every job; skipped jobs are fine);
+* **jobs** — each one with result and time, matrix jobs included;
+* **where it failed** — the failing step of each failed job, linked to its log;
+* **failure details** — for the long jobs, the stage that died, the `ERROR`/`FAILED` lines just before it and the
+  last 30 log lines, so the cause is on the page instead of in a 60 MB log;
+* **artifacts** — name and size; **facts** — recipes commit, seed, isolation, outputs.
+
+How it is made: `core`, the matrix `build` jobs and `boot-test` write a small excerpt (`scripts/ci-report.py excerpt`)
+into their own summary and upload it as `report-*` on failure; the last job `run report` (`needs` everything,
+`if: always()`) downloads those and builds the page with `scripts/ci-report.py report` from the GitHub API
+(`actions: read`) and `toJSON(needs)`. It is uploaded as the `run-report` artifact (30 days). `ci.yml` does the same
+in its `CI passed` job when it runs on its own; inside `release.yml` the release's report covers it.
+Tested by `tests/test-ci-report.sh`.
 
 ## release.yml
 

@@ -12,7 +12,7 @@
 # FINAL_ROOT empty/unset = legacy single-root mode: every helper is a no-op.
 
 FINAL_ROOT="${FINAL_ROOT:-}"
-# overridable so scripts/test-final-root.sh can run the helpers against a
+# overridable so tests/test-final-root.sh can run the helpers against a
 # throwaway tree with a stub nawa; in the real chroot the defaults apply
 NAWA_BIN="${NAWA_BIN:-/usr/bin/nawa}"
 BUILD_ROOT="${BUILD_ROOT:-}"        # prefix of the build root ("" = "/")
