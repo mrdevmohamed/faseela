@@ -9,7 +9,7 @@ cat > "$W/bin/qemu-system-x86_64" <<'STUB'
 #!/usr/bin/env bash
 for a in "$@"; do case "$a" in file:*) f="${a#file:}" ;; esac; done
 case "${FAKE_MODE:-ok}" in
-    ok)   sleep 1; printf 'kernel...\nmydistro login: ' >> "$f"; sleep 30 ;;
+    ok)   sleep 1; printf 'kernel...\nfaseela login: ' >> "$f"; sleep 30 ;;
     dead) sleep 1; echo oops >> "$f"; exit 3 ;;
     hang) sleep 60 ;;
 esac

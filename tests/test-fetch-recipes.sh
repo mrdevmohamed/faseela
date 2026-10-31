@@ -3,7 +3,7 @@
 # throwaway "GitHub" on the local disk (RECIPES_GIT_BASE=file://...); needs
 # neither network nor root.
 set -uo pipefail
-REPO="${MYDISTRO_REPO:-$(cd "$(dirname "$0")/.." && pwd)}"
+REPO="${FASEELA_REPO:-$(cd "$(dirname "$0")/.." && pwd)}"
 W="$(mktemp -d /tmp/fetch-recipes-test.XXXXXX)"; trap 'rm -rf "$W"' EXIT
 PASS=0 FAIL=0
 check(){ if eval "$2" >/dev/null 2>&1; then echo "PASS $1"; PASS=$((PASS+1)); else echo "FAIL $1"; FAIL=$((FAIL+1)); fi; }

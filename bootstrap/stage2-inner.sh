@@ -40,7 +40,7 @@ EOF_MI
 chmod 755 /usr/bin/makeinfo
 fi
 export NAWA_JOBS="${NAWA_JOBS:-4}"
-REPO=/mydistro
+REPO=/faseela
 # overridable so tests can drive this script with a stub nawa (same pattern
 # as final-root.sh); in the real chroot /usr/bin/nawa is used
 NAWA_BIN="${NAWA_BIN:-/usr/bin/nawa}"

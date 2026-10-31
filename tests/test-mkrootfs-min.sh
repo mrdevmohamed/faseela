@@ -34,7 +34,7 @@ printf 'alpha\nbeta\n' > "$W/order"
 run() {
     env -i PATH="$PATH" STUB_LOG="$STUB_LOG" HOME="$W" \
         FINAL_ROOT="$FINAL" BUILD_ROOT="$BUILD" NAWA_BIN="$W/nawa" \
-        MIN_ORDER="$1" MYDISTRO="$REPO" \
+        MIN_ORDER="$1" FASEELA="$REPO" \
         bash "$REPO/bootstrap/mkrootfs-min-inner.sh"
 }
 

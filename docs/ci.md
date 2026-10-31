@@ -54,10 +54,10 @@ recipes ─ ci ─ plan ─ core (seed → stage1 → stage2 → stage3 → root
   hardware behaves as before. On failure the serial log and a VGA screenshot
   are uploaded as `qemu-boot-<variant>`. Remove `boot-test` from the `needs`
   of the `release` job if you do not want it to gate releases.
-* Two rootfs tarballs, two jobs: `mydistro-x86_64-rootfs.tar.zst` (full, with
+* Two rootfs tarballs, two jobs: `faseela-x86_64-rootfs.tar.zst` (full, with
   rust) is the **seed** of the next build and keeps its name because
   `scripts/fetch-rootfs-seed.sh` looks for it; `-rootfs-min` is the **build
-  environment** (also pushed as `ghcr.io/<owner>/mydistro-build`).
+  environment** (also pushed as `ghcr.io/<owner>/faseela-build`).
 * Manual runs: choose `outputs` (all | iso-nogui | iso-gui | rootfs-min).
   Dispatch runs save the build target to the Actions cache and `resume`
   continues from it after a timeout.
@@ -73,7 +73,7 @@ releases (`stable`), with the workflow's `GITHUB_TOKEN`: no token or
 It still depends on THIS repository for
 
 * the build environment: the newest release's rootfs
-  (`mydistro-x86_64-rootfs[-min].tar.zst`);
+  (`faseela-x86_64-rootfs[-min].tar.zst`);
 * the shared tooling, checked out from `DISTRO_REF` (default `master`):
   `bootstrap/` (`enter-root.sh`, `sync-repo.sh`, `build-packages-inner.sh`, ...),
   `profiles/` and `scripts/fetch-rootfs-seed.sh`. A change to those files takes

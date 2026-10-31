@@ -19,7 +19,7 @@
 # The tree is then packed by mkrootfs.sh, so the sanity checks, the layout
 # and the .sha256/.packages sidecars are identical to the big rootfs.
 #
-# Usage:  sudo ./mkrootfs-min.sh /mnt/mydistro out/mydistro-x86_64-rootfs-min.tar.zst
+# Usage:  sudo ./mkrootfs-min.sh /mnt/faseela out/faseela-x86_64-rootfs-min.tar.zst
 # Env:    ROOTFS_MIN_PACKAGES  what to install (default below; the closure of
 #                              their runtime dependencies is added)
 #         ROOTFS_MIN_DIR       scratch dir name inside TARGET (default sysroot-min)
@@ -43,8 +43,8 @@ command -v python3 >/dev/null 2>&1 || { echo "mkrootfs-min: missing host tool py
 #    from faseela-repo first: a no-op once they are there)
 bash "$HERE/fetch-recipes.sh"
 # shellcheck disable=SC2086  # PACKAGES is a word list on purpose
-python3 "$REPO/scripts/rootfs-closure.py" "$REPO/recipes" $PACKAGES > "$TARGET/mydistro-min.order"
-echo "== rootfs-min: $(wc -l < "$TARGET/mydistro-min.order") packages: $(tr '\n' ' ' < "$TARGET/mydistro-min.order")"
+python3 "$REPO/scripts/rootfs-closure.py" "$REPO/recipes" $PACKAGES > "$TARGET/faseela-min.order"
+echo "== rootfs-min: $(wc -l < "$TARGET/faseela-min.order") packages: $(tr '\n' ' ' < "$TARGET/faseela-min.order")"
 
 # 2) the inner script reads recipes/scripts from the chroot copy of the repo
 bash "$HERE/sync-repo.sh" "$TARGET"
@@ -54,10 +54,10 @@ rm -rf "${TARGET:?}/$MIN_DIR"
 mkdir -p "$TARGET/$MIN_DIR"
 bash "$HERE/enter-root.sh" "$TARGET" /usr/bin/env -i \
     HOME=/root TERM="${TERM:-dumb}" FINAL_ROOT="/$MIN_DIR" \
-    bash /mydistro/bootstrap/mkrootfs-min-inner.sh
+    bash /faseela/bootstrap/mkrootfs-min-inner.sh
 
 # 3) pack with the same tool (and the same sanity checks) as the big rootfs
 bash "$HERE/mkrootfs.sh" "$TARGET/$MIN_DIR" "$OUT"
 
-rm -rf "${TARGET:?}/$MIN_DIR" "$TARGET/mydistro-min.order"
+rm -rf "${TARGET:?}/$MIN_DIR" "$TARGET/faseela-min.order"
 echo "== rootfs-min: $(du -h "$OUT" | cut -f1)  $OUT"

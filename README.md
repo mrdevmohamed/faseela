@@ -58,7 +58,7 @@ resumes at the broken stage and never reuses a stale result. See [docs/architect
 | `tests/` | one test script per bootstrap script (stubbed tools, no root), `run-all.sh` for the summary |
 | `profiles/` | per-architecture build profiles (CFLAGS, jobs, isolation) |
 | `dist/` | `nawa.pub`, the key that signs the published recipes and packages |
-| `docs/` | [architecture](docs/architecture.md) · [CI/CD](docs/ci.md) · [NAWA usage](docs/nawa-usage.md) · [boot & install](docs/boot-and-install.md) · [roadmap](docs/roadmap.md) · [build isolation](docs/design/build-isolation.md) · [plan](docs/plan.md) |
+| `docs/` | [architecture](docs/architecture.md) · [CI/CD](docs/ci.md) · [NAWA usage](docs/nawa-usage.md) · [boot & install](docs/boot-and-install.md) · [roadmap](docs/roadmap.md) · [build isolation](docs/design/build-isolation.md) · [bootstrap audit (history)](docs/history/bootstrap-audit.md) |
 | `.github/workflows/` | `ci.yml` (checks) and `release.yml` (the whole build + release), both ending in a report |
 | `recipes/`, `nawa/` | *not in git*: fetched from faseela-repo / nawa by the build |
 
@@ -87,6 +87,10 @@ the failing step and the error lines from the failing build log, and the artifac
 | Recipe format   | Declarative TOML with shell build sections    |
 | Package archive | `.nawa.tar.zst` (payload + .PKGINFO + file list) |
 | Local database  | Plain text files under `/var/lib/nawa/local/`  |
+
+## Contributing
+
+[CONTRIBUTING.md](CONTRIBUTING.md): how to run the checks, where a change belongs (this repo, faseela-repo or nawa), and what a PR needs.
 
 ## Changes
 

@@ -86,7 +86,7 @@ jobs:
         run: |
           for level in none env sandbox closure; do
             echo "::group::build-all.sh --dry-run --isolation $level"
-            bash bootstrap/build-all.sh --dry-run --isolation "$level" "/tmp/mydistro-dry-$level"
+            bash bootstrap/build-all.sh --dry-run --isolation "$level" "/tmp/faseela-dry-$level"
             echo "::endgroup::"
           done
 

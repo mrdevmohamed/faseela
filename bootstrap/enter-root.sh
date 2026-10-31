@@ -7,7 +7,7 @@
 # inside a chroot. After pivot_root in its own mount namespace the process's
 # root IS the namespace root, so user namespaces are allowed again.
 #
-# Usage (root):  enter-root.sh /mnt/mydistro CMD [ARGS...]
+# Usage (root):  enter-root.sh /mnt/faseela CMD [ARGS...]
 #
 # The old (host) root is detached with a lazy umount, so the build cannot see
 # the host filesystem. The mounts stage1 made under TARGET (dev, proc, sys,

@@ -11,15 +11,15 @@
 #    stage2 builds the real one from the recipes)
 #
 # Requirements: run as root (or with fakeroot-less bind mount privileges).
-# Usage: sudo ./stage1.sh /mnt/mydistro
-#        sudo SEED_ROOTFS=out/mydistro-x86_64-rootfs.tar.zst ./stage1.sh /mnt/mydistro
+# Usage: sudo ./stage1.sh /mnt/faseela
+#        sudo SEED_ROOTFS=out/faseela-x86_64-rootfs.tar.zst ./stage1.sh /mnt/faseela
 # Env: SEED_ROOTFS         rootfs tarball to use as the seed instead of seed.tar.zst
 #      SEED_ROOTFS_SHA256  expected sha256 of SEED_ROOTFS (checked in addition
 #                          to the .sha256 sidecar, which is checked when present)
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
-LFS="${1:?usage: stage1.sh /mnt/mydistro}"
+LFS="${1:?usage: stage1.sh /mnt/faseela}"
 [[ "$(realpath -m "$LFS")" != "/" ]] || { echo "stage1: refusing to use / as the target"; exit 1; }
 SEED_ROOTFS="${SEED_ROOTFS:-}"
 if [[ -n $SEED_ROOTFS ]]; then
@@ -126,8 +126,8 @@ bash "$HERE/sync-repo.sh" "$LFS"
 
 bash "$HERE/enter-root.sh" "$LFS" /usr/bin/env -i \
     HOME=/root PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin TERM="${TERM:-xterm}" NAWA_JOBS="${NAWA_JOBS:-4}" \
-    LFS=/ LFS_TGT="$(uname -m)-mydistro-linux-gnu" \
+    LFS=/ LFS_TGT="$(uname -m)-faseela-linux-gnu" \
     SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt \
-    bash -c '. /opt/seed/env.sh && bash /mydistro/bootstrap/stage1-inner.sh'
+    bash -c '. /opt/seed/env.sh && bash /faseela/bootstrap/stage1-inner.sh'
 
 echo "== stage1: chroot ready, seed toolchain verified"

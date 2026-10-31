@@ -2,10 +2,10 @@
 # bootstrap/umount-chroot.sh — unmount the virtual filesystems that stage1.sh
 # bind-mounted into the target (run after stage2/stage3, or after a failed run).
 #
-# Usage: sudo ./umount-chroot.sh /mnt/mydistro
+# Usage: sudo ./umount-chroot.sh /mnt/faseela
 set -euo pipefail
 
-LFS="${1:?usage: umount-chroot.sh /mnt/mydistro}"
+LFS="${1:?usage: umount-chroot.sh /mnt/faseela}"
 [[ $EUID -eq 0 ]] || { echo "umount-chroot: must run as root"; exit 1; }
 [[ "$(realpath -m "$LFS")" != "/" ]] || { echo "umount-chroot: refusing /"; exit 1; }
 

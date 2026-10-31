@@ -20,7 +20,7 @@
 # tarball itself.
 #
 # Usage:
-#   sudo ./initramfs.sh --root /mnt/mydistro --out out/initramfs.img
+#   sudo ./initramfs.sh --root /mnt/faseela --out out/initramfs.img
 #     [--src busybox-1.37.0.tar.bz2] [--jobs 4]
 #
 # Source lookup order: --src, $NAWA_SRCCACHE, <repo>/srccache, download.
@@ -52,7 +52,7 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-[[ -n $ROOT ]] || { echo "usage: initramfs.sh --root /mnt/mydistro --out initramfs.img"; exit 1; }
+[[ -n $ROOT ]] || { echo "usage: initramfs.sh --root /mnt/faseela --out initramfs.img"; exit 1; }
 [[ -d $ROOT ]] || { echo "initramfs: target root $ROOT missing" >&2; exit 1; }
 OUT="${OUT:-initramfs.img}"
 
@@ -195,7 +195,7 @@ fi
 # ---------------------------------------------------------------------------
 cat > "$TREE/init" <<'INIT_EOF'
 #!/bin/busybox sh
-# mydistro live-boot initramfs /init
+# faseela live-boot initramfs /init
 busybox mkdir -p /bin /dev /proc /sys /tmp /run /cdrom /ro /rw /newroot
 busybox --install -s /bin
 export PATH=/bin
@@ -204,7 +204,7 @@ mount -t proc proc /proc
 mount -t sysfs sysfs /sys
 mount -t devtmpfs devtmpfs /dev 2>/dev/null || { [ -e /dev/console ] || mknod /dev/console c 5 1; }
 
-echo "mydistro initramfs: loading storage/HID/filesystem modules"
+echo "faseela initramfs: loading storage/HID/filesystem modules"
 # preferred: busybox modprobe against the staged dependency tree — it loads
 # every dependency in the right order (anything built-in is simply unknown
 # to modprobe and skipped). Fallback: the flat insmod loop.

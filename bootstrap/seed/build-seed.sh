@@ -156,7 +156,7 @@ EOF
 #    PREBUILT (Debian packages + a rustup-installed rustc), not source-built.
 # --------------------------------------------------------------------------
 {
-    echo "# mydistro bootstrap seed manifest"
+    echo "# faseela bootstrap seed manifest"
     echo "built-utc = $(date -u +%Y-%m-%dT%H:%M:%SZ)"
     echo "host = $(uname -srm)"
     echo "seed-builder = bootstrap/seed/build-seed.sh"

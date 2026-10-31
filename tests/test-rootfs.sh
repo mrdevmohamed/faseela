@@ -9,7 +9,7 @@
 # Usage: tests/test-rootfs.sh   (from the repo root or anywhere)
 set -uo pipefail
 
-REPO="${MYDISTRO_REPO:-$(cd "$(dirname "$0")/.." && pwd)}"
+REPO="${FASEELA_REPO:-$(cd "$(dirname "$0")/.." && pwd)}"
 MKROOTFS="$REPO/bootstrap/mkrootfs.sh"
 SEEDPREP="$REPO/bootstrap/seed-from-rootfs.sh"
 FETCH="$REPO/scripts/fetch-rootfs-seed.sh"
@@ -66,14 +66,14 @@ mkroot "$WORK/rootA"
 echo host-secret > "$WORK/rootA/proc/cpuinfo"; echo x > "$WORK/rootA/dev/null.fake"
 echo x > "$WORK/rootA/run/pid"; echo x > "$WORK/rootA/tmp/scratch"
 mkdir -p "$WORK/rootA/sysroot/usr" "$WORK/rootA/sources"; echo x > "$WORK/rootA/sources/a.tar"
-OUTA="$WORK/out/mydistro-x86_64-rootfs.tar.zst"
+OUTA="$WORK/out/faseela-x86_64-rootfs.tar.zst"
 bash "$MKROOTFS" "$WORK/rootA" "$OUTA" > "$WORK/a.log" 2>&1; RC=$?
 check "A1 exit 0"                          "[[ $RC -eq 0 ]]"
 check "A2 archive written"                 "[[ -s $OUTA ]]"
 check "A3 zstd integrity"                  "zstd -t -q $OUTA"
-check "A4 sha256 sidecar verifies"         "(cd $WORK/out && sha256sum -c --quiet mydistro-x86_64-rootfs.tar.zst.sha256)"
-check "A5 sidecar uses the bare file name" "grep -q ' mydistro-x86_64-rootfs.tar.zst\$' $OUTA.sha256"
-check "A6 package inventory lists the db"  "grep -qx 'glibc-2.40' $WORK/out/mydistro-x86_64-rootfs.packages && [[ \$(wc -l < $WORK/out/mydistro-x86_64-rootfs.packages) -eq 4 ]]"
+check "A4 sha256 sidecar verifies"         "(cd $WORK/out && sha256sum -c --quiet faseela-x86_64-rootfs.tar.zst.sha256)"
+check "A5 sidecar uses the bare file name" "grep -q ' faseela-x86_64-rootfs.tar.zst\$' $OUTA.sha256"
+check "A6 package inventory lists the db"  "grep -qx 'glibc-2.40' $WORK/out/faseela-x86_64-rootfs.packages && [[ \$(wc -l < $WORK/out/faseela-x86_64-rootfs.packages) -eq 4 ]]"
 zstd -dc "$OUTA" | tar -t > "$WORK/a.list"
 zstd -dc "$OUTA" | tar -tv > "$WORK/a.vlist"   # verbose list (grep it from a file: grep -q on a pipe + pipefail = SIGPIPE race)
 check "A7 system files are inside"         "grep -qxF ./usr/bin/bash $WORK/a.list && grep -qxF ./var/lib/nawa/local/gcc-15.1/desc $WORK/a.list && grep -qxF ./usr/include/linux/version.h $WORK/a.list"
@@ -146,7 +146,7 @@ check "D2 db is EMPTY (stage 2 will rebuild everything)" "[[ -d $WORK/seedD/var/
 check "D3 old db parked intact"            "[[ \$(ls $WORK/seedD/var/lib/nawa/seed-local | wc -l) -eq 4 && -f $WORK/seedD/var/lib/nawa/seed-local/glibc-2.40/desc ]]"
 check "D4 env.sh written"                  "grep -q NAWA_JOBS $WORK/seedD/opt/seed/env.sh"
 check "D5 env.sh sets no CARGO_HOME/RUSTUP_HOME/PATH (toolchain is in /usr)" "! grep -qE '^[[:space:]]*export (CARGO_HOME|RUSTUP_HOME|PATH)=' $WORK/seedD/opt/seed/env.sh"
-check "D6 manifest: kind + rootfs name"    "grep -q '^kind = rootfs' $WORK/seedD/opt/seed/manifest.txt && grep -q '^rootfs = mydistro-x86_64-rootfs.tar.zst' $WORK/seedD/opt/seed/manifest.txt"
+check "D6 manifest: kind + rootfs name"    "grep -q '^kind = rootfs' $WORK/seedD/opt/seed/manifest.txt && grep -q '^rootfs = faseela-x86_64-rootfs.tar.zst' $WORK/seedD/opt/seed/manifest.txt"
 check "D7 manifest: sha256 from the sidecar" "grep -q \"^rootfs-sha256 = \$(cut -d' ' -f1 $OUTA.sha256)\" $WORK/seedD/opt/seed/manifest.txt"
 check "D8 manifest lists the parked packages" "grep -qx 'gcc-15.1' $WORK/seedD/opt/seed/manifest.txt"
 check "D9 files themselves untouched"      "cmp $WORK/rootA/usr/bin/gcc $WORK/seedD/usr/bin/gcc"
@@ -178,11 +178,11 @@ check "E6 gcc driver without cc1: refused, names it" "[[ $RC -eq 1 ]] && grep -q
 say "F. fetch-rootfs-seed: newest release that carries a rootfs"
 mkdir -p "$WORK/fakebin" "$WORK/rel/v3" "$WORK/rel/v2" "$WORK/rel/v1"
 # v3 is the newest but has only an ISO; v2 carries a rootfs; v1 an older one
-echo iso > "$WORK/rel/v3/mydistro-x86_64.iso"
-cp "$OUTA" "$WORK/rel/v2/mydistro-x86_64-rootfs.tar.zst"
-( cd "$WORK/rel/v2" && sha256sum mydistro-x86_64-rootfs.tar.zst > mydistro-x86_64-rootfs.tar.zst.sha256 )
-echo old > "$WORK/rel/v1/mydistro-x86_64-rootfs.tar.zst"
-( cd "$WORK/rel/v1" && sha256sum mydistro-x86_64-rootfs.tar.zst > mydistro-x86_64-rootfs.tar.zst.sha256 )
+echo iso > "$WORK/rel/v3/faseela-x86_64.iso"
+cp "$OUTA" "$WORK/rel/v2/faseela-x86_64-rootfs.tar.zst"
+( cd "$WORK/rel/v2" && sha256sum faseela-x86_64-rootfs.tar.zst > faseela-x86_64-rootfs.tar.zst.sha256 )
+echo old > "$WORK/rel/v1/faseela-x86_64-rootfs.tar.zst"
+( cd "$WORK/rel/v1" && sha256sum faseela-x86_64-rootfs.tar.zst > faseela-x86_64-rootfs.tar.zst.sha256 )
 cat > "$WORK/fakebin/gh" <<'EOF'
 #!/usr/bin/env bash
 # fake gh: releases live in $FAKE_REL/<tag>/ (newest first: $FAKE_TAGS)
@@ -202,17 +202,17 @@ chmod +x "$WORK/fakebin/gh"
 export FAKE_REL="$WORK/rel" FAKE_TAGS="v3 v2 v1" FAKE_FAIL_DOWNLOAD=
 PATH="$WORK/fakebin:$PATH" bash "$FETCH" "$WORK/dlF" > "$WORK/f.out" 2> "$WORK/f.err"; RC=$?
 check "F1 exit 0"                          "[[ $RC -eq 0 ]]"
-check "F2 prints the path of the seed"     "[[ \$(cat $WORK/f.out) == $WORK/dlF/mydistro-x86_64-rootfs.tar.zst ]]"
-check "F3 picked the NEWEST rootfs (v2, not v1)" "cmp $WORK/dlF/mydistro-x86_64-rootfs.tar.zst $OUTA"
-check "F4 sidecar downloaded next to it"   "[[ -s $WORK/dlF/mydistro-x86_64-rootfs.tar.zst.sha256 ]]"
+check "F2 prints the path of the seed"     "[[ \$(cat $WORK/f.out) == $WORK/dlF/faseela-x86_64-rootfs.tar.zst ]]"
+check "F3 picked the NEWEST rootfs (v2, not v1)" "cmp $WORK/dlF/faseela-x86_64-rootfs.tar.zst $OUTA"
+check "F4 sidecar downloaded next to it"   "[[ -s $WORK/dlF/faseela-x86_64-rootfs.tar.zst.sha256 ]]"
 check "F5 names the release it used"       "grep -q 'v2' $WORK/f.err"
 # corrupt download: the sidecar no longer matches
-cp -r "$WORK/rel" "$WORK/rel2"; echo corrupt >> "$WORK/rel2/v2/mydistro-x86_64-rootfs.tar.zst"
+cp -r "$WORK/rel" "$WORK/rel2"; echo corrupt >> "$WORK/rel2/v2/faseela-x86_64-rootfs.tar.zst"
 FAKE_REL="$WORK/rel2" FAKE_TAGS="v2" PATH="$WORK/fakebin:$PATH" bash "$FETCH" "$WORK/dlF2" > "$WORK/f2.out" 2> "$WORK/f2.err"; RC=$?
 check "F6 checksum mismatch: exit 4, no path printed" "[[ $RC -eq 4 && ! -s $WORK/f2.out ]] && grep -q 'sha256' $WORK/f2.err"
-check "F7 the corrupt file is deleted"     "[[ ! -e $WORK/dlF2/mydistro-x86_64-rootfs.tar.zst ]]"
+check "F7 the corrupt file is deleted"     "[[ ! -e $WORK/dlF2/faseela-x86_64-rootfs.tar.zst ]]"
 # a release without the .sha256 asset is not trusted
-rm "$WORK/rel/v2/mydistro-x86_64-rootfs.tar.zst.sha256"
+rm "$WORK/rel/v2/faseela-x86_64-rootfs.tar.zst.sha256"
 PATH="$WORK/fakebin:$PATH" bash "$FETCH" "$WORK/dlF3" > "$WORK/f3.out" 2> "$WORK/f3.err"; RC=$?
 check "F8 no .sha256 asset: that release is skipped (falls back to v1)" "[[ $RC -eq 0 ]] && grep -q 'v1' $WORK/f3.err"
 # nothing at all
@@ -222,6 +222,14 @@ FAKE_TAGS="" PATH="$WORK/fakebin:$PATH" bash "$FETCH" "$WORK/dlF5" > "$WORK/f5.o
 check "F10 no releases at all: exit 3"     "[[ $RC -eq 3 ]]"
 PATH="$WORK/fakebin:$PATH" FAKE_FAIL_DOWNLOAD=1 bash "$FETCH" "$WORK/dlF6" > "$WORK/f6.out" 2> "$WORK/f6.err"; RC=$?
 check "F11 download failure is an error (exit 5), not 'none found'" "[[ $RC -eq 5 ]]"
+# a release made before the rename only carries the legacy asset name
+mkdir -p "$WORK/rel/v0"
+echo legacy > "$WORK/rel/v0/mydistro-x86_64-rootfs.tar.zst"
+( cd "$WORK/rel/v0" && sha256sum mydistro-x86_64-rootfs.tar.zst > mydistro-x86_64-rootfs.tar.zst.sha256 )
+FAKE_TAGS="v0" PATH="$WORK/fakebin:$PATH" bash "$FETCH" "$WORK/dlF7" > "$WORK/f7.out" 2> "$WORK/f7.err"; RC=$?
+check "F12 legacy asset name accepted for old releases" "[[ $RC -eq 0 && \$(cat $WORK/f7.out) == $WORK/dlF7/mydistro-x86_64-rootfs.tar.zst ]]"
+FAKE_TAGS="v0" ROOTFS_LEGACY_ASSET= PATH="$WORK/fakebin:$PATH" bash "$FETCH" "$WORK/dlF8" > "$WORK/f8.out" 2> "$WORK/f8.err"; RC=$?
+check "F13 legacy fallback can be switched off (exit 3)" "[[ $RC -eq 3 && ! -s $WORK/f8.out ]]"
 
 # ================================================== chroot environment (PATH) ==
 say "G. chroot entry exports PATH"

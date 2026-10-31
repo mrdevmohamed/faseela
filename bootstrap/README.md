@@ -9,7 +9,7 @@ stage 0  seed/build-seed.sh   assemble prebuilt toolchain (gcc, glibc, rustc)
 stage 1  stage1.sh            chroot + verify the seed toolchain (it is the temporary toolchain)
 stage 2  stage2.sh            NAWA builds the FULL recipe graph into the target
 stage 3  stage3.sh            self-hosting rebuild (toolchain, or STAGE3_WORLD=1 for all)
-stage 4  mkrootfs.sh          final root -> mydistro-x86_64-rootfs.tar.zst (+ .sha256, .packages)
+stage 4  mkrootfs.sh          final root -> faseela-x86_64-rootfs.tar.zst (+ .sha256, .packages)
 stage 5  mkiso.sh             squashfs + initramfs + grub -> bootable live ISO
 ```
 
@@ -21,7 +21,7 @@ build** — see "Self-hosting: the rootfs as the next seed" below.
 ```
 grub (hybrid BIOS+UEFI)
   └─ kernel + /boot/initramfs.img (static busybox, built by initramfs.sh)
-       └─ /init: insmod storage modules → find the MYDISTRO media
+       └─ /init: insmod storage modules → find the FASEELA media
                  (sr/sd/vd/nvme scan) → mount /live/rootfs.squashfs
                  → overlayfs with tmpfs upper → switch_root → /usr/bin/runit
                       └─ /etc/runit/1 (mount, udev coldplug)
@@ -44,10 +44,10 @@ and pre-flight checks:
 
 ```bash
 cd bootstrap
-sudo ./build-all.sh /mnt/mydistro            # seed + stage1-3 + ISO
-sudo ./build-all.sh --isolation closure --stage3-world /mnt/mydistro
-./build-all.sh --list-stages /mnt/mydistro     # progress after a failure
-sudo ./build-all.sh /mnt/mydistro               # re-run: finished stages skipped
+sudo ./build-all.sh /mnt/faseela            # seed + stage1-3 + ISO
+sudo ./build-all.sh --isolation closure --stage3-world /mnt/faseela
+./build-all.sh --list-stages /mnt/faseela     # progress after a failure
+sudo ./build-all.sh /mnt/faseela               # re-run: finished stages skipped
 ```
 
 The equivalent manual invocation of each stage (what build-all.sh does
@@ -55,10 +55,10 @@ for you):
 
 ```bash
 sudo ./seed/build-seed.sh              # -> seed/seed.tar.zst
-sudo ./stage1.sh /mnt/mydistro         # unpack seed, chroot, verify seed toolchain
-sudo ./stage2.sh /mnt/mydistro         # NAWA builds + installs all recipes
-sudo ./stage3.sh /mnt/mydistro         # self-hosting rebuild, seed removed
-sudo ./mkiso.sh /mnt/mydistro out.iso  # bootable image
+sudo ./stage1.sh /mnt/faseela         # unpack seed, chroot, verify seed toolchain
+sudo ./stage2.sh /mnt/faseela         # NAWA builds + installs all recipes
+sudo ./stage3.sh /mnt/faseela         # self-hosting rebuild, seed removed
+sudo ./mkiso.sh /mnt/faseela out.iso  # bootable image
 ```
 
 ### Where the recipes come from: `fetch-recipes.sh`
@@ -81,7 +81,7 @@ reinstalls only the named recipes (build root + final root) and can repack
 the ISO:
 
 ```bash
-sudo ./rebuild.sh --iso out/test.iso /mnt/mydistro runit-services shadow
+sudo ./rebuild.sh --iso out/test.iso /mnt/faseela runit-services shadow
 ```
 
 Dependents are not rebuilt (name them too after changing a library). No
@@ -179,10 +179,10 @@ Remaining: atomic upgrades + rollback, ed25519 package signing,
 installer-to-disk (currently live-only).
 
 After stage 2/3 (or a failed run) unmount the bind mounts that stage 1 left in the
-target with `sudo bootstrap/umount-chroot.sh /mnt/mydistro`.
+target with `sudo bootstrap/umount-chroot.sh /mnt/faseela`.
 
 The optional Wayland desktop (`recipes/gui`) is skipped by default; build it with
-`WITH_GUI=1 sudo ./stage2.sh /mnt/mydistro` (see `recipes/gui/README.md`).
+`WITH_GUI=1 sudo ./stage2.sh /mnt/faseela` (see `recipes/gui/README.md`).
 
 ## Two roots: build root vs. final root
 
@@ -208,7 +208,7 @@ the Ubuntu seed:
 ## Self-hosting: the rootfs as the next seed
 
 Stage 4 (`mkrootfs.sh`) packs the finished final root — the exact tree the ISO
-squashes — into `mydistro-x86_64-rootfs.tar.zst`, with a `sha256sum -c`
+squashes — into `faseela-x86_64-rootfs.tar.zst`, with a `sha256sum -c`
 compatible `.sha256` and a `.packages` inventory. Pseudo-fs content, build
 scratch and seed leftovers are excluded, and a root that fails the sanity checks
 (missing `bash`/`nawa`/`gcc`/libc/db, or `/opt/seed`, `/build`, ... leaked in) is
@@ -218,8 +218,8 @@ needs.
 The next build can use it instead of the Debian-based seed:
 
 ```bash
-sudo ./build-all.sh --seed-rootfs out/mydistro-x86_64-rootfs.tar.zst \
-                    [--seed-rootfs-sha256 <hash from the release notes>] /mnt/mydistro
+sudo ./build-all.sh --seed-rootfs out/faseela-x86_64-rootfs.tar.zst \
+                    [--seed-rootfs-sha256 <hash from the release notes>] /mnt/faseela
 ```
 
 * stage 0 is not needed (the Debian seed is neither built nor used);

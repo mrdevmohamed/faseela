@@ -90,10 +90,10 @@ sync_final_root() {
 # replaces it with the newest signed tree from the repository. The snapshot
 # revision is content-derived ("snapshot-<hash>"), so the first `nawa sync`
 # always replaces it.
-#   DISTRO_SRC  checkout inside the chroot (default /mydistro)
+#   DISTRO_SRC  checkout inside the chroot (default /faseela)
 install_recipes_snapshot() {
     final_root_enabled || return 0
-    local src="${DISTRO_SRC:-/mydistro}" dst="$FINAL_ROOT/usr/share/nawa/recipes" rev
+    local src="${DISTRO_SRC:-/faseela}" dst="$FINAL_ROOT/usr/share/nawa/recipes" rev
     if [ -d "$src/recipes" ]; then
         rm -rf "$dst"
         mkdir -p "$dst"
@@ -146,7 +146,7 @@ finalize_final_root() {
     # the final root must stand on its own: nothing of the seed or of the build
     # may have leaked in
     local bad=0
-    for d in opt/seed opt/cargo opt/rustup opt/cross-tools build build3 mydistro; do
+    for d in opt/seed opt/cargo opt/rustup opt/cross-tools build build3 faseela; do
         if [ -e "$FINAL_ROOT/$d" ]; then
             echo "final-root: ERROR /$d leaked into $FINAL_ROOT" >&2; bad=1
         fi
@@ -264,7 +264,7 @@ verify_final_root_needed_resolved() {
 # built and published by the package workflow (faseela-repo), a user installs
 # them later with `nawa install`; they just do not go into the shipped system.
 filter_skipped() {
-    local skip=" " line f="${REPO:-/mydistro}/profiles/skip-packages.txt"
+    local skip=" " line f="${REPO:-/faseela}/profiles/skip-packages.txt"
     if [[ -n ${STAGE_SKIP:-} ]]; then
         [[ $STAGE_SKIP == none ]] || skip=" $STAGE_SKIP "
     elif [[ -f $f ]]; then

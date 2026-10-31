@@ -7,7 +7,7 @@ grub (BIOS+UEFI)
   └─ kernel + initramfs (static busybox)
        └─ /init: root=UUID=<disk> ?  ── yes → mount disk → switch_root
                  │                        → /usr/bin/runit (installed system)
-                 └─ no: load storage modules → find MYDISTRO media
+                 └─ no: load storage modules → find FASEELA media
                          → mount /live/rootfs.squashfs
                          → overlayfs with tmpfs upper
                          → switch_root → /usr/bin/runit (live system,

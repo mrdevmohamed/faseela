@@ -5,11 +5,11 @@
 # seed's rustc), installs it, then walks the toolchain recipes in
 # dependency order and builds + installs every one of them.
 #
-# Usage (from the host): sudo ./stage2.sh /mnt/mydistro
+# Usage (from the host): sudo ./stage2.sh /mnt/faseela
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
-LFS="${1:?usage: stage2.sh /mnt/mydistro}"
+LFS="${1:?usage: stage2.sh /mnt/faseela}"
 
 [[ $EUID -eq 0 ]] || { echo "stage2: must run as root"; exit 1; }
 
@@ -28,8 +28,8 @@ bash "$HERE/sync-repo.sh" "$LFS"
 # archive name). Re-stamping the copy's nawa sources beats every cached
 # artifact mtime, so cargo genuinely recompiles the crate on each stage2 run;
 # dependencies stay cached, so this costs seconds.
-find "$LFS/mydistro/nawa/src" -type f -exec touch -- {} +
-touch -- "$LFS/mydistro/nawa/Cargo.toml" 2>/dev/null
+find "$LFS/faseela/nawa/src" -type f -exec touch -- {} +
+touch -- "$LFS/faseela/nawa/Cargo.toml" 2>/dev/null
 
 
 [[ -x "$LFS/usr/bin/env" && -x "$LFS/usr/bin/bash" ]] || {
@@ -64,6 +64,6 @@ bash "$HERE/enter-root.sh" "$LFS" /usr/bin/env -i \
     FINAL_ROOT="$FINAL_ROOT" \
     STAGE2_ISOLATION="${STAGE2_ISOLATION:-none}" \
     STAGE2_USE_CACHE="${STAGE2_USE_CACHE:-0}" \
-    bash -c 'if [ -r /opt/seed/env.sh ]; then . /opt/seed/env.sh; else echo "stage2: NOTE: no /opt/seed/env.sh (seed removed by stage 3?) — using the installed toolchain" >&2; fi; bash /mydistro/bootstrap/stage2-inner.sh'
+    bash -c 'if [ -r /opt/seed/env.sh ]; then . /opt/seed/env.sh; else echo "stage2: NOTE: no /opt/seed/env.sh (seed removed by stage 3?) — using the installed toolchain" >&2; fi; bash /faseela/bootstrap/stage2-inner.sh'
 
 echo "== stage2: core system installed"

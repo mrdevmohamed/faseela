@@ -12,11 +12,11 @@
 # no bootstrap-seed leftovers. A root that fails the sanity checks below is
 # refused — a rootfs that cannot be unpacked and used is worse than none.
 #
-# ROOT is the FINAL root: /mnt/mydistro/sysroot in the default two-root layout
-# (build-all passes it), or /mnt/mydistro itself for a --single-root build.
+# ROOT is the FINAL root: /mnt/faseela/sysroot in the default two-root layout
+# (build-all passes it), or /mnt/faseela itself for a --single-root build.
 #
 # Usage:
-#   sudo ./mkrootfs.sh /mnt/mydistro/sysroot out/mydistro-x86_64-rootfs.tar.zst
+#   sudo ./mkrootfs.sh /mnt/faseela/sysroot out/faseela-x86_64-rootfs.tar.zst
 # Env overrides: ROOTFS_ZSTD_LEVEL (1..19, default 19), NAWA_JOBS (zstd threads, 0=all),
 #   ROOTFS_STRIP (1 = default, 0 = keep everything)
 #
@@ -62,7 +62,7 @@ for f in usr/bin/bash usr/bin/nawa usr/lib/libc.so.6 usr/bin/gcc; do
     [[ -e $ROOT/$f ]] || { echo "mkrootfs: ERROR: /$f missing in $ROOT" >&2; bad=1; }
 done
 [[ -d $ROOT/var/lib/nawa/local ]] || { echo "mkrootfs: ERROR: no nawa database in $ROOT (var/lib/nawa/local)" >&2; bad=1; }
-for d in opt/seed opt/cargo opt/rustup opt/cross-tools build build3 mydistro; do
+for d in opt/seed opt/cargo opt/rustup opt/cross-tools build build3 faseela; do
     [[ -e $ROOT/$d ]] && { echo "mkrootfs: ERROR: /$d (bootstrap/build leftover) is in $ROOT" >&2; bad=1; }
 done
 # /usr/bin/gcc is only the driver: without the compiler proper (cc1, cc1plus)
@@ -106,7 +106,7 @@ echo "== rootfs: packing $ROOT (zstd -$LEVEL)"
 tar --create --numeric-owner --xattrs --acls --sort=name --one-file-system \
     --exclude='./proc/*' --exclude='./sys/*' --exclude='./dev/*' \
     --exclude='./run/*'  --exclude='./tmp/*' \
-    --exclude='./build'  --exclude='./build3' --exclude='./mydistro' \
+    --exclude='./build'  --exclude='./build3' --exclude='./faseela' --exclude='./mydistro' \
     --exclude='./sources' --exclude='./.nawa' --exclude='./sysroot' \
     --exclude='./lost+found' \
     ${STRIP_EXCLUDES[@]:+"${STRIP_EXCLUDES[@]}"} \
@@ -134,7 +134,7 @@ for member in ./usr/bin/bash ./usr/bin/nawa ./usr/lib/libc.so.6 ./etc/passwd; do
         echo "mkrootfs: ERROR: validation failed: '$member' is not in $OUT" >&2
         exit 1; }
 done
-for leaked in ./opt/seed ./build ./build3 ./mydistro ./sysroot; do
+for leaked in ./opt/seed ./build ./build3 ./faseela ./mydistro ./sysroot; do
     if grep -qE -- "^${leaked//./\\.}(/|$)" "$LIST"; then
         echo "mkrootfs: ERROR: validation failed: $leaked leaked into $OUT" >&2
         exit 1
