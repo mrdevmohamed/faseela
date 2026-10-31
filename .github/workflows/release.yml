@@ -34,7 +34,7 @@ name: Build ISO (CD)
 # Hosted runners stop a job after 6 hours and the core is the long job, so
 # every dispatch run saves the build target to the Actions cache and the next
 # dispatch run with `resume` continues from it. The core hands its finished
-# target to the matrix jobs as a one-day workflow artifact.
+# target to the matrix jobs as a three-day workflow artifact.
 
 on:
   push:
@@ -154,7 +154,7 @@ jobs:
     outputs:
       seed: ${{ steps.rootfsseed.outputs.path != '' && 'the previous release rootfs (self-hosting)' || 'the Debian-based bootstrap seed' }}
     env:
-      ISOLATION: ${{ inputs.isolation || 'env' }}
+      ISOLATION: ${{ inputs.isolation || 'sandbox' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -307,7 +307,9 @@ jobs:
         timeout-minutes: 320 # leaves ~35 min of the 355 for saving the cache and logs
         env:
           ROOTFS_SEED: ${{ steps.rootfsseed.outputs.path }}
-          STAGE3_WORLD: ${{ inputs.stage3_world }}
+          # tag pushes have no `inputs`: they get the same defaults as the form
+          # (a release must rebuild every package in stage 3, not only nawa)
+          STAGE3_WORLD: ${{ github.event_name != 'workflow_dispatch' || inputs.stage3_world }}
           STAGE2_USE_CACHE: ${{ vars.PKGCACHE != 'false' && '1' || '0' }}
         run: |
           args=(--isolation "$ISOLATION" --no-iso
@@ -390,7 +392,7 @@ jobs:
         with:
           name: core-target
           path: ${{ runner.temp }}/target.tar.zst
-          retention-days: 1
+          retention-days: 3   # re-running a failed matrix job needs it; 1 day expired overnight
           compression-level: 0
 
       - name: Upload the rootfs (the seed of the next build)
@@ -451,7 +453,7 @@ jobs:
       fail-fast: false
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
     env:
-      ISOLATION: ${{ inputs.isolation || 'env' }}
+      ISOLATION: ${{ inputs.isolation || 'sandbox' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -587,7 +589,9 @@ jobs:
   boot-test:
     name: boot ${{ matrix.variant }} in QEMU
     needs: [plan, build]
-    if: ${{ needs.plan.outputs.has_iso == 'true' }}
+    # one failed matrix leg (say rootfs-min) must not stop the ISOs that did
+    # build from being booted; skipped only when nothing was built at all
+    if: ${{ !cancelled() && needs.plan.outputs.has_iso == 'true' && needs.build.result != 'skipped' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     strategy:
@@ -596,9 +600,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
+        id: dl
+        continue-on-error: true
         with:
           name: out-${{ matrix.variant }}
           path: iso
+      - name: The ISO must exist
+        if: ${{ steps.dl.outcome != 'success' }}
+        run: |
+          echo "::error::no ISO artifact for ${{ matrix.variant }}: its build job failed or was cancelled"
+          exit 1
       - name: Install QEMU
         run: |
           sudo apt-get update
@@ -675,9 +686,12 @@ jobs:
                 --change 'ENV PATH=/usr/sbin:/usr/bin:/sbin:/bin' \
                 --change 'CMD ["/usr/bin/bash"]' \
                 - "$img:$tag"
-          docker tag "$img:$tag" "$img:latest"
           docker push "$img:$tag"
-          docker push "$img:latest"
+          # `latest` only ever points at a release, never at a branch run
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            docker tag "$img:$tag" "$img:latest"
+            docker push "$img:latest"
+          fi
 
   release:
     name: GitHub Release
@@ -757,7 +771,7 @@ jobs:
           NEEDS: ${{ toJSON(needs) }}
           RECIPES_REV: ${{ needs.plan.outputs.recipes_rev || needs.recipes.outputs.rev }}
           SEED: ${{ needs.core.outputs.seed }}
-          ISOLATION: ${{ inputs.isolation || 'env' }}
+          ISOLATION: ${{ inputs.isolation || 'sandbox' }}
           OUTPUTS: ${{ inputs.outputs || 'all' }}
         run: |
           printf '%s' "$NEEDS" > needs.json

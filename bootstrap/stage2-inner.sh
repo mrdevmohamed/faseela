@@ -272,6 +272,26 @@ echo "== stage2-inner: isolation=$ISOLATION"
 # Archive match: "<pkg>-<digit>..." via glob (grep -E would misparse names
 # containing '+' etc. as regex metacharacters); e.g. `linux` never picks up
 # `linux-headers-*`
+# Fail at once, with a clear message, when a freshly installed toolchain package
+# cannot even start. A broken rustc (strip had corrupted librustc_driver) only
+# showed up 70 minutes later as a SIGSEGV inside the git build.
+smoke_check() {
+    local pkg="$1" cmd
+    case "$pkg" in
+        rust)   cmd='rustc -vV && cargo -V' ;;
+        gcc)    cmd='gcc --version && printf "int main(void){return 0;}\n" > /tmp/.smoke.c && gcc -o /tmp/.smoke /tmp/.smoke.c && /tmp/.smoke; rc=$?; rm -f /tmp/.smoke /tmp/.smoke.c; exit $rc' ;;
+        python) cmd='python3 -c "import sys, ssl, sqlite3, zlib"' ;;
+        *)      return 0 ;;
+    esac
+    if ! sh -c "$cmd" > /tmp/.smoke.out 2>&1; then
+        echo "stage2-inner: SMOKE TEST FAILED after installing $pkg: $cmd" >&2
+        sed 's/^/    /' /tmp/.smoke.out >&2
+        rm -f /tmp/.smoke.out
+        exit 1
+    fi
+    rm -f /tmp/.smoke.out
+}
+
 build_one() {
     local pkg="$1"
     purge_seed_libc_headers
@@ -295,6 +315,7 @@ build_one() {
     fi
     "$NAWA_BIN" --root / install --force "$archive"
     switch_to_new_glibc
+    smoke_check "$pkg"
     install_final "$archive"
 }
 
