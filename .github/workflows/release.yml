@@ -106,6 +106,11 @@ jobs:
   ci:
     needs: recipes
     uses: ./.github/workflows/ci.yml
+    # a called workflow cannot ask for more than its caller grants; ci.yml's
+    # `CI passed` job reads the run's jobs for its own report
+    permissions:
+      contents: read
+      actions: read
     with:
       recipes_ref: ${{ needs.recipes.outputs.rev }}
 
