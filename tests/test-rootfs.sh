@@ -50,6 +50,12 @@ mkroot() {  # mkroot DIR [--no-rust]
     done
     mkdir -p "$r/var/lib/nawa/undo/gcc-15.1"; echo old > "$r/var/lib/nawa/undo/gcc-15.1/desc"
     echo kernel > "$r/boot/vmlinuz-6.10"
+    # what the seed profile strips (kernel, modules, firmware, docs) ...
+    mkdir -p "$r/usr/lib/firmware/iwlwifi" "$r/usr/lib/modules/6.10" "$r/usr/share/doc/gcc" "$r/usr/share/man/man1" "$r/usr/src/linux"
+    echo fw > "$r/usr/lib/firmware/iwlwifi/fw.ucode"; echo ko > "$r/usr/lib/modules/6.10/a.ko"
+    echo doc > "$r/usr/share/doc/gcc/README"; echo man > "$r/usr/share/man/man1/gcc.1"; echo src > "$r/usr/src/linux/Makefile"
+    # ... and what must stay: the kernel API headers glibc/gcc are built against
+    mkdir -p "$r/usr/include/linux"; echo h > "$r/usr/include/linux/version.h"
     chmod 1777 "$r/tmp"
 }
 
@@ -70,13 +76,21 @@ check "A5 sidecar uses the bare file name" "grep -q ' mydistro-x86_64-rootfs.tar
 check "A6 package inventory lists the db"  "grep -qx 'glibc-2.40' $WORK/out/mydistro-x86_64-rootfs.packages && [[ \$(wc -l < $WORK/out/mydistro-x86_64-rootfs.packages) -eq 4 ]]"
 zstd -dc "$OUTA" | tar -t > "$WORK/a.list"
 zstd -dc "$OUTA" | tar -tv > "$WORK/a.vlist"   # verbose list (grep it from a file: grep -q on a pipe + pipefail = SIGPIPE race)
-check "A7 system files are inside"         "grep -qxF ./usr/bin/bash $WORK/a.list && grep -qxF ./var/lib/nawa/local/gcc-15.1/desc $WORK/a.list && grep -qxF ./boot/vmlinuz-6.10 $WORK/a.list"
+check "A7 system files are inside"         "grep -qxF ./usr/bin/bash $WORK/a.list && grep -qxF ./var/lib/nawa/local/gcc-15.1/desc $WORK/a.list && grep -qxF ./usr/include/linux/version.h $WORK/a.list"
 check "A8 merged-usr symlinks kept"        "grep -q 'lib64 -> usr/lib64' $WORK/a.vlist"
 check "A9 /proc content NOT archived"      "! grep -q 'proc/cpuinfo' $WORK/a.list"
 check "A10 /dev, /run, /tmp content NOT archived" "! grep -qE 'dev/null.fake|run/pid|tmp/scratch' $WORK/a.list"
 check "A11 mountpoint dirs ARE archived"   "grep -qxF ./proc/ $WORK/a.list && grep -qxF ./tmp/ $WORK/a.list"
 check "A12 nested sysroot/sources excluded" "! grep -qE '^\./(sysroot|sources)' $WORK/a.list"
 check "A13 /tmp keeps its sticky bit"      "zstd -dc $OUTA | tar -tv | grep -E ' \./tmp/\$' | grep -q '^drwxrwxrwt'"
+check "A15 seed profile: kernel image is NOT inside"   "! grep -q 'boot/vmlinuz' $WORK/a.list && grep -qxF ./boot/ $WORK/a.list"
+check "A16 seed profile: modules and firmware are NOT inside" "! grep -qE 'usr/lib/(modules|firmware)/' $WORK/a.list"
+check "A17 seed profile: kernel API headers stay"      "grep -qxF ./usr/include/linux/version.h $WORK/a.list"
+check "A18 seed profile: docs, man pages and /usr/src are NOT inside" "! grep -qE 'usr/(share/doc|share/man|src)/' $WORK/a.list"
+check "A19 default compression level is 19"            "grep -q 'zstd -19' $WORK/a.log"
+ROOTFS_STRIP=0 bash "$MKROOTFS" "$WORK/rootA" "$WORK/out/full.tar.zst" > "$WORK/a2.log" 2>&1; RC=$?
+zstd -dc "$WORK/out/full.tar.zst" | tar -t > "$WORK/a2.list"
+check "A20 ROOTFS_STRIP=0 keeps kernel, modules, firmware" "[[ $RC -eq 0 ]] && grep -qxF ./boot/vmlinuz-6.10 $WORK/a2.list && grep -qxF ./usr/lib/firmware/iwlwifi/fw.ucode $WORK/a2.list && grep -qxF ./usr/lib/modules/6.10/a.ko $WORK/a2.list"
 check "A14 summary printed"                "grep -q 'rootfs: OK' $WORK/a.log && grep -q 'sha256' $WORK/a.log"
 
 say "B. mkrootfs: round trip is faithful"
@@ -86,6 +100,9 @@ check "B1 file contents identical"         "cmp $WORK/rootA/usr/bin/bash $WORK/u
 check "B2 modes preserved"                 "[[ \$(stat -c %a $WORK/unpackB/usr/bin/bash) == 755 ]]"
 check "B3 symlink target preserved"        "[[ \$(readlink $WORK/unpackB/lib64) == usr/lib64 ]]"
 check "B4 the db is intact"                "[[ \$(ls $WORK/unpackB/var/lib/nawa/local | wc -l) -eq 4 ]]"
+# the stripped seed (no kernel/firmware/docs) must still be accepted as a seed (on a copy: it parks the db)
+cp -a "$WORK/unpackB" "$WORK/unpackB6"
+check "B6 stripped seed still passes the seed check" "bash $SEEDPREP $WORK/unpackB6 $OUTA"
 if [[ $EUID -eq 0 ]]; then
     chown 1234:5678 "$WORK/rootA/usr/bin/curl"
     bash "$MKROOTFS" "$WORK/rootA" "$WORK/out/owner.tar.zst" > /dev/null 2>&1

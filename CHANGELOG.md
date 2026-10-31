@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased — releases that fit in 2 GiB
+
+- **Changed** `mkiso.sh`: the squashfs is compressed with **xz** by default (was gzip; `-b 1M`, whole-image dictionary,
+  x86 BCJ filter). `SQUASH_COMP=zstd|gzip` still works.
+- **Added** `profiles/skip-packages.txt` + `filter_skipped` (`final-root.sh`, used by stage 2 and 3): the packages
+  listed there are not installed into the shipped system. Default: `linux-firmware` (meta) and `linux-firmware-extra`,
+  so only `linux-firmware-lite` (its `KEEP` list in faseela-repo is the single source of truth) reaches the ISO. They
+  are still built and published by the package workflow: `nawa install linux-firmware` adds them. `STAGE_SKIP="a b"`
+  overrides the list, `STAGE_SKIP=none` installs everything.
+- **Changed** `mkrootfs.sh`: the big rootfs is a pure **build seed** — no kernel image, modules, firmware, `/usr/src`,
+  docs or man pages (`ROOTFS_STRIP=0` keeps them); the kernel API headers (`linux-headers`) stay: glibc/gcc are
+  built against them. zstd level 19 with `--long=27` (was 12). The small container rootfs is still `rootfs-min`.
+- **Added** to the ISO job: a size report (firmware, modules, rust, gcc, biggest dirs and files) in the run summary,
+  and a warning when an image is >= 2 GiB, before the release step finds out.
+
 ## Unreleased — structure and run reports
 
 - **Organised**: tests moved to `tests/` (+ `tests/run-all.sh`, one summary table), `plan.md` to `docs/`,

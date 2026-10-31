@@ -82,6 +82,6 @@ It still depends on THIS repository for
 Clients: `nawa upgrade --repo https://github.com/mrdevmohamed/faseela-repo/releases/download/stable`
 (after `nawa trust nawa.pub`).
 
-Limits to know: a release asset is at most 2 GiB and a release holds at most
+Limits to know: a release asset is at most 2 GiB (ISOs: xz, and `profiles/skip-packages.txt` keeps the full firmware out of the system; the seed rootfs drops kernel/firmware/docs) and a release holds at most
 1000 assets; reverse dependencies of a changed package are not rebuilt
 automatically; packages that need rust must be built with `rootfs=seed`.

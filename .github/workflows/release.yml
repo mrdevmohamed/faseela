@@ -495,6 +495,25 @@ jobs:
           sudo env WITH_GUI=1 NAWA_JOBS="$(nproc)" STAGE2_ISOLATION="$iso" \
             bash bootstrap/stage2.sh "$TARGET"
 
+      # What is in the image, biggest first: the answer to "why is the ISO
+      # N GiB" is on the run summary instead of in a guess.
+      - name: Size report of the shipped system
+        if: ${{ matrix.kind == 'iso' }}
+        run: |
+          root="$TARGET/sysroot"; [[ -d $root ]] || root="$TARGET"
+          {
+            echo "### Size of ${{ matrix.variant }} before squashing"
+            echo '```'
+            for d in usr/lib/firmware usr/lib/modules lib/modules usr/lib/rustlib usr/lib/gcc usr/libexec/gcc boot; do
+              [[ -e $root/$d ]] && sudo du -sh "$root/$d"
+            done
+            echo "--- biggest directories (usr, depth 3)"
+            sudo du -xh --max-depth=3 "$root/usr" 2>/dev/null | sort -h | tail -15
+            echo "--- biggest files"
+            sudo find "$root" -xdev -type f -printf '%s %P\n' 2>/dev/null | sort -n | tail -10 | numfmt --to=iec --field=1
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
       - name: Make the ISO
         if: ${{ matrix.kind == 'iso' }}
         env:
@@ -509,6 +528,11 @@ jobs:
           sha256sum "$ISO_NAME" | tee "$ISO_NAME.sha256"
           ls -lh .
           echo "### ${{ matrix.variant }}: \`$ISO_NAME\` ($(du -h "$ISO_NAME" | cut -f1))" >> "$GITHUB_STEP_SUMMARY"
+          # a release asset is limited to 2 GiB: say so here, not at the very end of the run
+          if (( $(stat -c %s "$ISO_NAME") >= 2147483648 )); then
+            echo "::warning::$ISO_NAME is >= 2 GiB: it will not fit in the GitHub Release (trim the firmware list in profiles/firmware-iso.txt, or the packages)"
+            echo "> ⚠️ over 2 GiB — will not be attached to the release" >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Make the small base-devel rootfs
         if: ${{ matrix.kind == 'rootfs' }}
@@ -695,10 +719,10 @@ jobs:
           cat > notes.md <<NOTES
           | file | what |
           |---|---|
-          | \`mydistro-x86_64.iso\` | live ISO, no GUI |
-          | \`mydistro-gui-x86_64.iso\` | live ISO with the sway/Wayland stack |
+          | \`mydistro-x86_64.iso\` | live ISO, no GUI (xz; common firmware only) |
+          | \`mydistro-gui-x86_64.iso\` | live ISO with the sway/Wayland stack (xz; common firmware only) |
           | \`mydistro-x86_64-rootfs-min.tar.zst\` | small rootfs: base-devel + nawa (build environment, also \`ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/mydistro-build\`) |
-          | \`mydistro-x86_64-rootfs.tar.zst\` | full rootfs incl. rust: the seed of the next build (\`build-all.sh --seed-rootfs\`) |
+          | \`mydistro-x86_64-rootfs.tar.zst\` | build seed: full toolchain incl. rust, without kernel, firmware and docs (\`build-all.sh --seed-rootfs\`) |
 
           This release was built from: ${SEED}.
 

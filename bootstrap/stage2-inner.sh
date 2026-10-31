@@ -112,6 +112,7 @@ if [[ "${WITH_GUI:-0}" != "1" && -d "$REPO/recipes/gui" ]]; then
     GUI_PKGS=" $(ls "$REPO/recipes/gui" | tr '\n' ' ') "
     ORDER=$(for p in $ORDER; do [[ "$GUI_PKGS" == *" $p "* ]] || echo "$p"; done)
 fi
+ORDER=$(filter_skipped <<< "$ORDER")
 COUNT=$(echo "$ORDER" | awk 'NF{n++} END{print n+0}')
 
 # --------------------------------------------------------------------------
@@ -328,6 +329,7 @@ if final_root_enabled; then
         GUI_PKGS=" $(ls "$REPO/recipes/gui" | tr '\n' ' ') "
         ALL=$(for p in $ALL; do [[ "$GUI_PKGS" == *" $p "* ]] || echo "$p"; done)
     fi
+    ALL=$(filter_skipped <<< "$ALL")
     printf '%s\n' "$ALL" > /build/final-root.order
     sync_final_root /build/final-root.order
     finalize_final_root

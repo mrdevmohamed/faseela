@@ -22,15 +22,26 @@
 #
 # Usage:
 #   sudo ./mkiso.sh /mnt/mydistro/sysroot out/mydistro-x86_64.iso
-# Env overrides: VOL_ID (default MYDISTRO), SQUASH_COMP (gzip|xz|zstd), JOBS
+# Env overrides: VOL_ID (default MYDISTRO), SQUASH_COMP (xz|zstd|gzip, default xz), JOBS
+#
+# Size: the ISO has to fit in a GitHub release asset (< 2 GiB). xz instead of
+# gzip (-b 1M, x86 BCJ filter, whole-image dictionary) is the compression
+# half; the content half is what stage 2 installs (see profiles/skip-packages.txt).
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="${1:?usage: mkiso.sh /mnt/mydistro out.iso}"
 OUT_ISO="${2:?usage: mkiso.sh /mnt/mydistro out.iso}"
 VOL_ID="${VOL_ID:-MYDISTRO}"
-SQUASH_COMP="${SQUASH_COMP:-gzip}"
+SQUASH_COMP="${SQUASH_COMP:-xz}"
 JOBS="${NAWA_JOBS:-4}"
+
+case "$SQUASH_COMP" in
+    xz)   COMP_OPTS=(-b 1M -Xdict-size 100% -Xbcj x86) ;;
+    zstd) COMP_OPTS=(-b 1M -Xcompression-level 19) ;;
+    gzip) COMP_OPTS=() ;;
+    *)    echo "mkiso: SQUASH_COMP must be xz, zstd or gzip (got '$SQUASH_COMP')" >&2; exit 2 ;;
+esac
 
 [[ $EUID -eq 0 ]] || echo "mkiso: WARNING: not root — squashfs will record the invoking user's ownership" >&2
 [[ -d $ROOT ]] || { echo "mkiso: $ROOT is not a directory"; exit 1; }
@@ -95,7 +106,8 @@ for d in build build3 mydistro sources boot .nawa; do
     [[ -e $ROOT/$d ]] && EXCL+=("$d")
 done
 mksquashfs "$ROOT" "$ISO/live/rootfs.squashfs" \
-    -comp "$SQUASH_COMP" -noappend -no-recovery -processors "$JOBS" \
+    -comp "$SQUASH_COMP" ${COMP_OPTS[@]:+"${COMP_OPTS[@]}"} \
+    -noappend -no-recovery -processors "$JOBS" \
     ${EXCL[@]:+-e "${EXCL[@]}"}
 
 # 3) kernel + grub config

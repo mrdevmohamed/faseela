@@ -47,6 +47,7 @@ if [[ "${STAGE3_WORLD:-0}" == "1" ]]; then
         GUI_PKGS=" $(ls "$REPO/recipes/gui" | tr '\n' ' ') "
         ORDER=$(for p in $ORDER; do [[ "$GUI_PKGS" == *" $p "* ]] || echo "$p"; done)
     fi
+    ORDER=$(filter_skipped <<< "$ORDER")
 else
     # The toolchain set is DEFINED by recipes/toolchain (not a hardcoded list
     # that silently stales): filter the full topological order down to its
@@ -75,6 +76,7 @@ if final_root_enabled; then
         GUI_PKGS=" $(ls "$REPO/recipes/gui" | tr '\n' ' ') "
         SYNC_ORDER=$(for p in $SYNC_ORDER; do [[ "$GUI_PKGS" == *" $p "* ]] || echo "$p"; done)
     fi
+    SYNC_ORDER=$(filter_skipped <<< "$SYNC_ORDER")
     printf '%s\n' "$SYNC_ORDER" > /build3/final-root.order
     sync_final_root /build3/final-root.order
 fi

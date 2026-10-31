@@ -110,11 +110,22 @@ check "C1 exit 0"                               "[[ $RC -eq 0 ]]"
 check "C2 structure OK reported"                "OUT | grep -q 'ISO structure OK'"
 check "C3 ISO produced"                         "[[ -s $W/out/my.iso ]]"
 check "C4 initramfs got --root and --out"       "grep -q 'initramfs --root .* --out' $STUB_LOG"
-check "C5 mksquashfs got the compression"       "grep -q 'mksquashfs .* -comp gzip' $STUB_LOG"
+check "C5 mksquashfs got the compression"       "grep -q 'mksquashfs .* -comp xz' $STUB_LOG"
 check "C6 grub-mkrescue got the volid"          "grep -q 'grub-mkrescue .* MYDISTRO' $STUB_LOG"
 RC=$(RUN_MKISO VOL_ID=CUSTOM SQUASH_COMP=zstd)
 check "C7 VOL_ID propagates to grub-mkrescue"   "grep -q 'grub-mkrescue .* CUSTOM' $STUB_LOG"
 check "C8 SQUASH_COMP propagates to mksquashfs" "grep -q 'mksquashfs .* -comp zstd' $STUB_LOG"
+
+# ---- C2. compression options ---------------------------------------------------
+good_ls
+RC=$(RUN_MKISO)
+check "C9 xz gets block size, dictionary and the x86 filter" "grep -q 'mksquashfs .* -comp xz -b 1M -Xdict-size 100% -Xbcj x86' $STUB_LOG"
+RC=$(RUN_MKISO SQUASH_COMP=zstd)
+check "C10 zstd gets level 19"                            "grep -q 'mksquashfs .* -comp zstd -b 1M -Xcompression-level 19' $STUB_LOG"
+RC=$(RUN_MKISO SQUASH_COMP=gzip)
+check "C11 gzip still works, no extra options"            "[[ $RC -eq 0 ]] && grep -q 'mksquashfs .* -comp gzip -noappend' $STUB_LOG"
+RC=$(RUN_MKISO SQUASH_COMP=lz4)
+check "C12 unknown compression refused (exit 2)"          "[[ $RC -eq 2 ]] && ERR | grep -q 'SQUASH_COMP must be'"
 
 # ---- D. structural validation ------------------------------------------------
 printf '/boot/%s\n/boot/grub/grub.cfg\n/live/rootfs.squashfs\n' "$KVER" > "$XORRISO_LS"

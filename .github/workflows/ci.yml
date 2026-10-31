@@ -74,6 +74,8 @@ jobs:
         run: bash tests/test-qemu-boot-test.sh
       - name: mkiso.sh tests (stubbed host tools)
         run: bash tests/test-mkiso.sh
+      - name: skip-packages list (filter_skipped)
+        run: bash tests/test-skip-packages.sh
       - name: installer validation (stubbed disks)
         run: bash tests/validate-install.sh
       - name: ci-report.py tests (fixture logs and API answers)
