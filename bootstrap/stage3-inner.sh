@@ -17,7 +17,7 @@ export NAWA_JOBS="${NAWA_JOBS:-4}"
 # overridable so tests can drive this script with a stub nawa (same pattern
 # as final-root.sh); in the real chroot /usr/bin/nawa is used
 NAWA_BIN="${NAWA_BIN:-/usr/bin/nawa}"
-REPO=/mydistro
+REPO=/faseela
 
 . "$REPO/bootstrap/final-root.sh"
 if final_root_enabled; then

@@ -1,4 +1,7 @@
-# plan.md — Faseela bootstrap audit & repair
+# Bootstrap audit & repair (historical)
+
+> A record of the audit that produced the current stage/stamp design, kept for the
+> reasoning. It is not a forward-looking plan — see [../roadmap.md](../roadmap.md) for that.
 
 Scope: `bootstrap/`, orchestration state handling, seed provenance, final-root
 boundary, ISO validation, tests, docs. The Rust package manager (nawa) is
@@ -12,11 +15,11 @@ orchestration contracts around it.
 |---|---|---|
 | shell syntax | `bash -n` on all `bootstrap/*.sh`, `bootstrap/seed/*.sh`, `scripts/*.sh` | OK |
 | shellcheck | `shellcheck --severity=error` (as CI) | clean |
-| recipes | `python3 -I scripts/check-recipes.py` | 148 recipes, 0 errors, 32 GUI sha256 placeholders |
+| recipes | `python3 -I scripts/check-recipes.py` (since moved to faseela-repo with the recipes) | 148 recipes, 0 errors, 32 GUI sha256 placeholders |
 | orchestration | `bash tests/test-build-all-mock.sh` | 65 PASS / 0 FAIL |
 | final-root | `bash tests/test-final-root.sh` | 15 PASS / 0 FAIL |
 | installer | `bash tests/validate-install.sh` | PASSED |
-| dry run | `bash bootstrap/build-all.sh --dry-run --isolation closure /tmp/mydistro-dry` | exit 0 |
+| dry run | `bash bootstrap/build-all.sh --dry-run --isolation closure /tmp/faseela-dry` | exit 0 |
 | rust | `cargo build/clippy -D warnings/test --release --locked` (nawa) | build OK, clippy clean, 109/109 tests |
 
 No failing build log ships in the tree (no state dir, no logs). Working tree

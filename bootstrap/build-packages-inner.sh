@@ -22,14 +22,14 @@
 #       NAWA_JOBS     parallel jobs per build           (default 4)
 #       BUDGET_MIN   stop starting packages after N min (default 0 = no limit)
 #       KEEP_GOING   1 = continue after a failure       (default 1)
-#       REPO BUILD NAWA_BIN   overridable for tests (/mydistro, /build, /usr/bin/nawa)
+#       REPO BUILD NAWA_BIN   overridable for tests (/faseela, /build, /usr/bin/nawa)
 #
 # Writes $BUILD/report.txt (human readable) and $BUILD/status (KEY=value:
 # BUILT FAILED SKIPPED UPTODATE INCOMPLETE). Exit 1 if anything failed.
 set -euo pipefail
 
 export PATH=/usr/bin:/bin:/usr/sbin:/sbin
-REPO="${REPO:-/mydistro}"
+REPO="${REPO:-/faseela}"
 BUILD="${BUILD:-/build}"
 NAWA_BIN="${NAWA_BIN:-/usr/bin/nawa}"
 : "${PKGS:?PKGS is empty}"

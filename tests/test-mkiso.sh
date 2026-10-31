@@ -11,7 +11,7 @@
 #
 # No root and no real ISO tooling is needed — everything is stubbed.
 set -uo pipefail
-REPO="${MYDISTRO_REPO:-$(cd "$(dirname "$0")/.." && pwd)}"
+REPO="${FASEELA_REPO:-$(cd "$(dirname "$0")/.." && pwd)}"
 W="$(mktemp -d /tmp/mkiso-test.XXXXXX)"; trap 'rm -rf "$W"' EXIT
 PASS=0 FAIL=0
 check(){ if eval "$2" >/dev/null 2>&1; then echo "PASS $1"; PASS=$((PASS+1)); else echo "FAIL $1"; FAIL=$((FAIL+1)); fi; }
@@ -111,7 +111,7 @@ check "C2 structure OK reported"                "OUT | grep -q 'ISO structure OK
 check "C3 ISO produced"                         "[[ -s $W/out/my.iso ]]"
 check "C4 initramfs got --root and --out"       "grep -q 'initramfs --root .* --out' $STUB_LOG"
 check "C5 mksquashfs got the compression"       "grep -q 'mksquashfs .* -comp xz' $STUB_LOG"
-check "C6 grub-mkrescue got the volid"          "grep -q 'grub-mkrescue .* MYDISTRO' $STUB_LOG"
+check "C6 grub-mkrescue got the volid"          "grep -q 'grub-mkrescue .* FASEELA' $STUB_LOG"
 RC=$(RUN_MKISO VOL_ID=CUSTOM SQUASH_COMP=zstd)
 check "C7 VOL_ID propagates to grub-mkrescue"   "grep -q 'grub-mkrescue .* CUSTOM' $STUB_LOG"
 check "C8 SQUASH_COMP propagates to mksquashfs" "grep -q 'mksquashfs .* -comp zstd' $STUB_LOG"

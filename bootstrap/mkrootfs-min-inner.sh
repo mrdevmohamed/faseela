@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
 # bootstrap/mkrootfs-min-inner.sh — runs INSIDE the target (invoked by
-# mkrootfs-min.sh): install the packages listed in /mydistro-min.order (one
+# mkrootfs-min.sh): install the packages listed in /faseela-min.order (one
 # per line, dependencies first) from the build root's archives into the clean
 # root $FINAL_ROOT, using the same helpers as the two-root layout.
 set -euo pipefail
 
 export PATH=/usr/bin:/bin:/usr/sbin:/sbin
 NAWA_BIN="${NAWA_BIN:-/usr/bin/nawa}"
-ORDER="${MIN_ORDER:-/mydistro-min.order}"
+ORDER="${MIN_ORDER:-/faseela-min.order}"
 # overridable so tests/test-mkrootfs-min.sh can run this against a throwaway tree
-MYDISTRO="${MYDISTRO:-/mydistro}"
+FASEELA="${FASEELA:-/faseela}"
 
 # shellcheck source=final-root.sh
-. "$MYDISTRO/bootstrap/final-root.sh"
+. "$FASEELA/bootstrap/final-root.sh"
 final_root_enabled || { echo "mkrootfs-min-inner: FINAL_ROOT is not set" >&2; exit 1; }
 [[ -s $ORDER ]] || { echo "mkrootfs-min-inner: $ORDER is missing or empty" >&2; exit 1; }
 

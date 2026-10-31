@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased — naming and housekeeping
+
+- **Changed** the placeholder name `mydistro` is now `faseela` everywhere: default target `/mnt/faseela`, the
+  in-chroot checkout `/faseela`, release assets (`faseela-x86_64.iso`, `faseela-gui-x86_64.iso`,
+  `faseela-x86_64-rootfs.tar.zst` + `.sha256` + `.packages`, `faseela-x86_64-rootfs-min.tar.zst`), the ISO volume labels
+  (`FASEELA`, `FASEELA_GUI`), the test variable `FASEELA_REPO` (was `MYDISTRO_REPO`) and the stage-1 target triple.
+  Older entries below keep the old name on purpose.
+- **Changed** the container image is now `ghcr.io/<owner>/faseela-build` (was `mydistro-build`). Anything that
+  pulls the old name (e.g. faseela-repo's package workflow) must switch to the new one; old tags stay on ghcr.io.
+- **Added** compatibility for the old names: `sync-repo.sh` leaves a `/mydistro -> faseela` symlink in the chroot
+  (for faseela-repo's package workflow; `mkrootfs.sh` never ships it), and `fetch-rootfs-seed.sh` falls back to
+  `mydistro-x86_64-rootfs.tar.zst` for releases made before the rename (`ROOTFS_LEGACY_ASSET`, empty = off).
+  Tests F12/F13 cover it.
+- **Moved** `docs/plan.md` to `docs/history/bootstrap-audit.md` (it is an audit record, not a plan).
+- **Added** `CONTRIBUTING.md` and `.editorconfig`.
+
 ## Unreleased — releases that fit in 2 GiB
 
 - **Changed** `mkiso.sh`: the squashfs is compressed with **xz** by default (was gzip; `-b 1M`, whole-image dictionary,

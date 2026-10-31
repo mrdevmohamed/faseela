@@ -280,7 +280,7 @@ cannot authenticate a mirror. Add the distribution key first:
 `nawa upgrade --repo` accepts a local directory **or** an http(s) URL:
 
 ```
-nawa --root / upgrade --repo https://mirror.example.com/mydistro/stable
+nawa --root / upgrade --repo https://mirror.example.com/faseela/stable
 ```
 
 * the index (`index.toml` + optional `index.toml.sig`) is fetched fresh on

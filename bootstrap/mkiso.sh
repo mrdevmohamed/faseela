@@ -17,12 +17,12 @@
 #   grub-mkrescue     (Debian: grub-pc-bin grub-efi-amd64-bin xorriso mtools)
 #   gcc + make        (to compile the initramfs busybox)
 #
-# ROOT is the FINAL root: /mnt/mydistro/sysroot in the default two-root layout
-# (build-all passes it), or /mnt/mydistro itself for a --single-root build.
+# ROOT is the FINAL root: /mnt/faseela/sysroot in the default two-root layout
+# (build-all passes it), or /mnt/faseela itself for a --single-root build.
 #
 # Usage:
-#   sudo ./mkiso.sh /mnt/mydistro/sysroot out/mydistro-x86_64.iso
-# Env overrides: VOL_ID (default MYDISTRO), SQUASH_COMP (xz|zstd|gzip, default xz), JOBS
+#   sudo ./mkiso.sh /mnt/faseela/sysroot out/faseela-x86_64.iso
+# Env overrides: VOL_ID (default FASEELA), SQUASH_COMP (xz|zstd|gzip, default xz), JOBS
 #
 # Size: the ISO has to fit in a GitHub release asset (< 2 GiB). xz instead of
 # gzip (-b 1M, x86 BCJ filter, whole-image dictionary) is the compression
@@ -30,9 +30,9 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
-ROOT="${1:?usage: mkiso.sh /mnt/mydistro out.iso}"
-OUT_ISO="${2:?usage: mkiso.sh /mnt/mydistro out.iso}"
-VOL_ID="${VOL_ID:-MYDISTRO}"
+ROOT="${1:?usage: mkiso.sh /mnt/faseela out.iso}"
+OUT_ISO="${2:?usage: mkiso.sh /mnt/faseela out.iso}"
+VOL_ID="${VOL_ID:-FASEELA}"
 SQUASH_COMP="${SQUASH_COMP:-xz}"
 JOBS="${NAWA_JOBS:-4}"
 
@@ -102,7 +102,7 @@ echo "== stage4: mksquashfs of $ROOT"
 # Excludes are relative to ROOT and only passed when they exist (a clean
 # two-root final root has none of the build dirs; the legacy single root does).
 EXCL=()
-for d in build build3 mydistro sources boot .nawa; do
+for d in build build3 faseela sources boot .nawa; do
     [[ -e $ROOT/$d ]] && EXCL+=("$d")
 done
 mksquashfs "$ROOT" "$ISO/live/rootfs.squashfs" \
@@ -119,12 +119,12 @@ cat > "$ISO/boot/grub/grub.cfg" <<EOF
 set default=0
 set timeout=5
 
-menuentry "mydistro (live)" {
+menuentry "faseela (live)" {
     linux /boot/$KVER quiet console=ttyS0,115200 console=tty0
     initrd /boot/initramfs.img
 }
 
-menuentry "mydistro (live, verbose)" {
+menuentry "faseela (live, verbose)" {
     linux /boot/$KVER loglevel=7 console=ttyS0,115200 console=tty0
     initrd /boot/initramfs.img
 }

@@ -12,7 +12,7 @@
 # Usage:
 #   sudo ./rebuild.sh [--iso OUT.iso] TARGET pkg [pkg...]
 # Examples:
-#   sudo ./rebuild.sh --iso out/test.iso /mnt/mydistro runit-services shadow
+#   sudo ./rebuild.sh --iso out/test.iso /mnt/faseela runit-services shadow
 #
 # Dependents are not rebuilt (e.g. after changing a library, name the
 # programs linked against it too). Env: NAWA_JOBS, SINGLE_ROOT=1 (legacy
@@ -39,8 +39,8 @@ PKGS="$*"
 
 # fresh copy of the repo + chroot mounts (same as stage 2)
 bash "$HERE/sync-repo.sh" "$LFS"
-find "$LFS/mydistro/nawa/src" -type f -exec touch -- {} +
-touch -- "$LFS/mydistro/nawa/Cargo.toml" 2>/dev/null || true
+find "$LFS/faseela/nawa/src" -type f -exec touch -- {} +
+touch -- "$LFS/faseela/nawa/Cargo.toml" 2>/dev/null || true
 bash "$HERE/ensure-chroot-mounts.sh" "$LFS"
 
 if [[ ${SINGLE_ROOT:-0} == 1 ]]; then
@@ -55,7 +55,7 @@ bash "$HERE/enter-root.sh" "$LFS" /usr/bin/env -i \
     HOME=/root PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin TERM="${TERM:-dumb}" NAWA_JOBS="${NAWA_JOBS:-$(nproc 2>/dev/null || echo 4)}" \
     WITH_GUI="${WITH_GUI:-0}" STAGE_SKIP="${STAGE_SKIP:-}" FINAL_ROOT="$FINAL_ROOT" \
     STAGE2_ISOLATION="${STAGE2_ISOLATION:-none}" STAGE2_REBUILD="$PKGS" \
-    bash -c 'if [ -r /opt/seed/env.sh ]; then . /opt/seed/env.sh; fi; bash /mydistro/bootstrap/stage2-inner.sh'
+    bash -c 'if [ -r /opt/seed/env.sh ]; then . /opt/seed/env.sh; fi; bash /faseela/bootstrap/stage2-inner.sh'
 
 # the squashfs must never contain the chroot's /proc /dev /sys
 bash "$HERE/umount-chroot.sh" "$LFS" || true

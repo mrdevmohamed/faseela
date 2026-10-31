@@ -3,13 +3,13 @@ name: Build ISO (CD)
 # Builds the distribution from source and publishes, per release:
 #
 #   core            seed -> stage1 -> stage2 -> stage3 -> rootfs (once, the slow part)
-#                   publishes  mydistro-x86_64-rootfs.tar.zst  = the SEED of the next build
+#                   publishes  faseela-x86_64-rootfs.tar.zst  = the SEED of the next build
 #   build (matrix)  runs in parallel on the finished core, one runner each:
-#                     iso-nogui   mydistro-x86_64.iso
-#                     iso-gui     mydistro-gui-x86_64.iso   (adds recipes/gui on top of core)
-#                     rootfs-min  mydistro-x86_64-rootfs-min.tar.zst  (base-devel + nawa only)
+#                     iso-nogui   faseela-x86_64.iso
+#                     iso-gui     faseela-gui-x86_64.iso   (adds recipes/gui on top of core)
+#                     rootfs-min  faseela-x86_64-rootfs-min.tar.zst  (base-devel + nawa only)
 #   boot-test       boots each ISO in QEMU, waits for the login prompt (gates the release)
-#   image           rootfs-min -> ghcr.io/<owner>/mydistro-build (container build environment)
+#   image           rootfs-min -> ghcr.io/<owner>/faseela-build (container build environment)
 #   release         one GitHub Release with everything above (tags only)
 #   report          always last: ONE page (run summary + `run-report` artifact) with the
 #                   verdict, every job and its time, the failed step, the error lines
@@ -81,8 +81,8 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  TARGET: /mnt/mydistro
-  ROOTFS_ASSET: mydistro-x86_64-rootfs.tar.zst
+  TARGET: /mnt/faseela
+  ROOTFS_ASSET: faseela-x86_64-rootfs.tar.zst
 
 jobs:
   # The ONE place that decides which faseela-repo commit this whole run builds:
@@ -134,9 +134,9 @@ jobs:
           only = os.environ["ONLY"]
           variants = [
               {"variant": "iso-nogui", "kind": "iso", "gui": "0",
-               "iso": "mydistro-x86_64.iso", "vol": "MYDISTRO"},
+               "iso": "faseela-x86_64.iso", "vol": "FASEELA"},
               {"variant": "iso-gui", "kind": "iso", "gui": "1",
-               "iso": "mydistro-gui-x86_64.iso", "vol": "MYDISTRO_GUI"},
+               "iso": "faseela-gui-x86_64.iso", "vol": "FASEELA_GUI"},
               {"variant": "rootfs-min", "kind": "rootfs", "gui": "0"},
           ]
           sel = [v for v in variants if only in ("all", v["variant"])]
@@ -236,7 +236,7 @@ jobs:
             bootstrap/seed/seed.tar.zst.sha256
           key: seed-${{ runner.os }}-${{ hashFiles('bootstrap/seed/build-seed.sh', 'bootstrap/seed/seed.toml') }}
 
-      # Resume = restore the whole build target (/mnt/mydistro + its state dir)
+      # Resume = restore the whole build target (/mnt/faseela + its state dir)
       # saved by the previous dispatch run, even if that run failed or timed
       # out. Stage 2 skips packages that are already installed. A fresh tag
       # build is always clean; only "Re-run failed jobs" of a tag run
@@ -339,8 +339,8 @@ jobs:
         run: |
           sudo ./bootstrap/umount-chroot.sh "$TARGET" || true
           sudo tar -I 'zstd -T0 -3' --one-file-system -cpf "$RUNNER_TEMP/target.tar.zst" --numeric-owner \
-            --exclude='mydistro/build/*/src' --exclude='mydistro/build/*/pkg' \
-            -C /mnt mydistro .mydistro.build
+            --exclude='faseela/build/*/src' --exclude='faseela/build/*/pkg' \
+            -C /mnt faseela .faseela.build
           ls -lh "$RUNNER_TEMP/target.tar.zst"
 
       - name: Pack the package cache
@@ -383,7 +383,7 @@ jobs:
             echo "| | |"; echo "|---|---|"
             echo "| file | \`$ROOTFS_ASSET\` ($(du -h "$ROOTFS_ASSET" | cut -f1)) |"
             echo "| sha256 | \`$(cut -d' ' -f1 "$ROOTFS_ASSET.sha256")\` |"
-            [[ -f mydistro-x86_64-rootfs.packages ]] && echo "| packages | $(wc -l < mydistro-x86_64-rootfs.packages) |"
+            [[ -f faseela-x86_64-rootfs.packages ]] && echo "| packages | $(wc -l < faseela-x86_64-rootfs.packages) |"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload the core target for the matrix jobs
@@ -401,9 +401,9 @@ jobs:
         with:
           name: out-rootfs
           path: |
-            out/mydistro-x86_64-rootfs.tar.zst
-            out/mydistro-x86_64-rootfs.tar.zst.sha256
-            out/mydistro-x86_64-rootfs.packages
+            out/faseela-x86_64-rootfs.tar.zst
+            out/faseela-x86_64-rootfs.tar.zst.sha256
+            out/faseela-x86_64-rootfs.packages
           retention-days: 14
           compression-level: 0
 
@@ -411,8 +411,8 @@ jobs:
         if: always()
         run: |
           mkdir -p ci-logs
-          sudo cp -r /mnt/.mydistro.build/logs ci-logs/ 2>/dev/null || true
-          sudo cp /mnt/.mydistro.build/meta ci-logs/ 2>/dev/null || true
+          sudo cp -r /mnt/.faseela.build/logs ci-logs/ 2>/dev/null || true
+          sudo cp /mnt/.faseela.build/meta ci-logs/ 2>/dev/null || true
           sudo chown -R "$(id -u):$(id -g)" ci-logs
       - uses: actions/upload-artifact@v4
         if: always()
@@ -540,7 +540,7 @@ jobs:
         if: ${{ matrix.kind == 'rootfs' }}
         run: |
           mkdir -p out
-          sudo bash bootstrap/mkrootfs-min.sh "$TARGET" "$PWD/out/mydistro-x86_64-rootfs-min.tar.zst"
+          sudo bash bootstrap/mkrootfs-min.sh "$TARGET" "$PWD/out/faseela-x86_64-rootfs-min.tar.zst"
           sudo chown -R "$(id -u):$(id -g)" out
           ls -lh out
 
@@ -555,7 +555,7 @@ jobs:
         if: always()
         run: |
           mkdir -p ci-logs
-          sudo cp -r /mnt/.mydistro.build/logs ci-logs/ 2>/dev/null || true
+          sudo cp -r /mnt/.faseela.build/logs ci-logs/ 2>/dev/null || true
           sudo chown -R "$(id -u):$(id -g)" ci-logs
       - uses: actions/upload-artifact@v4
         if: always()
@@ -655,7 +655,7 @@ jobs:
           retention-days: 14
 
   # The small rootfs as a container image: the environment packages.yml (in faseela-repo) and
-  # anyone else can build in (`docker run ghcr.io/<owner>/mydistro-build`).
+  # anyone else can build in (`docker run ghcr.io/<owner>/faseela-build`).
   image:
     name: container image (rootfs-min → ghcr.io)
     needs: build
@@ -677,11 +677,11 @@ jobs:
       - name: Import and push
         run: |
           set -euo pipefail
-          img="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/mydistro-build"
+          img="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/faseela-build"
           tag="${GITHUB_REF_NAME//\//-}"
           cd rootfs
-          sha256sum -c mydistro-x86_64-rootfs-min.tar.zst.sha256
-          zstd -dc mydistro-x86_64-rootfs-min.tar.zst \
+          sha256sum -c faseela-x86_64-rootfs-min.tar.zst.sha256
+          zstd -dc faseela-x86_64-rootfs-min.tar.zst \
             | docker import \
                 --change 'ENV PATH=/usr/sbin:/usr/bin:/sbin:/bin' \
                 --change 'CMD ["/usr/bin/bash"]' \
@@ -733,10 +733,10 @@ jobs:
           cat > notes.md <<NOTES
           | file | what |
           |---|---|
-          | \`mydistro-x86_64.iso\` | live ISO, no GUI (xz; common firmware only) |
-          | \`mydistro-gui-x86_64.iso\` | live ISO with the sway/Wayland stack (xz; common firmware only) |
-          | \`mydistro-x86_64-rootfs-min.tar.zst\` | small rootfs: base-devel + nawa (build environment, also \`ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/mydistro-build\`) |
-          | \`mydistro-x86_64-rootfs.tar.zst\` | build seed: full toolchain incl. rust, without kernel, firmware and docs (\`build-all.sh --seed-rootfs\`) |
+          | \`faseela-x86_64.iso\` | live ISO, no GUI (xz; common firmware only) |
+          | \`faseela-gui-x86_64.iso\` | live ISO with the sway/Wayland stack (xz; common firmware only) |
+          | \`faseela-x86_64-rootfs-min.tar.zst\` | small rootfs: base-devel + nawa (build environment, also \`ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/faseela-build\`) |
+          | \`faseela-x86_64-rootfs.tar.zst\` | build seed: full toolchain incl. rust, without kernel, firmware and docs (\`build-all.sh --seed-rootfs\`) |
 
           This release was built from: ${SEED}.
 

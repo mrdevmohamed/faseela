@@ -12,11 +12,11 @@
 # NOTE: the distro does not ship rustc yet — NAWA stays as the seed-built
 # binary (recorded in the db).
 #
-# Usage (from the host): sudo ./stage3.sh /mnt/mydistro
+# Usage (from the host): sudo ./stage3.sh /mnt/faseela
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
-LFS="${1:?usage: stage3.sh /mnt/mydistro}"
+LFS="${1:?usage: stage3.sh /mnt/faseela}"
 [[ $EUID -eq 0 ]] || { echo "stage3: must run as root"; exit 1; }
 
 # refresh the repo copy inside the chroot (merge semantics; excludes the seed
@@ -46,6 +46,6 @@ bash "$HERE/enter-root.sh" "$LFS" /usr/bin/env -i \
     HOME=/root PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin TERM="${TERM:-dumb}" NAWA_JOBS="${NAWA_JOBS:-4}" STAGE3_WORLD="${STAGE3_WORLD:-0}" WITH_GUI="${WITH_GUI:-0}" STAGE_SKIP="${STAGE_SKIP:-}" \
     STAGE3_ISOLATION="${STAGE3_ISOLATION:-none}" \
     FINAL_ROOT="$FINAL_ROOT" \
-    bash /mydistro/bootstrap/stage3-inner.sh
+    bash /faseela/bootstrap/stage3-inner.sh
 
 echo "== stage3: complete"

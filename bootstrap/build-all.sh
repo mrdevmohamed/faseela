@@ -24,19 +24,19 @@
 #   iso     mkiso.sh             initramfs + squashfs + grub -> bootable ISO
 #
 # The rootfs is published next to the ISO AND is the seed of the next build:
-#   sudo ./build-all.sh --seed-rootfs out/mydistro-x86_64-rootfs.tar.zst /mnt/mydistro
+#   sudo ./build-all.sh --seed-rootfs out/faseela-x86_64-rootfs.tar.zst /mnt/faseela
 # replaces stage 0's Debian-based seed with the previous build's own system,
 # so the distribution builds itself with its own toolchain (stage 1 unpacks
 # the rootfs, seed-from-rootfs.sh adapts it).
 #
 # Usage:
-#   sudo ./build-all.sh /mnt/mydistro
-#   sudo ./build-all.sh --isolation sandbox --stage3-world /mnt/mydistro
-#   sudo ./build-all.sh --no-iso /mnt/mydistro                  # no ISO (rootfs still built)
-#   sudo ./build-all.sh --no-iso --no-rootfs /mnt/mydistro      # stop after stage3
-#   ./build-all.sh --from-stage iso /mnt/mydistro out/my.iso     # stage 5: non-root
-#   ./build-all.sh --list-stages /mnt/mydistro
-#   ./build-all.sh --dry-run /mnt/mydistro
+#   sudo ./build-all.sh /mnt/faseela
+#   sudo ./build-all.sh --isolation sandbox --stage3-world /mnt/faseela
+#   sudo ./build-all.sh --no-iso /mnt/faseela                  # no ISO (rootfs still built)
+#   sudo ./build-all.sh --no-iso --no-rootfs /mnt/faseela      # stop after stage3
+#   ./build-all.sh --from-stage iso /mnt/faseela out/my.iso     # stage 5: non-root
+#   ./build-all.sh --list-stages /mnt/faseela
+#   ./build-all.sh --dry-run /mnt/faseela
 #
 # Env knobs (same as the underlying stage scripts):
 #   NAWA_JOBS=<n>  WITH_GUI=1  STAGE3_WORLD=1  VOL_ID=<name>  SQUASH_COMP=gzip|xz|zstd
@@ -98,9 +98,9 @@ Options:
   --isolation LVL   none|env|sandbox|closure (default none); closure applies
                     to stage 3 only, stage 2 then uses sandbox
   --jobs N          parallel jobs (default: nproc, else 4)
-  --vol-id NAME     ISO volume id (default MYDISTRO)
+  --vol-id NAME     ISO volume id (default FASEELA)
   --squash-comp C   gzip|xz|zstd (default gzip)
-  --out PATH        ISO output path (default <repo>/out/mydistro-x86_64.iso)
+  --out PATH        ISO output path (default <repo>/out/faseela-x86_64.iso)
   --rootfs-out PATH rootfs tarball path (default: the ISO path with
                     .iso replaced by -rootfs.tar.zst)
   --list-stages     show pipeline progress for TARGET and exit
@@ -115,18 +115,18 @@ Two-root layout (default):
   Switching layouts between runs invalidates stage 2 onward automatically.
 
 Arguments:
-  TARGET            the build root (e.g. /mnt/mydistro); the final root is TARGET/sysroot
+  TARGET            the build root (e.g. /mnt/faseela); the final root is TARGET/sysroot
   OUT_ISO           ISO output path (positional alternative to --out)
 
 Outputs: OUT_ISO, ROOTFS (+ ROOTFS.sha256, ROOTFS.packages). Publish all of
 them; feed ROOTFS to the next build with --seed-rootfs.
 
 Examples:
-  sudo $PROG /mnt/mydistro
-  sudo $PROG --isolation closure --stage3-world --with-gui /mnt/mydistro my.iso
-  $PROG --seed-rootfs out/mydistro-x86_64-rootfs.tar.zst /mnt/mydistro   # self-hosting
-  $PROG --from-stage iso /mnt/mydistro my.iso      # stage 5 runs fine as non-root
-  $PROG --list-stages /mnt/mydistro
+  sudo $PROG /mnt/faseela
+  sudo $PROG --isolation closure --stage3-world --with-gui /mnt/faseela my.iso
+  $PROG --seed-rootfs out/faseela-x86_64-rootfs.tar.zst /mnt/faseela   # self-hosting
+  $PROG --from-stage iso /mnt/faseela my.iso      # stage 5 runs fine as non-root
+  $PROG --list-stages /mnt/faseela
 EOF
 }
 
@@ -139,7 +139,7 @@ OPT_FRESH=0 OPT_WIPE=0 OPT_NO_ISO=0 OPT_NO_ROOTFS=0 OPT_KEEP_MOUNTS=0
 OPT_WORLD=0 OPT_GUI=0 OPT_LIST=0 OPT_DRYRUN=0 OPT_SINGLE=0
 OPT_ISOLATION="${STAGE2_ISOLATION:-none}"
 JOBS="${NAWA_JOBS:-}"
-VOL_ID="${VOL_ID:-MYDISTRO}"
+VOL_ID="${VOL_ID:-FASEELA}"
 SQUASH_COMP="${SQUASH_COMP:-gzip}"
 
 while [[ $# -gt 0 ]]; do
@@ -198,7 +198,7 @@ LAYOUT_FILE="$STATE/layout"
 if (( OPT_SINGLE )); then LAYOUT=single-root; FINAL_HOST="$TARGET"
 else                      LAYOUT=two-root;    FINAL_HOST="$TARGET/sysroot"; fi
 if [[ -n $OUT_ISO ]]; then OUT_ISO="$(realpath -m -- "$OUT_ISO")"
-else OUT_ISO="$REPO/out/mydistro-x86_64.iso"; fi
+else OUT_ISO="$REPO/out/faseela-x86_64.iso"; fi
 if [[ -n $OUT_ROOTFS ]]; then OUT_ROOTFS="$(realpath -m -- "$OUT_ROOTFS")"
 else OUT_ROOTFS="${OUT_ISO%.iso}-rootfs.tar.zst"; fi
 [[ $OUT_ROOTFS == *.tar.zst ]] || die "--rootfs-out must end in .tar.zst (got '$OUT_ROOTFS')"
@@ -764,7 +764,7 @@ run_stage() {
 }
 
 T_START=$(date +%s)
-banner "mydistro build — target $TARGET"
+banner "faseela build — target $TARGET"
 echo "  jobs=$JOBS  isolation=$OPT_ISOLATION  gui=$OPT_GUI  stage3-world=$OPT_WORLD"
 echo "  layout=$LAYOUT  build-root=$TARGET  final-root=$FINAL_HOST"
 echo "  state=$STATE"

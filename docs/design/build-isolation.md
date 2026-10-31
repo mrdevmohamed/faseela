@@ -137,7 +137,7 @@ nawa implements it itself (no `bubblewrap` dependency — bwrap would itself hav
 /proc        fresh procfs for the new PID namespace
 /sys         not mounted (opt-in read-only for the few packages that probe it)
 /etc/passwd, /etc/group   synthesised: root + nobody (+ "builder")
-masked       /mydistro /build* /opt/seed /root /home /mnt /var/lib/nawa /var/cache/nawa  (empty tmpfs)
+masked       /faseela /build* /opt/seed /root /home /mnt /var/lib/nawa /var/cache/nawa  (empty tmpfs)
 ```
 
 `%{srcdir}` and `%{pkgdir}` expand to `/build/src` and `/build/pkg` inside the sandbox

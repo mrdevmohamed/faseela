@@ -11,7 +11,7 @@
 # Usage: tests/test-build-all-mock.sh   (from the repo root or anywhere)
 set -uo pipefail
 
-REPO="${MYDISTRO_REPO:-$(cd "$(dirname "$0")/.." && pwd)}"
+REPO="${FASEELA_REPO:-$(cd "$(dirname "$0")/.." && pwd)}"
 SRC="$REPO/bootstrap/build-all.sh"
 WORK="$(mktemp -d /tmp/build-all-test.XXXXXX)"
 MOCK="$WORK/repo/bootstrap"

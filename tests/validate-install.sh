@@ -81,7 +81,7 @@ export NAWA_PKG_CACHE_SRC="$PCACHE"
 # ============================================================ UEFI path ====
 echo "== UEFI install =="
 mkdir -p "$WORK/mnt/etc"
-printf '127.0.0.1 localhost mydistro\n' > "$WORK/mnt/etc/hosts"
+printf '127.0.0.1 localhost faseela\n' > "$WORK/mnt/etc/hosts"
 run_install uefi
 
 check "GPT label"            "parted -s /dev/vda mklabel gpt"
@@ -117,7 +117,7 @@ ls "$WORK/mnt/var/cache/nawa" >/dev/null 2>&1 && echo "  ok: cache dir created o
 echo "== BIOS install =="
 : > "$CMDLOG"
 rm -rf "$WORK/mnt"; mkdir -p "$WORK/mnt/etc"
-printf '127.0.0.1 localhost mydistro\n' > "$WORK/mnt/etc/hosts"
+printf '127.0.0.1 localhost faseela\n' > "$WORK/mnt/etc/hosts"
 run_install bios
 
 check "MBR label"            "parted -s /dev/vda mklabel msdos"

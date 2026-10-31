@@ -2,7 +2,7 @@
 # tests/test-ci-report.sh — scripts/ci-report.py against fixture logs and
 # fixture API answers (no network, no gh).
 set -u
-REPO="${MYDISTRO_REPO:-$(cd "$(dirname "$0")/.." && pwd)}"
+REPO="${FASEELA_REPO:-$(cd "$(dirname "$0")/.." && pwd)}"
 R="python3 -I $REPO/scripts/ci-report.py"
 W="$(mktemp -d)"; trap 'rm -rf "$W"' EXIT
 PASS=0; FAIL=0

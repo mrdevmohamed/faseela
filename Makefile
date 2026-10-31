@@ -1,7 +1,7 @@
 # faseela — entry point for the everyday tasks. `make` lists them.
 SHELL := /bin/bash
 SCRIPTS := $(wildcard bootstrap/*.sh bootstrap/seed/*.sh scripts/*.sh tests/*.sh)
-TARGET  ?= /mnt/mydistro
+TARGET  ?= /mnt/faseela
 ISOLATION ?= env
 
 .DEFAULT_GOAL := help
@@ -25,7 +25,7 @@ test: ## run every test script, ending with one summary table
 check: lint test ## lint + test (what CI runs, minus the recipes)
 
 dry-run: ## plan the whole build at every isolation level, build nothing
-	@for l in none env sandbox closure; do echo "== $$l"; bash bootstrap/build-all.sh --dry-run --isolation $$l /tmp/mydistro-dry-$$l >/dev/null || exit 1; done; echo "dry runs ok"
+	@for l in none env sandbox closure; do echo "== $$l"; bash bootstrap/build-all.sh --dry-run --isolation $$l /tmp/faseela-dry-$$l >/dev/null || exit 1; done; echo "dry runs ok"
 
 build: ## build the whole distribution into TARGET (root; hours)
 	sudo ./bootstrap/build-all.sh --isolation $(ISOLATION) $(TARGET)

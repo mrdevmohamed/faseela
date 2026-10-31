@@ -20,7 +20,7 @@
 #     like it does for the Debian seed — and the final root never sees it.
 #
 # Usage: seed-from-rootfs.sh ROOT [ROOTFS_TARBALL]
-#   ROOT            the unpacked rootfs (the build root, e.g. /mnt/mydistro)
+#   ROOT            the unpacked rootfs (the build root, e.g. /mnt/faseela)
 #   ROOTFS_TARBALL  only used for the provenance record
 set -euo pipefail
 
@@ -80,7 +80,7 @@ cat > "$ROOT/opt/seed/env.sh" <<'EOF'
 export NAWA_JOBS="${NAWA_JOBS:-4}"
 EOF
 {
-    echo "# mydistro bootstrap seed manifest (ROOTFS seed — self-hosting build)"
+    echo "# faseela bootstrap seed manifest (ROOTFS seed — self-hosting build)"
     echo "kind = rootfs"
     echo "prepared-utc = $(date -u +%Y-%m-%dT%H:%M:%SZ)"
     echo "host = $(uname -srm)"
