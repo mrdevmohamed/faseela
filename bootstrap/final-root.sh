@@ -255,3 +255,27 @@ verify_final_root_needed_resolved() {
     echo "== final-root: all NEEDED sonames resolve inside $root ($found ELF file(s))"
     return 0
 }
+
+
+# ---- packages stage 2/3 do not install -------------------------------------
+# filter_skipped: stdin = package names, one per line -> stdout without the
+# packages listed in $REPO/profiles/skip-packages.txt (or in STAGE_SKIP, a
+# space-separated override; STAGE_SKIP=none skips nothing). They are still
+# built and published by the package workflow (faseela-repo), a user installs
+# them later with `nawa install`; they just do not go into the shipped system.
+filter_skipped() {
+    local skip=" " line f="${REPO:-/mydistro}/profiles/skip-packages.txt"
+    if [[ -n ${STAGE_SKIP:-} ]]; then
+        [[ $STAGE_SKIP == none ]] || skip=" $STAGE_SKIP "
+    elif [[ -f $f ]]; then
+        while IFS= read -r line; do
+            line="${line%%#*}"; line="${line//[[:space:]]/}"
+            [[ -n $line ]] && skip+="$line "
+        done < "$f"
+    fi
+    local p
+    while IFS= read -r p; do
+        [[ -n $p ]] || continue
+        [[ $skip == *" $p "* ]] || printf '%s\n' "$p"
+    done
+}

@@ -17,13 +17,21 @@
 #
 # Usage:
 #   sudo ./mkrootfs.sh /mnt/mydistro/sysroot out/mydistro-x86_64-rootfs.tar.zst
-# Env overrides: ROOTFS_ZSTD_LEVEL (default 12), NAWA_JOBS (zstd threads, 0=all)
+# Env overrides: ROOTFS_ZSTD_LEVEL (1..19, default 19), NAWA_JOBS (zstd threads, 0=all),
+#   ROOTFS_STRIP (1 = default, 0 = keep everything)
+#
+# ROOTFS_STRIP=1 makes the archive a BUILD SEED, not an installable system: it
+# drops what a toolchain root never needs — the kernel image and modules,
+# firmware, kernel sources and the documentation. The kernel API headers
+# (/usr/include/linux, ...) STAY: glibc and gcc are built against them.
+# (The small container rootfs is mkrootfs-min.sh; the bootable system is the ISO.)
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="${1:?usage: mkrootfs.sh ROOT out-rootfs.tar.zst}"
 OUT="${2:?usage: mkrootfs.sh ROOT out-rootfs.tar.zst}"
-LEVEL="${ROOTFS_ZSTD_LEVEL:-12}"
+LEVEL="${ROOTFS_ZSTD_LEVEL:-19}"
+STRIP="${ROOTFS_STRIP:-1}"
 THREADS="${ROOTFS_ZSTD_THREADS:-0}"
 
 [[ $LEVEL =~ ^[0-9]+$ && $LEVEL -ge 1 && $LEVEL -le 19 ]] \
@@ -78,6 +86,19 @@ done
 # * --one-file-system: a stray bind mount cannot drag host data in
 # * the excludes keep the mountpoint DIRECTORIES but not their content, plus
 #   everything that is build scratch / seed leftover in a single-root layout
+STRIP_EXCLUDES=()
+if [[ $STRIP == 1 ]]; then
+    # the directories stay (mountpoints / ownership), only their content goes
+    STRIP_EXCLUDES=(
+        --exclude='./boot/*'
+        --exclude='./lib/modules' --exclude='./usr/lib/modules'
+        --exclude='./lib/firmware' --exclude='./usr/lib/firmware'
+        --exclude='./usr/src'
+        --exclude='./usr/share/doc' --exclude='./usr/share/man'
+        --exclude='./usr/share/info' --exclude='./usr/share/gtk-doc'
+    )
+    echo "== rootfs: seed profile — no kernel, modules, firmware, sources or docs (ROOTFS_STRIP=0 keeps them)"
+fi
 mkdir -p "$(dirname "$OUT")"
 TMP="$OUT.tmp.$$"
 trap 'rm -f "$TMP"' EXIT
@@ -88,8 +109,9 @@ tar --create --numeric-owner --xattrs --acls --sort=name --one-file-system \
     --exclude='./build'  --exclude='./build3' --exclude='./mydistro' \
     --exclude='./sources' --exclude='./.nawa' --exclude='./sysroot' \
     --exclude='./lost+found' \
+    ${STRIP_EXCLUDES[@]:+"${STRIP_EXCLUDES[@]}"} \
     -C "$ROOT" . \
-  | zstd -q -T"$THREADS" -"$LEVEL" -o "$TMP" -f
+  | zstd -q -T"$THREADS" -"$LEVEL" --long=27 -o "$TMP" -f
 mv -f "$TMP" "$OUT"
 trap - EXIT
 

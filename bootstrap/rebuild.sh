@@ -53,7 +53,7 @@ fi
 echo "== rebuild: $PKGS"
 bash "$HERE/enter-root.sh" "$LFS" /usr/bin/env -i \
     HOME=/root PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin TERM="${TERM:-dumb}" NAWA_JOBS="${NAWA_JOBS:-$(nproc 2>/dev/null || echo 4)}" \
-    WITH_GUI="${WITH_GUI:-0}" FINAL_ROOT="$FINAL_ROOT" \
+    WITH_GUI="${WITH_GUI:-0}" STAGE_SKIP="${STAGE_SKIP:-}" FINAL_ROOT="$FINAL_ROOT" \
     STAGE2_ISOLATION="${STAGE2_ISOLATION:-none}" STAGE2_REBUILD="$PKGS" \
     bash -c 'if [ -r /opt/seed/env.sh ]; then . /opt/seed/env.sh; fi; bash /mydistro/bootstrap/stage2-inner.sh'
 

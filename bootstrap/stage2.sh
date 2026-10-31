@@ -60,7 +60,7 @@ fi
 # installed /usr/bin/nawa instead of rebuilding it with the seed's cargo.
 # A FRESH target without a seed fails loudly in stage 1 instead.
 bash "$HERE/enter-root.sh" "$LFS" /usr/bin/env -i \
-    HOME=/root PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin TERM="${TERM:-dumb}" NAWA_JOBS="${NAWA_JOBS:-4}" WITH_GUI="${WITH_GUI:-0}" \
+    HOME=/root PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin TERM="${TERM:-dumb}" NAWA_JOBS="${NAWA_JOBS:-4}" WITH_GUI="${WITH_GUI:-0}" STAGE_SKIP="${STAGE_SKIP:-}" \
     FINAL_ROOT="$FINAL_ROOT" \
     STAGE2_ISOLATION="${STAGE2_ISOLATION:-none}" \
     STAGE2_USE_CACHE="${STAGE2_USE_CACHE:-0}" \

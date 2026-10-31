@@ -43,7 +43,7 @@ fi
 # bash -n / shellcheck cover it, and so it never competes for stdin with the
 # commands it runs.
 bash "$HERE/enter-root.sh" "$LFS" /usr/bin/env -i \
-    HOME=/root PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin TERM="${TERM:-dumb}" NAWA_JOBS="${NAWA_JOBS:-4}" STAGE3_WORLD="${STAGE3_WORLD:-0}" WITH_GUI="${WITH_GUI:-0}" \
+    HOME=/root PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin TERM="${TERM:-dumb}" NAWA_JOBS="${NAWA_JOBS:-4}" STAGE3_WORLD="${STAGE3_WORLD:-0}" WITH_GUI="${WITH_GUI:-0}" STAGE_SKIP="${STAGE_SKIP:-}" \
     STAGE3_ISOLATION="${STAGE3_ISOLATION:-none}" \
     FINAL_ROOT="$FINAL_ROOT" \
     bash /mydistro/bootstrap/stage3-inner.sh

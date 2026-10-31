@@ -1,0 +1,12 @@
+# Packages that stage 2 / stage 3 do NOT install into the shipped system
+# (bootstrap/final-root.sh: filter_skipped). One name per line.
+#
+# They are still built and published by the package workflow in faseela-repo,
+# so `nawa install linux-firmware` adds them after installation.
+#
+# Firmware is ~all of the ISO's incompressible weight. linux-firmware-lite
+# (GPU, wifi, bluetooth, common NICs, microcode — see its KEEP list) stays;
+# the meta package and the rest do not. Override per run: STAGE_SKIP="..."
+# (STAGE_SKIP=none installs everything).
+linux-firmware
+linux-firmware-extra
