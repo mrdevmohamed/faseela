@@ -8,7 +8,7 @@ set -euo pipefail
 export PATH=/usr/bin:/bin:/usr/sbin:/sbin
 NAWA_BIN="${NAWA_BIN:-/usr/bin/nawa}"
 ORDER="${MIN_ORDER:-/mydistro-min.order}"
-# overridable so scripts/test-mkrootfs-min.sh can run this against a throwaway tree
+# overridable so tests/test-mkrootfs-min.sh can run this against a throwaway tree
 MYDISTRO="${MYDISTRO:-/mydistro}"
 
 # shellcheck source=final-root.sh

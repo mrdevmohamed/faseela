@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# scripts/test-qemu-boot-test.sh — qemu-boot-test.sh against a fake qemu:
+# tests/test-qemu-boot-test.sh — qemu-boot-test.sh against a fake qemu:
 # prompt appears -> pass; qemu dies -> fail; nothing happens -> timeout fail.
 set -euo pipefail
 REPO="$(cd "$(dirname "$0")/.." && pwd)"

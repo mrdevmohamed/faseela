@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased — structure and run reports
+
+- **Organised**: tests moved to `tests/` (+ `tests/run-all.sh`, one summary table), `plan.md` to `docs/`,
+  the README cut to the project overview; the NAWA reference, roadmap and boot/install notes moved to
+  `docs/nawa-usage.md`, `docs/roadmap.md`, `docs/boot-and-install.md`; new `docs/architecture.md` and a `Makefile`
+  (`make`, `make check`, `make build`, ...). `bootstrap/` and `scripts/fetch-rootfs-seed.sh` keep their paths:
+  faseela-repo's package workflow calls them.
+- **Added** the end-of-run report to `ci.yml` and `release.yml` (`scripts/ci-report.py`, job `run report`): verdict,
+  jobs with times, failed step, error excerpt of the failing build log, artifacts. Tested by `tests/test-ci-report.sh`.
+- **Fixed** stage 3 failing on Qualcomm firmware (`*.mbn` is Hexagon ELF, `NEEDED CORE_USER.so`): the two final-root
+  ELF scans skip `usr/lib/firmware`.
+
 ## Unreleased — the recipes move to faseela-repo
 
 - **Moved** `recipes/`, `.github/workflows/packages.yml` and the recipe tooling

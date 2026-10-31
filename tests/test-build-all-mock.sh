@@ -8,7 +8,7 @@
 # The production file keeps both checks; these tests exercise the
 # ORCHESTRATION logic (stamps, resume, trap, epilogue), not the guards.
 #
-# Usage: scripts/test-build-all-mock.sh   (from the repo root or anywhere)
+# Usage: tests/test-build-all-mock.sh   (from the repo root or anywhere)
 set -uo pipefail
 
 REPO="${MYDISTRO_REPO:-$(cd "$(dirname "$0")/.." && pwd)}"
