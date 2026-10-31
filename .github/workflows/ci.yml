@@ -78,6 +78,8 @@ jobs:
         run: bash tests/test-skip-packages.sh
       - name: installer validation (stubbed disks)
         run: bash tests/validate-install.sh
+      - name: check-sources.py tests (local server, mirrors, retries, exit code)
+        run: bash tests/test-check-sources.sh
       - name: ci-report.py tests (fixture logs and API answers)
         run: bash tests/test-ci-report.sh
       - name: build-all.sh dry run at every isolation level
