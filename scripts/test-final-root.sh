@@ -110,6 +110,12 @@ if command -v gcc >/dev/null 2>&1; then
     out=$(verify_final_root_needed_resolved "$NR/bad" 2>&1); rc=$?
     check "missing libfl.so.2 fails the scan"   "[[ $rc -ne 0 ]]"
     check "offender and soname are named"       "printf '%s' \"\$out\" | grep -q 'usr/bin/tool needs libfl.so.2'"
+    # firmware blobs (Qualcomm .mbn = Hexagon ELF, NEEDED CORE_USER.so) are not host binaries
+    mkdir -p "$NR/fw/usr/lib/firmware/ath10k"; cp "$NR/bad/usr/bin/tool" "$NR/fw/usr/lib/firmware/ath10k/wlanmdsp.mbn"
+    : > "$NR/fw/usr/lib/libc.so.6"
+    for l in $(readelf -d "$NR/bad/usr/bin/tool" | sed -n 's/.*Shared library: \[\(.*\)\]/\1/p'); do : > "$NR/fw/usr/lib/$l"; done
+    rm -f "$NR/fw/usr/lib/libfl.so.2"
+    check "ELF under usr/lib/firmware is ignored" "verify_final_root_needed_resolved $NR/fw"
     out=$(READELF_BIN=/nonexistent-readelf verify_final_root_needed_resolved "$NR/bad" 2>&1) || true
     check "missing readelf warns, does not fail" "printf '%s' \"\$out\" | grep -q 'cannot check'"
 fi

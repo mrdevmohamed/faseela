@@ -158,6 +158,11 @@ finalize_final_root() {
     echo "== final-root: $FINAL_ROOT is clean ($(ls "$FINAL_ROOT/var/lib/nawa/local" 2>/dev/null | wc -l) packages)"
 }
 
+# NOTE: usr/lib/firmware is skipped by both scans. Firmware blobs (e.g. Qualcomm
+# *.mbn, which are Hexagon-DSP ELF files whose "NEEDED" is CORE_USER.so) are
+# loaded by the kernel onto other processors — they are not host binaries and
+# are never run by the dynamic loader.
+#
 # Scan the ELF files of a root for references to the bootstrap seed
 # directories (/opt/seed, /opt/cargo, /opt/rustup, /opt/cross-tools) in
 # their interpreter, DT_NEEDED or RPATH/RUNPATH. Called by stage3 AFTER the
@@ -194,7 +199,7 @@ verify_final_root_no_seed_refs() {
         found=$((found+1))
     done < <(
         # shellcheck disable=SC2086  # FINAL_ROOT_ELF_DIRS is a word list by design
-        for d in $dirs; do find "$root/$d" -type f -print0 2>/dev/null; done
+        for d in $dirs; do find "$root/$d" -path '*/firmware' -prune -o -type f -print0 2>/dev/null; done
     )
     [ "$bad" -eq 0 ] || return 1
     echo "== final-root: no seed references in $found ELF file(s) under $root"
@@ -244,7 +249,7 @@ verify_final_root_needed_resolved() {
         done < <(printf '%s\n' "$out" | sed -n 's/.*(NEEDED).*Shared library: \[\(.*\)\]/\1/p')
     done < <(
         # shellcheck disable=SC2086
-        for d in $dirs; do find "$root/$d" -type f -print0 2>/dev/null; done
+        for d in $dirs; do find "$root/$d" -path '*/firmware' -prune -o -type f -print0 2>/dev/null; done
     )
     [ "$bad" -eq 0 ] || return 1
     echo "== final-root: all NEEDED sonames resolve inside $root ($found ELF file(s))"
