@@ -13,9 +13,9 @@ orchestration contracts around it.
 | shell syntax | `bash -n` on all `bootstrap/*.sh`, `bootstrap/seed/*.sh`, `scripts/*.sh` | OK |
 | shellcheck | `shellcheck --severity=error` (as CI) | clean |
 | recipes | `python3 -I scripts/check-recipes.py` | 148 recipes, 0 errors, 32 GUI sha256 placeholders |
-| orchestration | `bash scripts/test-build-all-mock.sh` | 65 PASS / 0 FAIL |
-| final-root | `bash scripts/test-final-root.sh` | 15 PASS / 0 FAIL |
-| installer | `bash scripts/validate-install.sh` | PASSED |
+| orchestration | `bash tests/test-build-all-mock.sh` | 65 PASS / 0 FAIL |
+| final-root | `bash tests/test-final-root.sh` | 15 PASS / 0 FAIL |
+| installer | `bash tests/validate-install.sh` | PASSED |
 | dry run | `bash bootstrap/build-all.sh --dry-run --isolation closure /tmp/mydistro-dry` | exit 0 |
 | rust | `cargo build/clippy -D warnings/test --release --locked` (nawa) | build OK, clippy clean, 109/109 tests |
 
@@ -174,10 +174,10 @@ changed)`/`pending` separately.
    `bootstrap/initramfs.sh` fixes (D13)
 8. `bootstrap/seed/build-seed.sh`: gates, manifest, sidecar (D12)
 9. `bootstrap/ensure-chroot-mounts.sh`: resolv.conf fallback (D15)
-10. Tests: extend `scripts/test-build-all-mock.sh` (input invalidation, lock,
+10. Tests: extend `tests/test-build-all-mock.sh` (input invalidation, lock,
     legacy stamps, seed validation, wipe guard, sidecars); new
-    `scripts/test-mkiso.sh` (structural validation, stubbed); extend
-    `scripts/test-final-root.sh` (seed-ref ELF check)
+    `tests/test-mkiso.sh` (structural validation, stubbed); extend
+    `tests/test-final-root.sh` (seed-ref ELF check)
 11. CI: wire the new test; docs + CHANGELOG (D14)
 
 ## Acceptance criteria

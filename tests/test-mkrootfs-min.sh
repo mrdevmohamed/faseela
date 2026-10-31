@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# scripts/test-mkrootfs-min.sh — mkrootfs-min-inner.sh against a throwaway
+# tests/test-mkrootfs-min.sh — mkrootfs-min-inner.sh against a throwaway
 # tree with a stub nawa (same pattern as test-final-root.sh): proves that the
 # packages of the order file are installed in that order, from the newest
 # archive, that a missing archive is a hard error, and that the rollback cache

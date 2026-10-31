@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# scripts/validate-install.sh — stub-based validation of bootstrap/install.sh
+# tests/validate-install.sh — stub-based validation of bootstrap/install.sh
 # (runs as a normal user; no real disks touched)
 set -euo pipefail
 

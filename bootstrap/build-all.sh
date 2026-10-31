@@ -849,7 +849,7 @@ if (( ! OPT_DRYRUN )); then
     echo
     echo "== $PROG: done in $(fmt_el $(( $(date +%s) - T_START )))"
     echo "== next steps:"
-    echo "   - validate the built root:  scripts/validate-install.sh $TARGET"
+    echo "   - validate the built root:  tests/validate-install.sh $TARGET"
     echo "   - boot the ISO in a VM:      $OUT_ISO"
     echo "   - next build, self-hosting:  $0 --seed-rootfs $OUT_ROOTFS <new-target>"
     echo "   - install to disk (in live): sudo install.sh /dev/vda --yes"

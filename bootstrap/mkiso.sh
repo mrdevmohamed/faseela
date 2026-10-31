@@ -42,7 +42,7 @@ for tool in mksquashfs grub-mkrescue xorriso; do
         exit 1
     }
 done
-# overridable for the stub-based test (scripts/test-mkiso.sh); the real
+# overridable for the stub-based test (tests/test-mkiso.sh); the real
 # pipeline always uses bootstrap/initramfs.sh
 INITRAMFS_BIN="${INITRAMFS_BIN:-$HERE/initramfs.sh}"
 
