@@ -9,11 +9,21 @@ grub (BIOS+UEFI)
                  │                        → /usr/bin/runit (installed system)
                  └─ no: load storage modules → find FASEELA media
                          → mount /live/rootfs.squashfs
-                         → overlayfs with tmpfs upper
+                         → overlayfs (upper = tmpfs, or the
+                           FASEELA_PERSIST partition if there is one)
                          → switch_root → /usr/bin/runit (live system,
                            boot media stays at /cdrom)
                               └─ /etc/runit/1 → runsvdir (getty, udevd,
                                  dhcpcd, sysklogd, crond) → login on tty1-4
+
+### Persistence
+
+Label an ext4 partition `FASEELA_PERSIST` (e.g. on the USB stick, after the ISO
+image: `mkfs.ext4 -L FASEELA_PERSIST /dev/sdX3`) and the live system keeps its
+changes there; the grub entry "without persistence" (or `nopersist` on the
+kernel command line) ignores it. The live session unlocks root with an empty
+password at every boot, so a root password set in a persistent session does not
+stick.
 
 live session → sudo install.sh /dev/vda → reboots into the installed disk
 ```

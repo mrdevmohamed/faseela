@@ -55,6 +55,15 @@ fi
 
 finalize_final_root
 
+# revdep: every library a shipped binary needs must be provided by a package of
+# the image. This is what catches a recipe whose depends.run misses a library
+# (the repository happily installs it, the system then fails at runtime).
+verify_final_root_needed_resolved "$FINAL_ROOT" || {
+    echo "mkflavor-inner: binaries in the image need libraries that no installed package provides" >&2
+    echo "mkflavor-inner: add the package providing it to that recipe's depends.run in faseela-repo" >&2
+    exit 1
+}
+
 # nawa keeps every installed archive for rollback, and the downloaded ones in
 # the remote cache: an image never rolls back, and the copies double its size.
 rm -rf "${FINAL_ROOT:?}"/var/cache/nawa/*
