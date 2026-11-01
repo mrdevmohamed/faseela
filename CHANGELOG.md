@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased — releases without a tag
+
+- **Added** to `release.yml` (manual run): `release` publishes a GitHub Release from the run, named `release_tag` or
+  `build-<date>-r<run number>` (refuses an existing name); no `v*` tag needed. A `v*` tag still releases as before.
+- **Added** `outputs=core`: builds the bootstrap only and skips the flavor legs — the first release of a fresh setup is
+  `outputs=core` + `release`, it carries the seed rootfs that faseela-repo's package workflow builds in.
+  The release notes list only the files the run produced; a failed build or boot test still blocks the release.
+
 ## Unreleased — flavors: build the core once, install the rest
 
 - **Changed** stages 2 and 3 build only the **bootstrap flavor** of `flavors.toml` (faseela-repo): `base-devel`, `nawa`,

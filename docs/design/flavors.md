@@ -22,6 +22,17 @@
 `stage 2` vs `stage 3` differ by design (seed compiler vs ours); the fixed-point check is
 `stage 3` vs `stage 4` (`verify-reproducible.sh`).
 
+## First setup, and releases without tags
+
+The pipeline needs a release that carries the seed rootfs before `packages.yml` can build
+anything, and packages before a flavor can be installed. Break the circle once:
+
+1. faseela, *Build ISO (CD)*: `outputs=core`, `release` ticked → release with the seed rootfs.
+2. faseela-repo, *Build packages*: `rootfs=seed`, `packages = flavor:iso-nogui flavor:iso-gui flavor:rootfs-min`.
+3. faseela, *Build ISO (CD)*: `outputs=all`, `release` ticked → the full release.
+
+A release is made by a manual run (`release`, optional `release_tag`) or by a `v*` tag.
+
 ## Users
 
 `nawa install foo` takes the binary from the repository; `nawa install --from build foo`

@@ -49,7 +49,7 @@ on:
       outputs:
         description: "What to build on top of the core system"
         type: choice
-        options: [all, iso-nogui, iso-gui, rootfs-min]
+        options: [all, core, iso-nogui, iso-gui, rootfs-min]
         default: all
       isolation:
         description: "Build isolation for stages 2 and 3"
@@ -75,6 +75,14 @@ on:
         default: true
       recipes_ref:
         description: "faseela-repo branch, tag or commit to build the recipes from (empty = its default branch)"
+        type: string
+        default: ""
+      release:
+        description: "Publish a GitHub Release from this run (no tag needed): whatever was built, `outputs=core` gives a release with the seed rootfs only"
+        type: boolean
+        default: false
+      release_tag:
+        description: "Name of that release (empty = build-<date>-r<run number>); it must not exist yet"
         type: string
         default: ""
       verify_reproducible:
@@ -142,6 +150,7 @@ jobs:
       matrix: ${{ steps.m.outputs.matrix }}
       isos: ${{ steps.m.outputs.isos }}
       has_iso: ${{ steps.m.outputs.has_iso }}
+      has_variants: ${{ steps.m.outputs.has_variants }}
     steps:
       - uses: actions/checkout@v4
       - name: Fetch the recipes (faseela-repo @ the commit chosen by this run)
@@ -167,6 +176,7 @@ jobs:
           isos = [v for v in sel if v["kind"] == "iso"]
           print("isos=" + json.dumps({"include": isos}))
           print("has_iso=" + ("true" if isos else "false"))
+          print("has_variants=" + ("true" if sel else "false"))
           PY
 
       # Minutes instead of hours: does the package repository hold what the
@@ -182,6 +192,7 @@ jobs:
             echo "custom repository ($PKG_REPO): not checked here"; exit 0
           fi
           variants="$(python3 -c 'import json,os; print(" ".join(v["variant"] for v in json.loads(os.environ["MATRIX"])["include"]))')"
+          [[ -n "$variants" ]] || { echo "outputs=core: no flavors to check"; exit 0; }
           gh release view stable --repo "${GITHUB_REPOSITORY_OWNER}/faseela-repo" --json assets \
             --jq '.assets[].name' > assets.txt \
             || { echo "::warning::no package repository yet (faseela-repo release 'stable'): run its 'Build packages' workflow first"; exit 0; }
@@ -498,6 +509,8 @@ jobs:
   build:
     name: ${{ matrix.variant }}
     needs: [plan, core]
+    # outputs=core builds the bootstrap only (no flavors, e.g. for the very first release)
+    if: ${{ needs.plan.outputs.has_variants == 'true' }}
     runs-on: ubuntu-24.04
     # installing packages and squashing an image: no compiling here
     timeout-minutes: 120
@@ -746,7 +759,9 @@ jobs:
   release:
     name: GitHub Release
     needs: [plan, core, build, boot-test]
-    if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+    # a `v*` tag, or a manual run with `release` ticked. build / boot-test may be
+    # skipped (outputs=core), but a failure of either still blocks the release.
+    if: ${{ !cancelled() && (startsWith(github.ref, 'refs/tags/v') || inputs.release) && needs.core.result == 'success' && contains(fromJSON('["success","skipped"]'), needs.build.result) && contains(fromJSON('["success","skipped"]'), needs.boot-test.result) }}
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -762,9 +777,20 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           SEED: ${{ needs.core.outputs.seed }}
           RECIPES_REV: ${{ needs.plan.outputs.recipes_rev }}
+          INPUT_TAG: ${{ inputs.release_tag }}
         run: |
           set -euo pipefail
           ls -lh artifacts
+          # the release name: the pushed tag, else the input, else build-<date>-r<run>
+          TAG="$INPUT_TAG"
+          if [[ -z "$TAG" ]]; then
+            if [[ "$GITHUB_REF" == refs/tags/* ]]; then TAG="$GITHUB_REF_NAME"
+            else TAG="build-$(date -u +%Y%m%d-%H%M)-r${GITHUB_RUN_NUMBER}"; fi
+          fi
+          [[ "$TAG" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || { echo "::error::bad release name '$TAG'"; exit 1; }
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::the release '$TAG' already exists: give release_tag another name"; exit 1
+          fi
           # A release asset is limited to 2 GiB. Bigger files stay workflow
           # artifacts and the release carries only the checksum files. The
           # rootfs and its .sha256 are what the NEXT build downloads as its
@@ -780,21 +806,24 @@ jobs:
             esac
             files+=("$f")
           done
-          cat > notes.md <<NOTES
-          | file | what |
-          |---|---|
-          | \`faseela-x86_64.iso\` | live ISO, no GUI (xz; common firmware only) |
-          | \`faseela-gui-x86_64.iso\` | live ISO with the sway/Wayland stack (xz; common firmware only) |
-          | \`faseela-x86_64-rootfs-min.tar.zst\` | small rootfs: base-devel + nawa (build environment, also \`ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/faseela-build\`) |
-          | \`faseela-x86_64-rootfs.tar.zst\` | build seed: full toolchain incl. rust, without kernel, firmware and docs (\`build-all.sh --seed-rootfs\`) |
-
-          This release was built from: ${SEED}.
-
-          Recipes: [faseela-repo@${RECIPES_REV:0:12}](https://github.com/mrdevmohamed/faseela-repo/tree/${RECIPES_REV}).
-          To rebuild this release from the same recipes, run *Build ISO (CD)* with \`recipes_ref\` = \`${RECIPES_REV}\`.
-          NOTES
-          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
+          (( ${#files[@]} )) || { echo "::error::no build output to publish"; exit 1; }
+          # only the files this run produced (outputs=core makes the rootfs alone)
+          row() { [[ -e "artifacts/$1" ]] && printf '| `%s` | %s |\n' "$1" "$2"; return 0; }
+          {
+            echo '| file | what |'; echo '|---|---|'
+            row faseela-x86_64.iso "live ISO, no GUI (xz; common firmware only)"
+            row faseela-gui-x86_64.iso "live ISO with the sway/Wayland stack (xz; common firmware only)"
+            row faseela-x86_64-rootfs-min.tar.zst "small rootfs: base-devel + nawa (build environment, also ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/faseela-build)"
+            row faseela-x86_64-rootfs.tar.zst "build seed: the bootstrap core (toolchain incl. rust, nawa, curl), without kernel, firmware and docs (build-all.sh --seed-rootfs; faseela-repo's package workflow builds in it)"
+            echo
+            echo "This release was built from: ${SEED}."
+            echo
+            echo "Recipes: [faseela-repo@${RECIPES_REV:0:12}](https://github.com/mrdevmohamed/faseela-repo/tree/${RECIPES_REV})."
+            echo "To rebuild this release from the same recipes, run *Build ISO (CD)* with \`recipes_ref\` = \`${RECIPES_REV}\`."
+          } > notes.md
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
             --generate-notes --notes-file notes.md "${files[@]}"
+          echo "### Release \`$TAG\`: $(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json url --jq .url)" >> "$GITHUB_STEP_SUMMARY"
 
   # Always runs, last, whatever happened (also on failure and cancel): one page
   # that says what happened, so nobody has to open the jobs one by one.
