@@ -37,7 +37,7 @@ while IFS= read -r pkg; do
     [[ -n $pkg ]] || continue
     echo "== flavor: $pkg"
     if "$NAWA_BIN" --recipes "$FASEELA/recipes" --root "$FINAL_ROOT" \
-            install --no-deps --from "$FROM" "${repo[@]}" "$pkg"; then
+            install --yes --no-deps --from "$FROM" "${repo[@]}" "$pkg"; then
         n=$((n+1))
     else
         missing+=("$pkg")
