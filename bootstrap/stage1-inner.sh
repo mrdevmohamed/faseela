@@ -57,8 +57,16 @@ fail() { echo "stage1-inner: SEED CHECK FAILED: $*" >&2; exit 1; }
 # Debian alternatives links that `dpkg -x` skipped (older seeds lack c++)
 [ -e /usr/bin/c++ ] || { [ -x /usr/bin/g++ ] && ln -s g++ /usr/bin/c++; }
 
+# Only tools the seed can really provide belong here. For a rootfs seed that is
+# the `bootstrap` flavor (flavors.toml: base-devel + nawa + curl + ca-certificates
+# and what builds them). flex is NOT in it: nothing in that flavor needs it
+# (binutils is even built with LEX=: to avoid linking libfl), and flex is not
+# part of base-devel either, so a rootfs built from the flavor never has it.
+# Requiring it only ever passed on the Debian seed, where it leaked in and hid
+# undeclared dependencies (see CHANGELOG, bc). Recipes that need flex declare it
+# in depends.build; with STAGE_SET=all stage 2 builds it from its recipe.
 for t in bash sh env make gcc g++ cc c++ ld as ar ldconfig grep sed gawk awk tar gzip xz zstd bzip2 \
-         patch m4 bison flex find diff file pkg-config python3 perl curl install sha256sum; do
+         patch m4 bison find diff file pkg-config python3 perl curl install sha256sum; do
     command -v "$t" >/dev/null 2>&1 || fail "'$t' not found in PATH"
 done
 
