@@ -438,6 +438,8 @@ jobs:
             # `seed` flavor (flavors.toml) is then INSTALLED from the package
             # repository into /sysroot-seed and packed as the next seed
             sudo -E env SEED_ROOTFS="$ROOTFS_SEED" bash bootstrap/stage1.sh "$TARGET"
+            # the state dir build-all.sh would have made: the target is packed with it
+            sudo mkdir -p "$(dirname -- "$TARGET")/.$(basename -- "$TARGET").build"
             margs=(--from repo)
             [[ -n "$PKG_REPO" ]] && margs+=(--repo "$PKG_REPO")
             sudo -E bash bootstrap/mkflavor.sh "${margs[@]}" "$TARGET" seed
@@ -483,12 +485,13 @@ jobs:
           sudo ./bootstrap/umount-chroot.sh "$TARGET" || true
           sudo tar -I 'zstd -T0 -3' --one-file-system -cpf "$RUNNER_TEMP/target.tar.zst" --numeric-owner \
             --exclude='faseela/build/*/src' --exclude='faseela/build/*/pkg' \
+            --exclude='faseela/sysroot-seed' \
             -C /mnt faseela .faseela.build
           ls -lh "$RUNNER_TEMP/target.tar.zst"
 
       - name: Pack the package cache
         id: packpkgs
-        if: ${{ always() && vars.PKGCACHE != 'false' && steps.build.conclusion != 'skipped' }}
+        if: ${{ always() && vars.PKGCACHE != 'false' && steps.build.conclusion != 'skipped' && steps.coremode.outputs.mode == 'build' }}
         continue-on-error: true
         run: |
           rm -rf "$RUNNER_TEMP/pkgcache" && mkdir -p "$RUNNER_TEMP/pkgcache"
