@@ -50,6 +50,11 @@ mkdir -p "$LFS/faseela"
 # records it); it is absent when recipes/ is somebody's own copy
 stamp=()
 [[ -f $REPO/.recipes-rev ]] && stamp=(.recipes-rev)
+# dist/ holds nawa.pub, the repository key: final-root.sh installs it from
+# /faseela/dist inside the chroot, so it MUST be copied too (without it the
+# rootfs ships no trusted key and warns "dist/nawa.pub is missing")
+dist=()
+[[ -d $REPO/dist ]] && dist=(dist)
 # shellcheck disable=SC2016  # excludes are tar patterns, not shell globs
 tar -C "$REPO" -cf - \
     --exclude='nawa/target' \
@@ -57,7 +62,7 @@ tar -C "$REPO" -cf - \
     --exclude='bootstrap/.initramfs-build' \
     --exclude='srccache' \
     --exclude='out' \
-    nawa recipes profiles bootstrap "${stamp[@]}" |
+    nawa recipes profiles bootstrap "${dist[@]}" "${stamp[@]}" |
     tar -C "$LFS/faseela" -xf -
 # compat: the checkout used to live at /mydistro inside the chroot, and
 # faseela-repo's package workflow may still call /mydistro/bootstrap/...
