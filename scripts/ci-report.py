@@ -43,6 +43,21 @@ ERRLINE = re.compile(
 )
 NOISE = re.compile(r"warning|lint: checked|-Werror|Wno-error|checking |^##\[(?:group|endgroup)\]", re.I)
 FAILED_DURING = re.compile(r"FAILED during '([^']+)'")
+RERUN = re.compile(r"the target is KEPT for resume")
+# Known failure -> what it means and the usual fix, shown above the raw lines.
+HINTS = [
+    (re.compile(r"final-root: ERROR: (\S+) needs (\S+), which is not in the root"),
+     "A shipped binary links a library its package does not depend on: add the "
+     "package that provides it to that recipe's `depends.run` in faseela-repo."),
+    (re.compile(r"SELF-HOST FAILED"),
+     "The stage3 self-hosting proof failed (see the lines above it for the file or library)."),
+    (re.compile(r"Network is unreachable|Could not resolve host|Connection timed out"),
+     "A download failed: usually a mirror fallback, a real failure only if the build stops on it."),
+    (re.compile(r"No space left on device"),
+     "The runner disk is full: free more space or build fewer packages."),
+    (re.compile(r"sha256 mismatch|checksum mismatch", re.I),
+     "A source tarball changed upstream: update `sha256` in the recipe."),
+]
 
 
 def clean(line):
@@ -70,6 +85,17 @@ def excerpt(path, title, tail_lines=30, max_errors=25, window=400):
 
     head = f"### ❌ {title}: failed" + (f" during `{stage}`" if stage else "")
     out = [head, ""]
+    hints, seen_h = [], set()
+    for l in errors:
+        for rx, text in HINTS:
+            m = rx.search(l)
+            if m and text not in seen_h:
+                seen_h.add(text)
+                hints.append((l, text))
+    if errors and hints:
+        # the first matching hint is about the root cause (errors are in log order)
+        l, text = hints[0]
+        out += [f"**Likely cause:** `{l[:200]}`", "", f"**Fix:** {text}", ""]
     if errors:
         seen, uniq = set(), []
         for l in errors:
