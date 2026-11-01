@@ -35,7 +35,7 @@ printf 'KEY\n' > "$W/key.pub"
 printf 'alpha\nbeta\ngamma\n' > "$W/order"
 
 run() {   # $1 = order file, $2 = package the stub refuses ("" = none)
-    env -i PATH="$PATH" STUB_LOG="$STUB_LOG" STUB_FAIL="${2:-}" HOME="$W" \
+    env -i PATH="$PATH" ${RUN_ENV:-} STUB_LOG="$STUB_LOG" STUB_FAIL="${2:-}" HOME="$W" \
         FINAL_ROOT="$FINAL" NAWA_BIN="$W/nawa" FASEELA="$REPO" \
         FLAVOR_ORDER="$1" FLAVOR_KEY="$W/key.pub" FLAVOR_REPO="https://repo.example/stable" FLAVOR_FROM=repo \
         bash "$REPO/bootstrap/mkflavor-inner.sh"
@@ -56,6 +56,17 @@ if run "$W/order" beta > "$W/out2.log" 2>&1; then fail "missing package was acce
 grep -q 'could not install beta' "$W/out2.log" || fail "missing-package message absent"
 grep -q 'flavor:<name>' "$W/out2.log"          || fail "no pointer to the package workflow"
 grep -q 'install .* gamma$' "$STUB_LOG" && fail "installation went on after a failure"
+
+# revdep: a binary whose library no package provides fails the image
+: > "$STUB_LOG"; rm -rf "$FINAL"; mkdir -p "$FINAL"
+printf '#!/bin/sh\necho "ELF 64-bit LSB"\n' > "$W/file"
+printf '#!/bin/sh\necho " 0x1 (NEEDED)             Shared library: [libnope.so.9]"\n' > "$W/readelf"
+chmod +x "$W/file" "$W/readelf"
+if RUN_ENV="FILE_BIN=$W/file READELF_BIN=$W/readelf" run "$W/order" > "$W/out3.log" 2>&1; then
+    fail "an unresolved library was accepted"
+fi
+grep -q 'needs libnope.so.9' "$W/out3.log"      || fail "missing library not named"
+grep -q 'depends.run' "$W/out3.log"             || fail "no pointer to depends.run"
 
 : > "$W/empty"
 if run "$W/empty" > /dev/null 2>&1; then fail "empty order accepted"; fi
