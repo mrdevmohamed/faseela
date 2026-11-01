@@ -117,7 +117,7 @@ done
 # assignment would kill the script silently (exit 2) before the warning
 # below could run
 KVER="$(ls "$ROOT/lib/modules" 2>/dev/null | sort -V | tail -1 || true)"
-MODLIST="scsi_mod cdrom sr_mod sd_mod sg ahci ata_piix nvme virtio virtio_ring virtio_pci virtio_blk virtio_scsi usb_common usbcore usb_storage uas xhci_pci ehci_pci uhci_hcd hid usbhid hid_generic iso9660 squashfs overlay loop fat vfat nls_cp437 dm_mod"
+MODLIST="scsi_mod cdrom sr_mod sd_mod sg ahci ata_piix nvme virtio virtio_ring virtio_pci virtio_blk virtio_scsi usb_common usbcore usb_storage uas xhci_pci ehci_pci uhci_hcd hid usbhid hid_generic iso9660 squashfs overlay loop fat vfat nls_cp437 dm_mod ext4"
 if [[ -z $KVER ]]; then
     echo "initramfs: WARNING no modules in $ROOT/lib/modules — CD/DVD boot may" \
          "need sr_mod built into the kernel" >&2
@@ -212,7 +212,7 @@ MODLIST="scsi_mod cdrom sr_mod sd_mod sg ahci ata_piix nvme \
     virtio virtio_ring virtio_pci virtio_blk virtio_scsi \
     usb_common usbcore usb_storage uas \
     xhci_pci ehci_pci uhci_hcd hid usbhid hid_generic \
-    iso9660 squashfs overlay loop fat vfat nls_cp437 dm_mod"
+    iso9660 squashfs overlay loop fat vfat nls_cp437 dm_mod ext4"
 kv="$(uname -r)"
 if [ -f "/lib/modules/$kv/modules.dep" ]; then
     for m in $MODLIST; do modprobe "$m" 2>/dev/null; done
@@ -279,7 +279,22 @@ echo "initramfs: boot media at $found"
 
 mount -t squashfs -o ro "$SQUASH" /ro || { echo "initramfs: squashfs mount failed"; exec sh; }
 
-mount -t tmpfs tmpfs /rw
+# persistence: a partition labelled FASEELA_PERSIST (ext4) keeps the overlay's
+# upper layer, so changes survive a reboot. Without it (or with `nopersist` on
+# the kernel command line) the upper layer is a tmpfs, as before. Create one with
+#   mkfs.ext4 -L FASEELA_PERSIST /dev/sdX3
+nopersist=""
+for arg in $(cat /proc/cmdline); do
+    [ "$arg" = nopersist ] && nopersist=1
+done
+persist=""
+[ -n "$nopersist" ] || persist="$(findfs LABEL=FASEELA_PERSIST 2>/dev/null || true)"
+if [ -n "$persist" ] && mount -t ext4 -o noatime "$persist" /rw 2>/dev/null; then
+    echo "initramfs: persistence on $persist"
+else
+    [ -z "$persist" ] || echo "initramfs: WARNING cannot mount $persist — changes will not be kept"
+    mount -t tmpfs tmpfs /rw
+fi
 mkdir -p /rw/upper /rw/work
 mount -t overlay overlay -o lowerdir=/ro,upperdir=/rw/upper,workdir=/rw/work /newroot \
     || { echo "initramfs: overlayfs mount failed"; exec sh; }
@@ -289,6 +304,7 @@ mount -t overlay overlay -o lowerdir=/ro,upperdir=/rw/upper,workdir=/rw/work /ne
 # and disk installs are untouched (the installer sets a real root password).
 [ -f /newroot/etc/shadow ] && sed -i 's/^root:[^:]*:/root::/' /newroot/etc/shadow
 echo "initramfs: live session — root has an empty password"
+# (with persistence a root password set in the session is overwritten at every boot)
 
 # hand the pseudo filesystems over to the real root; keep the boot media
 # mounted at /cdrom inside the live system (the disk installer reads the
