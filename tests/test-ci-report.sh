@@ -21,6 +21,7 @@ out=$($R excerpt "$W/bad.log" --title core)
 check "failed stage is named"            "grep -q 'failed during \`stage3\`' <<<\"\$out\""
 check "error line is shown, no stamp"    "grep -q '^final-root: ERROR: usr/bin/foo needs libbar.so.1' <<<\"\$out\""
 check "warnings and -Werror are noise"   "! grep -q 'parseable ELF' <(sed -n '/^\`\`\`$/,/^\`\`\`$/p' <<<\"\$out\" | head -4) && ! grep -q 'Werror' <<<\"\$(sed -n '1,/<details>/p' <<<\"\$out\")\""
+check "likely cause and fix are stated"   "grep -q '^\*\*Likely cause:\*\* .*needs libbar.so.1' <<<\"\$out\" && grep -q 'depends.run' <<<\"\$out\""
 check "tail is collapsed"                "grep -q '<details>' <<<\"\$out\""
 out=$($R excerpt "$W/ok.log" --title core)
 check "clean log says so in one line"    "grep -q '✅ core: no failure' <<<\"\$out\" && [[ \$(wc -l <<<\"\$out\") -le 2 ]]"

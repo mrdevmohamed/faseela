@@ -80,6 +80,8 @@ jobs:
         run: bash tests/test-mkflavor.sh
       - name: check-flavor-packages.py tests
         run: bash tests/test-check-flavor-packages.sh
+      - name: check-closure.py tests
+        run: bash tests/test-check-closure.sh
       - name: verify-reproducible.sh tests (stage 3 vs stage 4 compare)
         run: bash tests/test-verify-reproducible.sh
       - name: skip-packages list (filter_skipped)
