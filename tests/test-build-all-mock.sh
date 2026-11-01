@@ -497,6 +497,18 @@ check "BS3 bootstrap + --no-iso accepted"           "[[ $RC -eq 0 ]]"
 RC=$(STAGE_SET=bootstrap bash "$MOCK/build-all.sh" --stage-set all "$WORK/tgtS" "$ISO" > "$WORK/last.out" 2>"$WORK/last.err"; echo $?)
 check "BS4 --stage-set all + iso stage accepted"    "[[ $RC -eq 0 ]]"
 
+say "PC. a package cache pre-seeded in TARGET/build/out does not make TARGET non-empty"
+rm -rf "$WORK/tgtP" "$WORK/.tgtP.build"; mkdir -p "$WORK/tgtP/build/out"; : > "$WORK/tgtP/build/out/a-1-1.nawa.tar.zst"
+RC=$(bash "$MOCK/build-all.sh" --no-iso "$WORK/tgtP" > "$WORK/last.out" 2>"$WORK/last.err"; echo $?)
+check "PC1 only build/out present: the build starts"  "[[ $RC -eq 0 ]]"
+check "PC2 the cached archive is still there"          "[[ -e $WORK/tgtP/build/out/a-1-1.nawa.tar.zst ]]"
+rm -rf "$WORK/tgtP" "$WORK/.tgtP.build"; mkdir -p "$WORK/tgtP/build/out"; : > "$WORK/tgtP/stray.txt"
+RC=$(bash "$MOCK/build-all.sh" --no-iso "$WORK/tgtP" > "$WORK/last.out" 2>"$WORK/last.err"; echo $?)
+check "PC3 any other file still refuses (exit 2)"      "[[ $RC -eq 2 ]] && ERR | grep -q 'is not empty'"
+rm -rf "$WORK/tgtP" "$WORK/.tgtP.build"; mkdir -p "$WORK/tgtP/build/src"
+RC=$(bash "$MOCK/build-all.sh" --no-iso "$WORK/tgtP" > "$WORK/last.out" 2>"$WORK/last.err"; echo $?)
+check "PC4 build/ with more than out/ still refuses"   "[[ $RC -eq 2 ]]"
+
 # ------------------------------------------------------------------ summary --
 echo
 printf '=====================\n  PASS: %d   FAIL: %d\n=====================\n' "$PASS" "$FAIL"

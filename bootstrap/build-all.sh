@@ -270,7 +270,23 @@ fi
 # non-empty target with no recorded progress = probably not what the user
 # wants (stage1 would unpack the seed over unrelated files). Read-only and
 # wipe modes are exempt: --list-stages inspects anything, --wipe replaces it.
-if [[ -d $TARGET && -n "$(ls -A "$TARGET" 2>/dev/null)" && ! -d $STAMPS ]] \
+# A package cache the CI restored into TARGET/build/out BEFORE the build (so stage 2
+# can reuse the archives) is not "unrelated files": it alone does not make the
+# target non-empty.
+target_has_foreign_files() {
+    local e name
+    for e in "$TARGET"/* "$TARGET"/.[!.]*; do
+        [[ -e $e ]] || continue
+        name="${e##*/}"
+        if [[ $name == build && -d $e ]]; then
+            [[ -z "$(ls -A "$e" | grep -vx out || true)" ]] || return 0
+        else
+            return 0
+        fi
+    done
+    return 1
+}
+if [[ -d $TARGET ]] && target_has_foreign_files && [[ ! -d $STAMPS ]] \
    && (( ! OPT_WIPE && ! OPT_DRYRUN && ! OPT_LIST )); then
     die "TARGET $TARGET is not empty and has no build state
        - to replace its contents deliberately: re-run with --wipe
