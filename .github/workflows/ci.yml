@@ -68,6 +68,8 @@ jobs:
         run: bash tests/test-rootfs.sh
       - name: final-root helper tests
         run: bash tests/test-final-root.sh
+      - name: sync-repo.sh tests (ships dist/nawa.pub into the chroot)
+        run: bash tests/test-sync-repo.sh
       - name: rootfs-min tests (stubbed nawa)
         run: bash tests/test-mkrootfs-min.sh
       - name: qemu-boot-test.sh tests (fake qemu)
