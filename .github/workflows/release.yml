@@ -200,6 +200,37 @@ jobs:
             echo "::warning::the package repository lacks packages of a flavor: run faseela-repo > Build packages > packages: flavor:<name> before the flavor jobs start"
           fi
 
+      # Fail fast: the stage3 self-host proof ("a binary needs a library that
+      # is not in the root") run on the bootstrap packages ALREADY published,
+      # before the multi-hour core. A leak (perl -> libcrypt.so.1) stops here,
+      # naming the package, instead of after two hours of building.
+      - name: Closure check of the bootstrap flavor (fail fast)
+        if: ${{ inputs.pkg_repo == '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 -I - > patterns.txt <<'PY'
+          import sys, tomllib
+          from pathlib import Path
+          sys.path.insert(0, "scripts")
+          import flavor
+          fl = flavor.load_flavors(Path("flavors.toml"))
+          rc = flavor.load_recipes(Path("recipes"))
+          ids = {}
+          for f in Path("recipes").glob("*/*/recipe.toml"):
+              p = tomllib.loads(f.read_text())["package"]
+              ids[p["name"]] = f"{p['name']}-{p['version']}-{p.get('rel', 1)}"
+          for n in flavor.resolve(fl, rc, "bootstrap"):
+              print(f"{ids[n]}.nawa.tar.zst")
+          PY
+          mkdir -p closure-archives
+          args=(); while read -r a; do args+=(-p "$a"); done < patterns.txt
+          if ! gh release download stable --repo "${GITHUB_REPOSITORY_OWNER}/faseela-repo" \
+               --dir closure-archives --clobber "${args[@]}" 2>&1 | tail -3; then
+            echo "::warning::could not download the bootstrap packages: closure not checked"; exit 0
+          fi
+          python3 -I scripts/check-closure.py closure-archives bootstrap | tee -a "$GITHUB_STEP_SUMMARY"
+
   core:
     name: core (seed → stage3 → rootfs)
     needs: plan
