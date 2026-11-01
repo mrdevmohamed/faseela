@@ -124,6 +124,11 @@ menuentry "faseela (live)" {
     initrd /boot/initramfs.img
 }
 
+menuentry "faseela (live, without persistence)" {
+    linux /boot/$KVER quiet nopersist console=ttyS0,115200 console=tty0
+    initrd /boot/initramfs.img
+}
+
 menuentry "faseela (live, verbose)" {
     linux /boot/$KVER loglevel=7 console=ttyS0,115200 console=tty0
     initrd /boot/initramfs.img
