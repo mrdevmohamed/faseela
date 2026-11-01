@@ -44,7 +44,11 @@ install_final() {
     final_root_enabled || return 0
     mkdir -p "$FINAL_ROOT"
     repair_final_layout
-    "$NAWA_BIN" --root "$FINAL_ROOT" install --force "$1"
+    # The archive was built a moment ago by this script, so it is unsigned by
+    # construction. The final root already trusts dist/nawa.pub (stage 2 puts
+    # it there; a resumed stage 2 or stage 3 meets it again), and nawa then
+    # refuses unsigned archives: pass --allow-unsigned explicitly.
+    "$NAWA_BIN" --root "$FINAL_ROOT" install --force --allow-unsigned "$1"
 }
 
 # Newest archive of package $1 from the known build dirs / the local cache.
