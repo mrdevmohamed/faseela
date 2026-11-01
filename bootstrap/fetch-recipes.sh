@@ -99,6 +99,20 @@ install_tree() {
     mv "$tmp" "$DEST"
 }
 
+# flavors.toml + its resolver sit next to recipes/ in faseela-repo; stages 2/3
+# use them to know what to build (stage-set.sh). A faseela-repo commit that
+# predates them has neither: any stale copy is removed, and the stages then
+# build the whole graph.
+install_flavors() { # $1 = root of a faseela-repo checkout / extracted archive
+    if [[ -f $1/flavors.toml && -f $1/scripts/flavor.py ]]; then
+        mkdir -p "$REPO/scripts"
+        cp "$1/flavors.toml" "$REPO/flavors.toml"
+        cp "$1/scripts/flavor.py" "$REPO/scripts/flavor.py"
+    else
+        rm -f "$REPO/flavors.toml" "$REPO/scripts/flavor.py"
+    fi
+}
+
 write_stamp() { # source ref rev
     printf 'source=%s\nrepo=%s\nref=%s\nrev=%s\n' "$1" "$SLUG" "$2" "$3" > "$STAMP"
 }
@@ -130,6 +144,7 @@ if [[ -n $local_src ]]; then
         [[ -z "$(git -C "$root" status --porcelain -- "$local_src" 2>/dev/null)" ]] || rev="$rev+dirty"
     fi
     install_tree "$local_src"
+    if [[ $(basename "$local_src") == recipes ]]; then install_flavors "$(dirname "$local_src")"; else install_flavors /nonexistent; fi
     write_stamp "local:$local_src" "-" "$rev"
     say "recipes copied from $local_src ($rev; uncommitted changes are included)"
     exit 0
@@ -175,6 +190,9 @@ listing="$(tar -tzf "$tmp/src.tar.gz")"   # not `| head`: SIGPIPE + pipefail
 top="${listing%%/*}"
 if [[ ! $rev =~ ^[0-9a-f]{40}$ && $top =~ -([0-9a-f]{40})$ ]]; then rev="${BASH_REMATCH[1]}"; fi
 
+# optional: older commits have no flavors.toml
+tar -xzf "$tmp/src.tar.gz" -C "$tmp/x" --strip-components=1 --wildcards '*/flavors.toml' '*/scripts/flavor.py' 2>/dev/null || true
 install_tree "$tmp/x/recipes"
+install_flavors "$tmp/x"
 write_stamp github "$want" "$rev"
 say "recipes ready: $SLUG@${rev:0:12} -> $DEST"

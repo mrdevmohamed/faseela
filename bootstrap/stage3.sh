@@ -23,6 +23,10 @@ LFS="${1:?usage: stage3.sh /mnt/faseela}"
 # tarball and the host's cargo output — see sync-repo.sh)
 bash "$HERE/sync-repo.sh" "$LFS"
 
+# what to rebuild: the same set stage 2 built (see stage-set.sh)
+. "$HERE/stage-set.sh"
+write_stage_set "$LFS"
+
 # self-heal: same reason as stage2 — the stage-1 mounts die with the session
 # while the stamp survives; without /proc inside the target, user-namespace
 # setup in nawa's sandbox (writes /proc/self/uid_map) fails too

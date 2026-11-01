@@ -34,7 +34,7 @@ esac
 echo "== stage3: isolation=$ISOLATION"
 
 if [[ "${STAGE3_WORLD:-0}" == "1" ]]; then
-    echo "== stage3: rebuilding the ENTIRE graph with the distro's own gcc"
+    echo "== stage3: rebuilding the ENTIRE build set (the bootstrap set, or the whole graph when STAGE_SET=all) with the distro's own gcc"
     # --include-installed: every package IS installed at this point, and
     # deps-all skips what the db records — without the flag the order would
     # come back empty and nothing would be rebuilt
@@ -47,7 +47,7 @@ if [[ "${STAGE3_WORLD:-0}" == "1" ]]; then
         GUI_PKGS=" $(ls "$REPO/recipes/gui" | tr '\n' ' ') "
         ORDER=$(for p in $ORDER; do [[ "$GUI_PKGS" == *" $p "* ]] || echo "$p"; done)
     fi
-    ORDER=$(filter_skipped <<< "$ORDER")
+    ORDER=$(filter_skipped <<< "$ORDER" | filter_stage_set)
 else
     # The toolchain set is DEFINED by recipes/toolchain (not a hardcoded list
     # that silently stales): filter the full topological order down to its
@@ -76,7 +76,7 @@ if final_root_enabled; then
         GUI_PKGS=" $(ls "$REPO/recipes/gui" | tr '\n' ' ') "
         SYNC_ORDER=$(for p in $SYNC_ORDER; do [[ "$GUI_PKGS" == *" $p "* ]] || echo "$p"; done)
     fi
-    SYNC_ORDER=$(filter_skipped <<< "$SYNC_ORDER")
+    SYNC_ORDER=$(filter_skipped <<< "$SYNC_ORDER" | filter_stage_set)
     printf '%s\n' "$SYNC_ORDER" > /build3/final-root.order
     sync_final_root /build3/final-root.order
 fi
