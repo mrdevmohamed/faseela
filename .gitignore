@@ -9,6 +9,9 @@
 # the recipe tree lives in faseela-repo; bootstrap/fetch-recipes.sh puts it here
 /recipes/
 /.recipes-rev
+# flavors.toml + its resolver ride along with the recipes (fetch-recipes.sh)
+/flavors.toml
+/scripts/flavor.py
 /.recipes-new.*/
 /.recipes-fetch.*/
 

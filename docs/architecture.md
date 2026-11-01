@@ -25,7 +25,7 @@ seed ─► stage 1 ─► stage 2 ─► stage 3 ─► stage 4 ─► stage 5 
 |---|---|---|---|
 | 0 seed | `bootstrap/seed/build-seed.sh` or `seed-from-rootfs.sh` | host | a toolchain tarball (Debian + rustup), or the previous release's rootfs turned into one |
 | 1 chroot | `stage1.sh` → `stage1-inner.sh` | host → chroot | unpacked, verified seed in the target |
-| 2 core | `stage2.sh` → `stage2-inner.sh` | host → chroot | nawa compiled with the seed, then the whole recipe graph built into **two roots** (build root + clean `/sysroot`) |
+| 2 core | `stage2.sh` → `stage2-inner.sh` | host → chroot | nawa compiled with the seed, then the **bootstrap flavor** (`flavors.toml`) built into **two roots** (build root + clean `/sysroot`) |
 | 3 self-host | `stage3.sh` → `stage3-inner.sh` | host → chroot | toolchain (or world) rebuilt with the distro's own tools, seed removed, **self-hosting proof** |
 | 4 rootfs | `mkrootfs.sh` (`mkrootfs-min.sh`) | host | `faseela-x86_64-rootfs.tar.zst` (+ `.sha256`, `.packages`) — the seed of the next build |
 | 5 ISO | `mkiso.sh` + `initramfs.sh` | host | hybrid BIOS+UEFI live ISO, validated structurally |

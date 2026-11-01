@@ -2,8 +2,10 @@
 # stage2-inner.sh — runs INSIDE the chroot (invoked by stage2.sh).
 # 1. compile NAWA (the package manager) with the seed rustc
 # 2. install NAWA into the target system
-# 3. build + install the FULL recipe graph (without recipes/gui unless WITH_GUI=1)
-#    in resolved order
+# 3. build + install the BOOTSTRAP SET (flavors.toml: base-devel, nawa, curl and
+#    what builds them) in resolved order. Every other package is built once by
+#    the package workflow and installed from the repository; STAGE_SET=all
+#    (no /faseela/bootstrap.set) restores the old full-graph build.
 set -euo pipefail
 
 export PATH="/opt/cargo/bin:/usr/bin:/bin:/usr/sbin:/sbin"
@@ -102,7 +104,11 @@ fi
 echo "== [2/3] verifying NAWA"
 "$NAWA_BIN" --version
 
-echo "== [3/3] building + installing ALL recipes (resolved order)"
+if [[ -s ${STAGE_SET_FILE:-$REPO/bootstrap.set} ]]; then
+    echo "== [3/3] building + installing the bootstrap set ($(wc -l < "${STAGE_SET_FILE:-$REPO/bootstrap.set}") packages, resolved order)"
+else
+    echo "== [3/3] building + installing ALL recipes (resolved order)"
+fi
 cd "$REPO"
 # nawa deps-all prints the full-graph topological order (bare names, one
 # per line), skipping anything already recorded in the local db.
@@ -112,7 +118,7 @@ if [[ "${WITH_GUI:-0}" != "1" && -d "$REPO/recipes/gui" ]]; then
     GUI_PKGS=" $(ls "$REPO/recipes/gui" | tr '\n' ' ') "
     ORDER=$(for p in $ORDER; do [[ "$GUI_PKGS" == *" $p "* ]] || echo "$p"; done)
 fi
-ORDER=$(filter_skipped <<< "$ORDER")
+ORDER=$(filter_skipped <<< "$ORDER" | filter_stage_set)
 COUNT=$(echo "$ORDER" | awk 'NF{n++} END{print n+0}')
 
 # --------------------------------------------------------------------------
@@ -350,10 +356,10 @@ if final_root_enabled; then
         GUI_PKGS=" $(ls "$REPO/recipes/gui" | tr '\n' ' ') "
         ALL=$(for p in $ALL; do [[ "$GUI_PKGS" == *" $p "* ]] || echo "$p"; done)
     fi
-    ALL=$(filter_skipped <<< "$ALL")
+    ALL=$(filter_skipped <<< "$ALL" | filter_stage_set)
     printf '%s\n' "$ALL" > /build/final-root.order
     sync_final_root /build/final-root.order
     finalize_final_root
 fi
 
-echo "== stage2-inner: full system complete ($COUNT packages)"
+echo "== stage2-inner: complete ($COUNT packages built)"

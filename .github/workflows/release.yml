@@ -2,12 +2,16 @@ name: Build ISO (CD)
 
 # Builds the distribution from source and publishes, per release:
 #
-#   core            seed -> stage1 -> stage2 -> stage3 -> rootfs (once, the slow part)
+#   core            seed -> stage1 -> stage2 -> stage3 -> rootfs: builds ONLY the
+#                   bootstrap flavor (flavors.toml: base-devel, nawa, curl and what
+#                   builds them), with the seed toolchain and then again with its own
 #                   publishes  faseela-x86_64-rootfs.tar.zst  = the SEED of the next build
-#   build (matrix)  runs in parallel on the finished core, one runner each:
+#   build (matrix)  one runner per flavor, in parallel, on the finished core. Nothing
+#                   is compiled: bootstrap/mkflavor.sh INSTALLS the flavor's packages
+#                   from the package repository (faseela-repo, packages.yml):
 #                     iso-nogui   faseela-x86_64.iso
-#                     iso-gui     faseela-gui-x86_64.iso   (adds recipes/gui on top of core)
-#                     rootfs-min  faseela-x86_64-rootfs-min.tar.zst  (base-devel + nawa only)
+#                     iso-gui     faseela-gui-x86_64.iso   (iso-nogui + the sway/Wayland stack)
+#                     rootfs-min  faseela-x86_64-rootfs-min.tar.zst  (base-devel + nawa; the docker image)
 #   boot-test       boots each ISO in QEMU, waits for the login prompt (gates the release)
 #   image           rootfs-min -> ghcr.io/<owner>/faseela-build (container build environment)
 #   release         one GitHub Release with everything above (tags only)
@@ -15,10 +19,11 @@ name: Build ISO (CD)
 #                   verdict, every job and its time, the failed step, the error lines
 #                   of the failing log and the artifacts (scripts/ci-report.py)
 #
-# Why a pipeline and not a plain matrix over "gui: [false, true]": the GUI
-# stack is only extra packages on top of the same system, so a matrix over
-# the whole build would compile gcc/glibc/rust/linux twice. The matrix is
-# over what is DERIVED from the core.
+# Why a pipeline and not a matrix over the whole build: every package is built
+# ONCE (faseela-repo's packages.yml publishes it), the flavors are only lists of
+# packages (flavors.toml). Run packages.yml with `flavor:iso-gui` (and the others)
+# before a release; the `plan` job warns when the repository lacks a package of a
+# flavor, and a flavor build then stops with the list instead of compiling.
 #
 #   * push a tag `v*`         -> everything, then a GitHub Release
 #   * Actions > Run workflow  -> artifacts only (pick what to build in `outputs`)
@@ -72,6 +77,19 @@ on:
         description: "faseela-repo branch, tag or commit to build the recipes from (empty = its default branch)"
         type: string
         default: ""
+      verify_reproducible:
+        description: "After the core: rebuild it once more (stage 4) and compare with stage 3. Report only; adds hours and modifies the cached target, so use it on a run you can throw away"
+        type: boolean
+        default: false
+      pkg_repo:
+        description: "Package repository the flavors are installed from (http(s) URL; empty = faseela-repo release `stable`)"
+        type: string
+        default: ""
+      flavor_from:
+        description: "repo = a package missing from the repository fails the flavor; auto = compile what is missing (slow)"
+        type: choice
+        options: [repo, auto]
+        default: repo
 
 permissions:
   contents: read
@@ -125,6 +143,11 @@ jobs:
       isos: ${{ steps.m.outputs.isos }}
       has_iso: ${{ steps.m.outputs.has_iso }}
     steps:
+      - uses: actions/checkout@v4
+      - name: Fetch the recipes (faseela-repo @ the commit chosen by this run)
+        env:
+          RECIPES_REF: ${{ needs.recipes.outputs.rev }}
+        run: bash bootstrap/fetch-recipes.sh
       - id: m
         env:
           ONLY: ${{ inputs.outputs || 'all' }}
@@ -133,11 +156,11 @@ jobs:
           import json, os
           only = os.environ["ONLY"]
           variants = [
-              {"variant": "iso-nogui", "kind": "iso", "gui": "0",
+              {"variant": "iso-nogui", "kind": "iso",
                "iso": "faseela-x86_64.iso", "vol": "FASEELA"},
-              {"variant": "iso-gui", "kind": "iso", "gui": "1",
+              {"variant": "iso-gui", "kind": "iso",
                "iso": "faseela-gui-x86_64.iso", "vol": "FASEELA_GUI"},
-              {"variant": "rootfs-min", "kind": "rootfs", "gui": "0"},
+              {"variant": "rootfs-min", "kind": "rootfs"},
           ]
           sel = [v for v in variants if only in ("all", v["variant"])]
           print("matrix=" + json.dumps({"include": sel}))
@@ -145,6 +168,26 @@ jobs:
           print("isos=" + json.dumps({"include": isos}))
           print("has_iso=" + ("true" if isos else "false"))
           PY
+
+      # Minutes instead of hours: does the package repository hold what the
+      # flavors will install? A warning, not a failure: packages.yml may be
+      # publishing them while the core builds (the flavor jobs run last).
+      - name: Does the package repository have the flavors' packages?
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MATRIX: ${{ steps.m.outputs.matrix }}
+          PKG_REPO: ${{ inputs.pkg_repo }}
+        run: |
+          if [[ -n "$PKG_REPO" ]]; then
+            echo "custom repository ($PKG_REPO): not checked here"; exit 0
+          fi
+          variants="$(python3 -c 'import json,os; print(" ".join(v["variant"] for v in json.loads(os.environ["MATRIX"])["include"]))')"
+          gh release view stable --repo "${GITHUB_REPOSITORY_OWNER}/faseela-repo" --json assets \
+            --jq '.assets[].name' > assets.txt \
+            || { echo "::warning::no package repository yet (faseela-repo release 'stable'): run its 'Build packages' workflow first"; exit 0; }
+          if ! python3 -I scripts/check-flavor-packages.py assets.txt $variants | tee -a "$GITHUB_STEP_SUMMARY"; then
+            echo "::warning::the package repository lacks packages of a flavor: run faseela-repo > Build packages > packages: flavor:<name> before the flavor jobs start"
+          fi
 
   core:
     name: core (seed → stage3 → rootfs)
@@ -319,6 +362,15 @@ jobs:
           [[ -n "$ROOTFS_SEED" ]]         && args+=(--seed-rootfs "$ROOTFS_SEED")
           sudo -E ./bootstrap/build-all.sh "${args[@]}" "$TARGET"
 
+      # stage 2 (seed compiler) and stage 3 (our compiler) differ by design; the
+      # fixed-point check is stage 3 against stage 4. Report only.
+      - name: Verify the core is reproducible (stage 3 = stage 4)
+        if: ${{ steps.build.outcome == 'success' && inputs.verify_reproducible }}
+        continue-on-error: true
+        run: |
+          sudo -E env ISOLATION="$ISOLATION" STAGE3_ISOLATION="$ISOLATION" \
+            bash bootstrap/verify-reproducible.sh run "$TARGET" | tee -a "$GITHUB_STEP_SUMMARY"
+
       - name: Save the bootstrap seed (also on failure)
         if: ${{ always() && steps.seedcache.outputs.cache-hit != 'true' && hashFiles('bootstrap/seed/seed.tar.zst') != '' }}
         continue-on-error: true
@@ -447,13 +499,14 @@ jobs:
     name: ${{ matrix.variant }}
     needs: [plan, core]
     runs-on: ubuntu-24.04
-    # iso-gui compiles the whole GUI stack (stage 2 with recipes/gui)
-    timeout-minutes: ${{ matrix.gui == '1' && 340 || 90 }}
+    # installing packages and squashing an image: no compiling here
+    timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
     env:
-      ISOLATION: ${{ inputs.isolation || 'sandbox' }}
+      PKG_REPO: ${{ inputs.pkg_repo }}
+      FLAVOR_FROM: ${{ inputs.flavor_from || 'repo' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -485,24 +538,21 @@ jobs:
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
           sudo sysctl -w kernel.core_pattern='|/bin/false' || true
 
-      # The GUI stack is installed into the same two-root layout as the core
-      # (build root + clean /sysroot). stage 2 skips every package the core
-      # already installed, so only recipes/gui is compiled. Re-running stage 2
-      # after stage 3 is supported (stage2.sh keeps the installed nawa).
-      - name: Build the GUI stack on top of the core
-        if: ${{ matrix.gui == '1' }}
+      # The flavor = the packages flavors.toml lists for it, INSTALLED from the
+      # package repository into an empty root next to the core's (nothing is
+      # compiled). A package the repository lacks stops this step with a list.
+      - name: Install the ${{ matrix.variant }} flavor from the package repository
         run: |
-          # stage 2 never uses `closure` (that level is stage 3 only)
-          iso="$ISOLATION"; [[ "$iso" == closure ]] && iso=sandbox
-          sudo env WITH_GUI=1 NAWA_JOBS="$(nproc)" STAGE2_ISOLATION="$iso" \
-            bash bootstrap/stage2.sh "$TARGET"
+          args=(--from "$FLAVOR_FROM")
+          [[ -n "$PKG_REPO" ]] && args+=(--repo "$PKG_REPO")
+          sudo bash bootstrap/mkflavor.sh "${args[@]}" "$TARGET" "${{ matrix.variant }}"
 
       # What is in the image, biggest first: the answer to "why is the ISO
       # N GiB" is on the run summary instead of in a guess.
       - name: Size report of the shipped system
         if: ${{ matrix.kind == 'iso' }}
         run: |
-          root="$TARGET/sysroot"; [[ -d $root ]] || root="$TARGET"
+          root="$TARGET/sysroot-${{ matrix.variant }}"
           {
             echo "### Size of ${{ matrix.variant }} before squashing"
             echo '```'
@@ -524,7 +574,7 @@ jobs:
         run: |
           mkdir -p out
           sudo env VOL_ID="$VOL_ID" NAWA_JOBS="$(nproc)" \
-            bash bootstrap/mkiso.sh "$TARGET/sysroot" "$PWD/out/$ISO_NAME"
+            bash bootstrap/mkiso.sh "$TARGET/sysroot-${{ matrix.variant }}" "$PWD/out/$ISO_NAME"
           sudo chown -R "$(id -u):$(id -g)" out
           cd out
           sha256sum "$ISO_NAME" | tee "$ISO_NAME.sha256"
@@ -540,7 +590,7 @@ jobs:
         if: ${{ matrix.kind == 'rootfs' }}
         run: |
           mkdir -p out
-          sudo bash bootstrap/mkrootfs-min.sh "$TARGET" "$PWD/out/faseela-x86_64-rootfs-min.tar.zst"
+          sudo bash bootstrap/mkrootfs.sh "$TARGET/sysroot-${{ matrix.variant }}" "$PWD/out/faseela-x86_64-rootfs-min.tar.zst"
           sudo chown -R "$(id -u):$(id -g)" out
           ls -lh out
 
