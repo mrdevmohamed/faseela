@@ -16,11 +16,11 @@ mkdir -p "$BUILD/build3/out" "$BUILD/build/out" "$BUILD/var/cache/nawa" "$FINAL"
 : > "$BUILD/build3/out/alpha-1.10-1.nawa.tar.zst"
 : > "$BUILD/build/out/beta-2-1.nawa.tar.zst"
 
-# stub nawa: `nawa --root R install --force ARCHIVE` records the call and fakes
-# the files finalize_final_root insists on
+# stub nawa: `nawa --root R install [flags] ARCHIVE` (archive = last argument)
+# records the call and fakes the files finalize_final_root insists on
 cat > "$W/nawa" <<'STUB'
 #!/usr/bin/env bash
-root="$2"; archive="$5"
+root="$2"; archive="${*: -1}"
 base="$(basename "$archive")"; pkg="${base%%-[0-9]*}"
 echo "$pkg $base" >> "$STUB_LOG"
 mkdir -p "$root/var/lib/nawa/local/$pkg" "$root/var/cache/nawa" "$root/usr/bin" "$root/usr/lib"

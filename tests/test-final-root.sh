@@ -11,12 +11,18 @@ B="$W/build"; F="$W/final"
 mkdir -p "$B/var/lib/nawa/local"/{glibc,bash,nawa} "$B/build/out" "$F"
 for p in glibc bash nawa; do : > "$B/build/out/$p-1.0-1.nawa.tar.zst"; done
 mkdir -p "$B/build/out"; : > "$B/build/out/glibc-1.0-1.nawa.tar.zst"   # old name, must lose to newer
-# stub nawa: `--root R install --force ARCHIVE` records the install in R's db
+# stub nawa: `--root R install [flags] ARCHIVE` records the install in R's db
+# (the archive is the last argument) and notes when --allow-unsigned was given
 cat > "$W/nawa" <<'STUB'
 #!/usr/bin/env bash
 [[ $1 == --root && $3 == install ]] || exit 9
-n=$(basename "$5" | sed 's/-[0-9].*//')
-mkdir -p "$2/var/lib/nawa/local/$n"; echo "$5" >> "$2/.installed"
+root=$2; shift 3
+unsigned=0
+for a in "$@"; do [[ $a == --allow-unsigned ]] && unsigned=1; done
+archive="${*: -1}"
+n=$(basename "$archive" | sed 's/-[0-9].*//')
+mkdir -p "$root/var/lib/nawa/local/$n"; echo "$archive" >> "$root/.installed"
+echo "$unsigned" >> "$root/.unsigned"
 STUB
 chmod +x "$W/nawa"
 
@@ -29,6 +35,9 @@ printf 'glibc\nbash\nnawa\nnotbuilt\n' > "$W/order"
 check "sync succeeds"                   "sync_final_root $W/order"
 check "all built pkgs reached final"    "[[ -d $F/var/lib/nawa/local/glibc && -d $F/var/lib/nawa/local/bash && -d $F/var/lib/nawa/local/nawa ]]"
 check "unbuilt pkg skipped"             "[[ ! -d $F/var/lib/nawa/local/notbuilt ]]"
+# the archives are built here, hence unsigned, and the final root trusts
+# dist/nawa.pub: without --allow-unsigned nawa refuses the install
+check "install_final allows unsigned"   "! grep -qx 0 $F/.unsigned"
 before=$(wc -l < "$F/.installed")
 sync_final_root "$W/order" >/dev/null
 check "second sync is a no-op"          "[[ \$(wc -l < $F/.installed) -eq $before ]]"
