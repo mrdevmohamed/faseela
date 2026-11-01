@@ -94,7 +94,12 @@ Options:
   --single-root     legacy layout: install into the build root only and pack
                     TARGET itself into the ISO (default: TWO roots — see below)
   --stage3-world    STAGE3_WORLD=1 — rebuild EVERY package in stage 3
-  --with-gui        WITH_GUI=1 — include recipes/gui in stage 2/3
+  --with-gui        WITH_GUI=1 — include recipes/gui in stage 2/3 (only with --stage-set all)
+  --stage-set S     what stages 2/3 build: a flavor of flavors.toml (default
+                    bootstrap: base-devel, nawa, curl and what builds them) or
+                    `all` = the whole recipe graph. The other flavors are not
+                    built here: bootstrap/mkflavor.sh installs them from the
+                    package repository onto the finished bootstrap.
   --isolation LVL   none|env|sandbox|closure (default none); closure applies
                     to stage 3 only, stage 2 then uses sandbox
   --jobs N          parallel jobs (default: nproc, else 4)
@@ -137,6 +142,7 @@ note() { echo "$PROG: $*"; }
 TARGET="" OUT_ISO="" FROM_STAGE="" OUT_ROOTFS="" SEED_ROOTFS="" SEED_ROOTFS_SHA256=""
 OPT_FRESH=0 OPT_WIPE=0 OPT_NO_ISO=0 OPT_NO_ROOTFS=0 OPT_KEEP_MOUNTS=0
 OPT_WORLD=0 OPT_GUI=0 OPT_LIST=0 OPT_DRYRUN=0 OPT_SINGLE=0
+STAGE_SET="${STAGE_SET:-bootstrap}"
 OPT_ISOLATION="${STAGE2_ISOLATION:-none}"
 JOBS="${NAWA_JOBS:-}"
 VOL_ID="${VOL_ID:-FASEELA}"
@@ -156,6 +162,7 @@ while [[ $# -gt 0 ]]; do
         --single-root)  OPT_SINGLE=1; shift ;;
         --stage3-world) OPT_WORLD=1; shift ;;
         --with-gui)     OPT_GUI=1; shift ;;
+        --stage-set)    [[ $# -ge 2 ]] || die "--stage-set needs a value"; STAGE_SET="$2"; shift 2 ;;
         --isolation)    [[ $# -ge 2 ]] || die "--isolation needs a value"; OPT_ISOLATION="$2"; shift 2 ;;
         --jobs)         [[ $# -ge 2 ]] || die "--jobs needs a value"; JOBS="$2"; shift 2 ;;
         --vol-id)       [[ $# -ge 2 ]] || die "--vol-id needs a value"; VOL_ID="$2"; shift 2 ;;
@@ -195,6 +202,11 @@ STAMPS="$STATE/stamps"
 LOGS="$STATE/logs"
 META="$STATE/meta"
 LAYOUT_FILE="$STATE/layout"
+# the iso stage packs the final root: with only the bootstrap flavor built there
+# it would be a toolchain with no kernel, no bootloader, no init
+if (( ! OPT_NO_ISO && ! OPT_LIST )) && [[ $STAGE_SET != all ]]; then
+    die "the iso stage needs a complete system, but stages 2/3 build only '$STAGE_SET'. Pass --no-iso and run bootstrap/mkflavor.sh <flavor> on the result, or --stage-set all"
+fi
 if (( OPT_SINGLE )); then LAYOUT=single-root; FINAL_HOST="$TARGET"
 else                      LAYOUT=two-root;    FINAL_HOST="$TARGET/sysroot"; fi
 if [[ -n $OUT_ISO ]]; then OUT_ISO="$(realpath -m -- "$OUT_ISO")"
@@ -343,16 +355,16 @@ stage_inputs() {   # the input contract of a stage, one key=value per line
                          "$HERE/seed-from-rootfs.sh" \
                          "$HERE/ensure-chroot-mounts.sh" "$HERE/enter-root.sh")" \
                     "$(seed_identity)" ;;
-        stage2) printf 'format=1\nscripts=%s\nrecipes=%s\nprofiles=%s\ngui=%s\nisolation=%s\nlayout=%s\n' \
+        stage2) printf 'format=1\nscripts=%s\nrecipes=%s\nprofiles=%s\ngui=%s\nisolation=%s\nlayout=%s\nset=%s\n' \
                     "$(hash_files "$HERE/stage2.sh" "$HERE/stage2-inner.sh" "$HERE/sync-repo.sh" \
-                         "$HERE/final-root.sh" "$HERE/ensure-chroot-mounts.sh" "$HERE/enter-root.sh")" \
+                         "$HERE/final-root.sh" "$HERE/stage-set.sh" "$HERE/ensure-chroot-mounts.sh" "$HERE/enter-root.sh")" \
                     "$(tree_hash recipes)" "$(tree_hash profiles)" \
-                    "$OPT_GUI" "$STAGE2_ISO" "$LAYOUT" ;;
-        stage3) printf 'format=1\nscripts=%s\nrecipes=%s\nprofiles=%s\ngui=%s\nworld=%s\nisolation=%s\nlayout=%s\n' \
+                    "$OPT_GUI" "$STAGE2_ISO" "$LAYOUT" "$STAGE_SET:$(hash_files "$REPO/flavors.toml")" ;;
+        stage3) printf 'format=1\nscripts=%s\nrecipes=%s\nprofiles=%s\ngui=%s\nworld=%s\nisolation=%s\nlayout=%s\nset=%s\n' \
                     "$(hash_files "$HERE/stage3.sh" "$HERE/stage3-inner.sh" "$HERE/sync-repo.sh" \
-                         "$HERE/final-root.sh" "$HERE/ensure-chroot-mounts.sh" "$HERE/enter-root.sh")" \
+                         "$HERE/final-root.sh" "$HERE/stage-set.sh" "$HERE/ensure-chroot-mounts.sh" "$HERE/enter-root.sh")" \
                     "$(tree_hash recipes)" "$(tree_hash profiles)" \
-                    "$OPT_GUI" "$OPT_WORLD" "$STAGE3_ISO" "$LAYOUT" ;;
+                    "$OPT_GUI" "$OPT_WORLD" "$STAGE3_ISO" "$LAYOUT" "$STAGE_SET:$(hash_files "$REPO/flavors.toml")" ;;
         rootfs) printf 'format=1\nscripts=%s\nlevel=%s\nlayout=%s\n' \
                     "$(hash_files "$HERE/mkrootfs.sh")" \
                     "${ROOTFS_ZSTD_LEVEL:-12}" "$LAYOUT" ;;
@@ -675,6 +687,7 @@ fi
 export STAGE3_ISOLATION="$STAGE3_ISO"
 export SINGLE_ROOT="$OPT_SINGLE"
 export STAGE3_WORLD="$OPT_WORLD"
+export STAGE_SET
 # stage1 reads these: a rootfs seed replaces seed.tar.zst (empty = Debian seed)
 export SEED_ROOTFS SEED_ROOTFS_SHA256
 export VOL_ID SQUASH_COMP JOBS="$JOBS"

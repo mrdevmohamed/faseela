@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased — flavors: build the core once, install the rest
+
+- **Changed** stages 2 and 3 build only the **bootstrap flavor** of `flavors.toml` (faseela-repo): `base-devel`, `nawa`,
+  `curl`, `ca-certificates` and what builds them (47 packages instead of the whole graph, ~150). `bootstrap/stage-set.sh`
+  resolves the flavor into `<target>/faseela/bootstrap.set`; `filter_stage_set` (`final-root.sh`) applies it in both
+  stages. `STAGE_SET=all` / `build-all.sh --stage-set all` restores the old behavior, and so does a faseela-repo
+  commit that predates `flavors.toml` (`fetch-recipes.sh` now fetches `flavors.toml` + `scripts/flavor.py`).
+- **Added** `bootstrap/mkflavor.sh`: installs a flavor (`iso-nogui`, `iso-gui`, `rootfs-min`, ...) from the package
+  repository into an empty root, nothing compiled; a package the repository lacks is an error that points at faseela-repo's
+  package workflow. `release.yml`'s matrix uses it: no more `WITH_GUI=1 stage2.sh`, no `mkrootfs-min.sh`.
+- **Changed** `build-all.sh` refuses the iso stage with a partial stage set (`--no-iso`, then `mkflavor.sh`).
+- **Added** `plan` job check (`scripts/check-flavor-packages.py`): warns, in a minute, when the package repository
+  lacks packages of a flavor. New dispatch inputs `pkg_repo`, `flavor_from`, `verify_reproducible`.
+- **Added** `bootstrap/verify-reproducible.sh`: stage 3 against stage 4 (stage 2 vs 3 differ by design: seed compiler vs
+  ours). Report only unless `--strict`; known differences go in `profiles/reproducible-exceptions.txt`.
+- **Kept** `mkrootfs-min.sh` and `profiles/skip-packages.txt` for now (used by `--stage-set all`); remove them once no
+  flow needs the full graph.
+
 ## Unreleased — naming and housekeeping
 
 - **Changed** the placeholder name `mydistro` is now `faseela` everywhere: default target `/mnt/faseela`, the

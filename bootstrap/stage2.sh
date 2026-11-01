@@ -20,6 +20,10 @@ LFS="${1:?usage: stage2.sh /mnt/faseela}"
 # output are excluded (see sync-repo.sh).
 bash "$HERE/sync-repo.sh" "$LFS"
 
+# what to build: the bootstrap flavor (see stage-set.sh)
+. "$HERE/stage-set.sh"
+write_stage_set "$LFS"
+
 # kept merge output means cargo fingerprints can go stale wrong: cp -a restores
 # the host's (often older) source mtimes, so after an in-chroot source edit is
 # overwritten cargo considers its existing target up to date and relinks a
