@@ -74,6 +74,14 @@ jobs:
         run: bash tests/test-qemu-boot-test.sh
       - name: mkiso.sh tests (stubbed host tools)
         run: bash tests/test-mkiso.sh
+      - name: stage set (flavors.toml -> what stages 2/3 build)
+        run: bash tests/test-stage-set.sh
+      - name: mkflavor tests (stubbed nawa)
+        run: bash tests/test-mkflavor.sh
+      - name: check-flavor-packages.py tests
+        run: bash tests/test-check-flavor-packages.sh
+      - name: verify-reproducible.sh tests (stage 3 vs stage 4 compare)
+        run: bash tests/test-verify-reproducible.sh
       - name: skip-packages list (filter_skipped)
         run: bash tests/test-skip-packages.sh
       - name: installer validation (stubbed disks)

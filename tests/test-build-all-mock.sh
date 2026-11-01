@@ -44,6 +44,9 @@ printf '#!/usr/bin/env bash\nexit 0\n' > "$MOCK/fetch-recipes.sh"
 for t in mksquashfs grub-mkrescue xorriso zstd; do
     printf '#!/bin/sh\nexit 0\n' > "$WORK/bin/$t"; chmod +x "$WORK/bin/$t"
 done
+# these tests are about orchestration with a COMPLETE system (iso stage on):
+# the default stage set (bootstrap) refuses the iso stage — tested in section S
+export STAGE_SET=all
 BASE_PATH="$PATH"   # pre-stub PATH — the G2 tests re-run without the ISO stubs
 export PATH="$WORK/bin:$PATH"
 
@@ -483,6 +486,16 @@ RC=$(RUNT "$WORK/tgtZ" --from-stage 4 --no-iso)
 check "Z20 --from-stage 4 is the rootfs stage" "OUT | grep -q 'stage rootfs —'"
 RC=$(RUNT "$WORK/tgtZ" --from-stage 5)
 check "Z21 --from-stage 5 is the iso stage"    "OUT | grep -q 'stage iso —' && ! OUT | grep -q 'stage rootfs —'"
+
+say "BS. the default stage set (bootstrap) builds no ISO"
+rm -rf "$WORK/tgtS" "$WORK/.tgtS.build"
+RC=$(STAGE_SET=bootstrap bash "$MOCK/build-all.sh" "$WORK/tgtS" "$ISO" > "$WORK/last.out" 2>"$WORK/last.err"; echo $?)
+check "BS1 bootstrap + iso stage refused (exit 2)"  "[[ $RC -eq 2 ]] && ERR | grep -q 'builds only\\|build only'"
+check "BS2 nothing was started"                     "[[ ! -d $WORK/.tgtS.build/stamps ]] || [[ -z \$(ls $WORK/.tgtS.build/stamps 2>/dev/null) ]]"
+RC=$(STAGE_SET=bootstrap bash "$MOCK/build-all.sh" --no-iso "$WORK/tgtS" > "$WORK/last.out" 2>"$WORK/last.err"; echo $?)
+check "BS3 bootstrap + --no-iso accepted"           "[[ $RC -eq 0 ]]"
+RC=$(STAGE_SET=bootstrap bash "$MOCK/build-all.sh" --stage-set all "$WORK/tgtS" "$ISO" > "$WORK/last.out" 2>"$WORK/last.err"; echo $?)
+check "BS4 --stage-set all + iso stage accepted"    "[[ $RC -eq 0 ]]"
 
 # ------------------------------------------------------------------ summary --
 echo

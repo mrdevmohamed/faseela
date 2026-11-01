@@ -7,7 +7,7 @@ distribution's own package manager (NAWA).
 ```
 stage 0  seed/build-seed.sh   assemble prebuilt toolchain (gcc, glibc, rustc)
 stage 1  stage1.sh            chroot + verify the seed toolchain (it is the temporary toolchain)
-stage 2  stage2.sh            NAWA builds the FULL recipe graph into the target
+stage 2  stage2.sh            NAWA builds the BOOTSTRAP set (flavors.toml) into the target
 stage 3  stage3.sh            self-hosting rebuild (toolchain, or STAGE3_WORLD=1 for all)
 stage 4  mkrootfs.sh          final root -> faseela-x86_64-rootfs.tar.zst (+ .sha256, .packages)
 stage 5  mkiso.sh             squashfs + initramfs + grub -> bootable live ISO
@@ -164,7 +164,10 @@ changed recipe tree, as a release build should.
 | `sync-repo.sh`     | host     | copy repo into the chroot WITHOUT the ~1 GB seed   |
 | `final-root.sh`    | chroot   | two-root helpers: install into / sysroot, sync, seal, seed-ref ELF scan |
 | `stage2.sh`        | host     | chroot entry for stage2                            |
-| `stage2-inner.sh`  | chroot   | compile NAWA with seed rustc, build the full graph  |
+| `stage2-inner.sh`  | chroot   | compile NAWA with seed rustc, build the bootstrap set (`--stage-set all`: the full graph) |
+| `stage-set.sh`     | host     | resolve a flavor into `<target>/faseela/bootstrap.set` (what stages 2/3 build) |
+| `mkflavor.sh` / `mkflavor-inner.sh` | host / chroot | install a flavor from the package repository into `sysroot-<flavor>` |
+| `verify-reproducible.sh` | host | stage 3 vs stage 4 archive comparison |
 | `stage3.sh`        | host     | chroot entry for the self-hosting rebuild          |
 | `stage3-inner.sh`  | chroot   | toolchain/world rebuild + self-hosting proofs      |
 | `initramfs.sh`     | host     | static busybox + /init live-boot initramfs builder |

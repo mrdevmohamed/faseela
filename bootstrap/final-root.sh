@@ -257,6 +257,17 @@ verify_final_root_needed_resolved() {
 }
 
 
+# ---- what stage 2/3 build: the bootstrap set ------------------------------
+# filter_stage_set: stdin = package names, one per line -> stdout restricted to
+# the packages listed in $REPO/bootstrap.set (the `bootstrap` flavor of
+# flavors.toml, written by bootstrap/stage-set.sh). Without that file (the
+# legacy full-graph build, STAGE_SET=all) everything passes through. The other
+# flavors are not built here: they are installed from the package repository.
+filter_stage_set() {
+    local f="${STAGE_SET_FILE:-${REPO:-/faseela}/bootstrap.set}"
+    if [[ -s $f ]]; then { grep -Fxf "$f" || true; }; else cat; fi
+}
+
 # ---- packages stage 2/3 do not install -------------------------------------
 # filter_skipped: stdin = package names, one per line -> stdout without the
 # packages listed in $REPO/profiles/skip-packages.txt (or in STAGE_SKIP, a

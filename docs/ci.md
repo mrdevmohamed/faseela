@@ -40,13 +40,20 @@ recipes ─ ci ─ plan ─ core (seed → stage1 → stage2 → stage3 → root
   `bootstrap/fetch-recipes.sh`, and the release notes name it. To rebuild a
   release from the same recipes, run the workflow with that commit as
   `recipes_ref`.
-* `core` is the only long job. Its result (`core-target`, a one-day workflow
-  artifact) is what the matrix jobs start from, so GUI/no-GUI/min-rootfs never
-  recompile gcc, glibc, rust or the kernel.
-* `iso-gui` re-runs `stage2.sh` with `WITH_GUI=1` on a copy of the finished
-  core (only `recipes/gui` is compiled), then `mkiso.sh`.
-* `rootfs-min` = `bootstrap/mkrootfs-min.sh`: `base-devel` + `nawa` + git, curl,
-  ca-certificates, assembled from the build's archives. No kernel, no rust, no GUI.
+* `core` is the only long job and builds only the **bootstrap flavor**
+  (`flavors.toml`: base-devel, nawa, curl, ca-certificates and what builds them).
+  Its result (`core-target`, a three-day workflow artifact) is what the matrix
+  jobs start from; they never compile anything.
+* Every matrix leg runs `bootstrap/mkflavor.sh`: the flavor's packages are
+  **installed from the package repository** (faseela-repo, `packages.yml`) into an
+  empty root `sysroot-<flavor>`, which `mkiso.sh` / `mkrootfs.sh` then pack.
+  `iso-gui` is `iso-nogui` plus `@gui`; `rootfs-min` is base-devel + nawa + git, curl,
+  ca-certificates (no kernel, no rust, no GUI). A package the repository lacks stops
+  the leg with the list; `plan` warns about it up front
+  (`scripts/check-flavor-packages.py`). Fix: run faseela-repo's *Build packages*
+  with `flavor:<name>`. Inputs: `pkg_repo`, `flavor_from` (`auto` compiles what is missing).
+* `verify_reproducible` (dispatch only) rebuilds the core once more and compares
+  stage 3 with stage 4 (`bootstrap/verify-reproducible.sh`), report only.
 * `boot-test` boots each ISO in QEMU through grub (KVM when the runner has it)
   and waits for `login:` on the serial console (`scripts/qemu-boot-test.sh`).
   The live grub entries pass `console=ttyS0,115200 console=tty0` and runit's
