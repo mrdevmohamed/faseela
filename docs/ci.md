@@ -52,6 +52,14 @@ recipes ─ ci ─ plan ─ core (seed → stage1 → stage2 → stage3 → root
   the leg with the list; `plan` warns about it up front
   (`scripts/check-flavor-packages.py`). Fix: run faseela-repo's *Build packages*
   with `flavor:<name>`. Inputs: `pkg_repo`, `flavor_from` (`auto` compiles what is missing).
+* **Releases without a tag.** A `v*` tag releases as before. A manual run with `release`
+  ticked publishes a GitHub Release too, named `release_tag` (or `build-<date>-r<run>`;
+  an existing name is refused). A failed `build` or `boot-test` blocks it, a skipped one
+  (`outputs=core`) does not. The release notes list only what the run produced.
+* **First setup (no release, no packages yet):** run *Build ISO (CD)* with `outputs=core`
+  and `release` → a release holding the seed rootfs; run faseela-repo's *Build packages*
+  with `rootfs=seed` and `flavor:iso-nogui flavor:iso-gui flavor:rootfs-min`; then run
+  *Build ISO (CD)* with `outputs=all` and `release`.
 * `verify_reproducible` (dispatch only) rebuilds the core once more and compares
   stage 3 with stage 4 (`bootstrap/verify-reproducible.sh`), report only.
 * `boot-test` boots each ISO in QEMU through grub (KVM when the runner has it)
