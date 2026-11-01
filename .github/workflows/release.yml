@@ -1,8 +1,14 @@
 name: Build ISO (CD)
 
-# Builds the distribution from source and publishes, per release:
+# Builds the distribution and publishes, per release. By default NOTHING IS
+# COMPILED here: faseela-repo (packages.yml) builds every package once, and this
+# workflow only installs them (core_mode=repo / auto). core_mode=build compiles
+# the bootstrap core instead (hours) — needed once to start, or to prove it
+# still builds itself.
 #
-#   core            seed -> stage1 -> stage2 -> stage3 -> rootfs: builds ONLY the
+#   core            core_mode=repo: the previous release's rootfs + the `seed` flavor
+#                   installed from the package repository (minutes)
+#                   core_mode=build: seed -> stage1 -> stage2 -> stage3 -> rootfs: builds ONLY the
 #                   bootstrap flavor (flavors.toml: base-devel, nawa, curl and what
 #                   builds them), with the seed toolchain and then again with its own
 #                   publishes  faseela-x86_64-rootfs.tar.zst  = the SEED of the next build
@@ -56,8 +62,13 @@ on:
         type: choice
         options: [env, sandbox, closure, none]
         default: sandbox
+      core_mode:
+        description: "How the core (the build root the flavors are installed into) is made. repo = unpack the previous release's rootfs and install everything from the package repository: minutes, nothing compiled. build = compile it (seed -> stage1 -> stage2 -> stage3: hours). auto = repo when a previous release carries a rootfs, else build"
+        type: choice
+        options: [auto, repo, build]
+        default: auto
       stage3_world:
-        description: "Rebuild every package in stage 3"
+        description: "Rebuild every package in stage 3 (core_mode build only)"
         type: boolean
         default: true
       resume:
@@ -298,6 +309,28 @@ jobs:
               exit "$rc" ;;
           esac
 
+      # repo = the fast path: every package is already built and published by
+      # faseela-repo, so the core is only the previous release's rootfs plus the
+      # `seed` flavor installed from the repository. build = compile the
+      # bootstrap set (stage 2/3), needed once to start, or to prove self-hosting.
+      - name: Choose how the core is made (repository or compile)
+        id: coremode
+        env:
+          WANT: ${{ inputs.core_mode || 'auto' }}
+          HAVE_SEED: ${{ steps.rootfsseed.outputs.path != '' }}
+        run: |
+          case "$WANT" in
+            build) mode=build ;;
+            repo)
+              [[ "$HAVE_SEED" == true ]] || {
+                echo "::error::core_mode=repo needs the previous release's rootfs as the seed: run once with core_mode=build (and seed=auto|rootfs)"
+                exit 1; }
+              mode=repo ;;
+            *) if [[ "$HAVE_SEED" == true ]]; then mode=repo; else mode=build; fi ;;
+          esac
+          echo "mode=$mode" >> "$GITHUB_OUTPUT"
+          echo "### Core: $([[ $mode == repo ]] && echo 'assembled from the package repository (nothing compiled)' || echo 'compiled (stage 2 + 3)')" >> "$GITHUB_STEP_SUMMARY"
+
       # The hosted runner already has ~100 GB free; removing dotnet/android/ghc
       # cost ~52 s per run. Opt in with the repository variable FREE_DISK=true.
       - name: Free disk space (opt-in)
@@ -385,18 +418,34 @@ jobs:
       # Minutes, not hours: an unreachable source host fails here instead of
       # at package 102 of stage 2. Needs only python3 (preinstalled).
       - name: Check that every recipe source is reachable
+        if: ${{ steps.coremode.outputs.mode == 'build' }}
         run: python3 scripts/check-sources.py
 
-      - name: Build the core (seed -> stage1 -> stage2 -> stage3 -> rootfs)
+      - name: Make the core (from the package repository, or compile it)
         id: build
         timeout-minutes: 320 # leaves ~35 min of the 355 for saving the cache and logs
         env:
+          CORE_MODE: ${{ steps.coremode.outputs.mode }}
+          PKG_REPO: ${{ inputs.pkg_repo }}
           ROOTFS_SEED: ${{ steps.rootfsseed.outputs.path }}
           # tag pushes have no `inputs`: they get the same defaults as the form
           # (a release must rebuild every package in stage 3, not only nawa)
           STAGE3_WORLD: ${{ github.event_name != 'workflow_dispatch' || inputs.stage3_world }}
           STAGE2_USE_CACHE: ${{ vars.PKGCACHE != 'false' && '1' || '0' }}
         run: |
+          if [[ "$CORE_MODE" == repo ]]; then
+            # stage 1 only (unpack the seed, mount, verify the toolchain); the
+            # `seed` flavor (flavors.toml) is then INSTALLED from the package
+            # repository into /sysroot-seed and packed as the next seed
+            sudo -E env SEED_ROOTFS="$ROOTFS_SEED" bash bootstrap/stage1.sh "$TARGET"
+            margs=(--from repo)
+            [[ -n "$PKG_REPO" ]] && margs+=(--repo "$PKG_REPO")
+            sudo -E bash bootstrap/mkflavor.sh "${margs[@]}" "$TARGET" seed
+            mkdir -p out
+            sudo -E bash bootstrap/mkrootfs.sh "$TARGET/sysroot-seed" "$GITHUB_WORKSPACE/out/$ROOTFS_ASSET"
+            sudo chown -R "$(id -u):$(id -g)" out
+            exit 0
+          fi
           args=(--isolation "$ISOLATION" --no-iso
                 --rootfs-out "$GITHUB_WORKSPACE/out/$ROOTFS_ASSET")
           [[ "$STAGE3_WORLD" == "true" ]] && args+=(--stage3-world)
@@ -407,7 +456,7 @@ jobs:
       # stage 2 (seed compiler) and stage 3 (our compiler) differ by design; the
       # fixed-point check is stage 3 against stage 4. Report only.
       - name: Verify the core is reproducible (stage 3 = stage 4)
-        if: ${{ steps.build.outcome == 'success' && inputs.verify_reproducible }}
+        if: ${{ steps.build.outcome == 'success' && steps.coremode.outputs.mode == 'build' && inputs.verify_reproducible }}
         continue-on-error: true
         run: |
           sudo -E env ISOLATION="$ISOLATION" STAGE3_ISOLATION="$ISOLATION" \
