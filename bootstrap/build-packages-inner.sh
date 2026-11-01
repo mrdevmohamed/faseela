@@ -130,9 +130,14 @@ for p in $ORDER; do
     ok=0
     if (( ${#missing[@]} )) && [[ ! -d /var/lib/nawa/local/$p ]]; then
         # `install` builds the package AND the dependencies nobody has built yet
-        nawa install --build --yes --force --isolation "$ISOLATION" "$p" && ok=1
+        nawa install --build --yes --force --allow-unsigned --isolation "$ISOLATION" "$p" && ok=1
     else
-        nawa build --install --force --isolation "$ISOLATION" "$p" && ok=1
+        # NOT `nawa build --install`: it verifies the archive it just built and
+        # has no --allow-unsigned, but a fresh archive is unsigned until the
+        # publish step signs it. Once the build root trusts the repository key
+        # (dist/nawa.pub) that would be refused, so build and install separately.
+        nawa build --isolation "$ISOLATION" "$p" \
+            && nawa install --yes --force --allow-unsigned "$OUT/$id.nawa.tar.zst" && ok=1
     fi
     if (( ok )) && [[ ! -f $OUT/$id.nawa.tar.zst ]]; then
         echo "-- nawa succeeded but left no $id.nawa.tar.zst in $OUT"

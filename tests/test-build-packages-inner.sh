@@ -53,10 +53,13 @@ case "$cmd" in
     done ;;
   build)
     name="${@: -1}"; echo "build $name" >> "$W/calls"
+    # real nawa: `build --install` verifies the fresh (unsigned) archive and has no --allow-unsigned
+    [[ -e $W/trusted && " $* " == *" --install "* ]] && { echo "unsigned but a trusted key is configured" >&2; exit 1; }
     grep -qxF "$name" "$W/fail" 2>/dev/null && exit 1
     touch "$W/out/$(id_of "$name").nawa.tar.zst"; echo "$name" >> "$W/installed" ;;
   install)
     t="${@: -1}"
+    [[ -e $W/trusted && " $* " != *" --allow-unsigned "* ]] && { echo "unsigned but a trusted key is configured" >&2; exit 1; }
     if [[ $t == *.nawa.tar.zst ]]; then
         echo "install-archive $(basename "$t")" >> "$W/calls"
         b=$(basename "$t" .nawa.tar.zst); echo "${b%-*-*}" >> "$W/installed"
@@ -75,7 +78,7 @@ run() { # PKGS [extra env...]  (fresh installed/calls/out unless the caller seed
     ( cd "$WORK" && env PKGS="$1" REPO="$WORK/repo" BUILD="$WORK" NAWA_BIN="$WORK/nawa" \
         ISOLATION=env NAWA_JOBS=1 "${@:2}" bash "$SRC" > "$WORK/log" 2>&1 )
 }
-reset() { rm -rf "$WORK/out" "$WORK/installed" "$WORK/calls" "$WORK/fail" "$WORK/status" "$WORK/report.txt"; mkdir -p "$WORK/out"; }
+reset() { rm -rf "$WORK/out" "$WORK/installed" "$WORK/calls" "$WORK/fail" "$WORK/status" "$WORK/report.txt" "$WORK/trusted"; mkdir -p "$WORK/out"; }
 
 # 1 ---------------------------------------------------------------------------
 echo "== TEST: builds in dependency order whatever order PKGS has"
@@ -129,6 +132,16 @@ run "app"; rc=$?
 check "install-build app" "grep -qx 'install-build app' $WORK/calls"
 check "dependency archives were produced too" \
     "[[ -f $WORK/out/libz-1.3-1.nawa.tar.zst && -f $WORK/out/libpng-1.6-2.nawa.tar.zst ]]"
+
+# 6b --------------------------------------------------------------------------
+echo "== TEST: with a trusted key in the build root, fresh (unsigned) archives still install"
+reset; touch "$WORK/trusted"
+touch "$WORK/out/libz-1.3-1.nawa.tar.zst" "$WORK/out/libpng-1.6-2.nawa.tar.zst"
+run "app"; rc=$?
+check "exit 0 (build + install of the fresh archive, --allow-unsigned)" "[[ $rc -eq 0 && -f $WORK/out/app-2.0-1.nawa.tar.zst ]]"
+reset; touch "$WORK/trusted"
+run "app"; rc=$?
+check "exit 0 for a package whose dependencies are built too (install --build)" "[[ $rc -eq 0 ]] && grep -qx 'install-build app' $WORK/calls"
 
 # 7 ---------------------------------------------------------------------------
 echo "== TEST: unknown package name is rejected before anything is built"
