@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased — fail fast, say why
+
+- **Added** `scripts/check-closure.py` and a `plan` step: the bootstrap packages already published in faseela-repo
+  `stable` are unpacked and every ELF's `DT_NEEDED` must be provided by the closure — the stage3 self-host proof, in
+  minutes instead of after the core (the perl -> libcrypt.so.1 failure of run 41256559078 is caught here).
+- **Changed** `scripts/ci-report.py`: a known failure gets a "Likely cause / Fix" line above the raw error lines.
+
 ## Unreleased — releases without a tag
 
 - **Added** to `release.yml` (manual run): `release` publishes a GitHub Release from the run, named `release_tag` or
