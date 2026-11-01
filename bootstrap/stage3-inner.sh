@@ -118,7 +118,8 @@ for pkg in $ORDER; do
     # diagnostic below could run — the check must stay reachable
     ARCHIVE=$(ls /build3/out/"$pkg"-[0-9]*.nawa.tar.zst 2>/dev/null | sort -V | tail -1 || true)
     [ -n "$ARCHIVE" ] || { echo "stage3: no archive built for $pkg" >&2; exit 1; }
-    "$NAWA_BIN" --root / install --force "$ARCHIVE"
+    # locally built, hence unsigned (see install_final in final-root.sh)
+    "$NAWA_BIN" --root / install --force --allow-unsigned "$ARCHIVE"
     install_final "$ARCHIVE"
 done
 

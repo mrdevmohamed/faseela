@@ -319,7 +319,8 @@ build_one() {
         echo "stage2-inner: no archive built for $pkg" >&2
         exit 1
     fi
-    "$NAWA_BIN" --root / install --force "$archive"
+    # locally built, hence unsigned (a seed rootfs may already trust dist/nawa.pub)
+    "$NAWA_BIN" --root / install --force --allow-unsigned "$archive"
     switch_to_new_glibc
     smoke_check "$pkg"
     install_final "$archive"
