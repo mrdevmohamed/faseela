@@ -92,11 +92,19 @@ jobs:
         run: bash tests/test-ci-report.sh
       - name: build-all.sh dry run at every isolation level
         run: |
+          # the default stage set (bootstrap) builds no ISO: release.yml passes --no-iso
           for level in none env sandbox closure; do
-            echo "::group::build-all.sh --dry-run --isolation $level"
-            bash bootstrap/build-all.sh --dry-run --isolation "$level" "/tmp/faseela-dry-$level"
+            echo "::group::build-all.sh --dry-run --no-iso --isolation $level"
+            bash bootstrap/build-all.sh --dry-run --no-iso --isolation "$level" "/tmp/faseela-dry-$level"
             echo "::endgroup::"
           done
+          # the whole-graph build, with an ISO, still plans
+          echo "::group::build-all.sh --dry-run --stage-set all"
+          bash bootstrap/build-all.sh --dry-run --stage-set all "/tmp/faseela-dry-all"
+          echo "::endgroup::"
+          # and a bootstrap run that asks for an ISO is refused (exit 2), not planned
+          rc=0; bash bootstrap/build-all.sh --dry-run "/tmp/faseela-dry-iso" >/dev/null 2>&1 || rc=$?
+          [ "$rc" -eq 2 ] || { echo "::error::bootstrap + iso stage must be refused (exit 2), got $rc"; exit 1; }
 
   # One required check for branch protection: green only if EVERY job above is.
   # Also the end-of-run report of a plain CI run. Inside release.yml (where
