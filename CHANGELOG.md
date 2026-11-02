@@ -7,15 +7,17 @@
 - **Added** an interactive installer: `faseela-install` with no arguments asks for the disk (whole, unmounted disks only),
   hostname, time zone, an optional user (wheel for doas, plus seat/video/input/audio when they exist) and an optional swap
   file, prints the plan and asks for the typed disk name before writing. New flags `--user`, `--timezone`, `--swap`,
-  `-i/--interactive` for the scripted form; bad values are refused before anything is touched. `tests/validate-install.sh`
+  `-i/--interactive` for the scripted form; bad values are refused before anything is touched. With no disk and no
+  terminal it prints the usage before the root check (CI runs the tests as a normal user). `tests/validate-install.sh`
   covers the flags, the wizard (stub `lsblk`) and the refusals.
-- **Fixed** (faseela-repo, `grub` rel 2) UEFI installs could not work from the live system: only the `i386-pc` platform
-  was built, so `grub-install --target=x86_64-efi` failed. Both platforms are built now.
+- **Fixed** (faseela-repo, `grub` rel 3) UEFI installs could not work from the live system: only the `i386-pc` platform
+  was built, so `grub-install --target=x86_64-efi` failed. Both platforms are built now, each in its own build
+  directory (rel 2 configured i386-pc in the source tree, whose `include/grub/cpu` link made the EFI build use 32-bit headers).
 - **Changed** (faseela-repo, `linux` rel 9) the kernel config is made for real hardware: NVMe/AHCI/eMMC built in, wifi
   (iwlwifi, ath*, rtw88/89, mt7921, brcmfmac), bluetooth, GPUs (i915, amdgpu, nouveau, radeon), i2c-hid touchpads, HDA
   audio, webcams, laptop platform drivers, schedutil cpufreq, virtio-input. Not covered yet: Intel SOF audio, Thunderbolt.
 - **Fixed** (faseela-repo, `mesa` rel 2, new `llvm` recipe) the slow GUI in QEMU: wlroots is `renderers=gles2` only, so
-  everything went through mesa's `softpipe`. mesa now builds `llvmpipe` with a shared `libLLVM` (X86 target only).
+  everything went through mesa's `softpipe`. mesa now builds `llvmpipe` with a shared `libLLVM` (X86 target only; `llvm` rel 2 rewrites build paths its cmake config recorded, which the post-build lint rejects).
 - **Added** `scripts/qemu-run.sh`: runs an ISO and an install disk with KVM, `-cpu host`, several CPUs, virtio-vga and a USB
   tablet; warns when there is no KVM. `--uefi`, `--boot-disk`, `--create-disk`, `--gl`. Tested by `tests/test-qemu-run.sh`.
 
