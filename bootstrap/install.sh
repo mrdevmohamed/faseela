@@ -103,6 +103,13 @@ while [ $# -gt 0 ]; do
 done
 
 # NAWA_INSTALL_TEST=1 relaxes the root + block-device checks for stub-based validation
+# no disk and nobody to ask (no terminal): the usage text, and it comes BEFORE the
+# root check — reading the usage needs no privileges, and a script that wrongly
+# called us without a disk should be told what is missing, not "must be root"
+if [ -z "$DISK" ] && [ ! -t 0 ] && [ "${NAWA_INSTALL_TEST:-0}" != 1 ]; then
+    usage >&2
+    exit 1
+fi
 [ "$(id -u)" = 0 ] || [ "${NAWA_INSTALL_TEST:-0}" = 1 ] || die "must run as root (boot the ISO and log in as root)"
 # --- interactive questions ----------------------------------------------------
 ask() {                       # ask "prompt" [default]   -> $ANSWER (default on a bare Enter)
@@ -181,11 +188,6 @@ wizard() {
 }
 
 if [ -z "$DISK" ] || [ "$INTERACTIVE" = 1 ]; then
-    # no disk and nobody to ask: print the usage instead of waiting on a pipe
-    if [ -z "$DISK" ] && [ ! -t 0 ] && [ "${NAWA_INSTALL_TEST:-0}" != 1 ]; then
-        usage >&2
-        exit 1
-    fi
     wizard
 fi
 
