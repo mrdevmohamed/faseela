@@ -105,6 +105,17 @@ check "esp flag"             "set 1 esp on"
 check "mkfs.vfat on ESP"     "mkfs.vfat -F32 /dev/vda1"
 check "mkfs.ext4 on root"    "mkfs.ext4 -F -q /dev/vda2"
 check "rsync onto /mnt"      "rsync -aHX --numeric-ids"
+check "recursive /dev bind for passwd prompts" "mount --rbind /dev .*/mnt/dev"
+check "chroot /dev propagation is slave" "mount --make-rslave .*/mnt/dev"
+check "chroot proc mounted" "mount -t proc proc .*/mnt/proc"
+check "chroot sysfs mounted" "mount -t sysfs sysfs .*/mnt/sys"
+dev_bind_line="$(grep -n -m1 'mount --rbind /dev' "$CMDLOG" | cut -d: -f1)"
+root_passwd_line="$(grep -n -m1 '/usr/bin/passwd root' "$CMDLOG" | cut -d: -f1)"
+if [[ -n "$dev_bind_line" && -n "$root_passwd_line" ]] && (( dev_bind_line < root_passwd_line )); then
+    echo "  ok: chroot devices mounted before passwd"
+else
+    echo "  FAIL: chroot devices are not mounted before passwd"; exit 1
+fi
 check "rsync excludes \$MNT"  "--exclude=.*/mnt/\*"
 # cp is a real command (not stubbed) — assert the result on disk instead
 [ -f "$WORK/mnt/boot/vmlinuz-6.10.5" ] && echo "  ok: kernel copied from media" || { echo "  FAIL: kernel copy"; exit 1; }
@@ -236,6 +247,15 @@ if ( cd "$WORK" && MNT="$WORK/mnt" bash "$HERE/bootstrap/install.sh" </dev/null 
 else
     grep -q 'Usage' "$WORK/usage.out" && echo "  ok: usage without a disk (non-tty)" || { echo "  FAIL: no usage text"; cat "$WORK/usage.out"; exit 1; }
 fi
+
+# The generated disk kernel command line includes "root=UUID=..."; BusyBox
+# findfs accepts "UUID=...", not the full kernel argument.
+if grep -Fq 'root=UUID=*) rootdev="$(findfs "$arg"' "$HERE/bootstrap/initramfs.sh"; then
+    echo "  FAIL: initramfs passes root= to findfs"; exit 1
+fi
+grep -Fq 'root=UUID=*) rootdev="$(findfs "${arg#root=}"' "$HERE/bootstrap/initramfs.sh" \
+    && echo "  ok: initramfs strips root= before findfs" \
+    || { echo "  FAIL: initramfs UUID lookup is incorrect"; exit 1; }
 
 echo
 echo "INSTALLER VALIDATION PASSED"
