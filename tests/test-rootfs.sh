@@ -4,7 +4,7 @@
 #   bootstrap/seed-from-rootfs.sh  unpacked rootfs -> bootstrap seed
 #   scripts/fetch-rootfs-seed.sh   previous release's rootfs -> local seed file
 # All against throwaway trees; needs tar and zstd, no root, no network
-# (the release lookup runs against a fake `gh`).
+# (release metadata and public asset downloads run against fake `gh`/`curl`).
 #
 # Usage: tests/test-rootfs.sh   (from the repo root or anywhere)
 set -uo pipefail
@@ -181,6 +181,8 @@ mkdir -p "$WORK/fakebin" "$WORK/rel/v3" "$WORK/rel/v2" "$WORK/rel/v1"
 echo iso > "$WORK/rel/v3/faseela-x86_64.iso"
 cp "$OUTA" "$WORK/rel/v2/faseela-x86_64-rootfs.tar.zst"
 ( cd "$WORK/rel/v2" && sha256sum faseela-x86_64-rootfs.tar.zst > faseela-x86_64-rootfs.tar.zst.sha256 )
+cp "$OUTA" "$WORK/rel/v2/faseela-x86_64-rootfs-min.tar.zst"
+( cd "$WORK/rel/v2" && sha256sum faseela-x86_64-rootfs-min.tar.zst > faseela-x86_64-rootfs-min.tar.zst.sha256 )
 echo old > "$WORK/rel/v1/faseela-x86_64-rootfs.tar.zst"
 ( cd "$WORK/rel/v1" && sha256sum faseela-x86_64-rootfs.tar.zst > faseela-x86_64-rootfs.tar.zst.sha256 )
 cat > "$WORK/fakebin/gh" <<'EOF'
@@ -189,23 +191,48 @@ cat > "$WORK/fakebin/gh" <<'EOF'
 case "$1 $2" in
   "release list")  for t in $FAKE_TAGS; do echo "$t"; done ;;
   "release view")  tag="$3"; for f in "$FAKE_REL/$tag"/*; do [ -e "$f" ] && basename "$f"; done ;;
-  "release download")
-      tag="$3"; shift 3; dir=. pat=
-      while [ $# -gt 0 ]; do case "$1" in
-          --pattern) pat="$2"; shift 2 ;; --dir) dir="$2"; shift 2 ;; --repo) shift 2 ;; *) shift ;; esac; done
-      [ -n "$FAKE_FAIL_DOWNLOAD" ] && exit 1
-      for f in "$FAKE_REL/$tag"/$pat; do [ -e "$f" ] && cp "$f" "$dir/"; done ;;
-  *) echo "fake gh: unexpected: $*" >&2; exit 9 ;;
+  *) echo "fake gh: unexpected (asset downloads must use curl): $*" >&2; exit 9 ;;
 esac
 EOF
-chmod +x "$WORK/fakebin/gh"
+cat > "$WORK/fakebin/curl" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+out= url=
+while (($#)); do
+    case "$1" in
+        --output|-o) out="$2"; shift 2 ;;
+        --retry|--retry-delay) shift 2 ;;
+        --*) shift ;;
+        *) url="$1"; shift ;;
+    esac
+done
+[[ -n "$out" && -n "$url" ]] || exit 2
+[[ -z "${FAKE_FAIL_DOWNLOAD:-}" ]] || exit 22
+prefix="https://github.com/${FAKE_GH_REPO}/releases/download/"
+[[ "$url" == "$prefix"* ]] || exit 22
+path="${url#"$prefix"}"
+tag="${path%%/*}"
+asset="${path#*/}"
+[[ "$tag" != "$path" && -n "$asset" && "$asset" != */* ]] || exit 22
+src="$FAKE_REL/$tag/$asset"
+[[ -s "$src" ]] || exit 22
+cp "$src" "$out"
+printf '%s\n' "$url" >> "$FAKE_CURL_LOG"
+EOF
+chmod +x "$WORK/fakebin/gh" "$WORK/fakebin/curl"
 export FAKE_REL="$WORK/rel" FAKE_TAGS="v3 v2 v1" FAKE_FAIL_DOWNLOAD=
+export FAKE_GH_REPO="test-owner/faseela" GH_REPO="test-owner/faseela"
+export FAKE_CURL_LOG="$WORK/curl.log"
 PATH="$WORK/fakebin:$PATH" bash "$FETCH" "$WORK/dlF" > "$WORK/f.out" 2> "$WORK/f.err"; RC=$?
 check "F1 exit 0"                          "[[ $RC -eq 0 ]]"
 check "F2 prints the path of the seed"     "[[ \$(cat $WORK/f.out) == $WORK/dlF/faseela-x86_64-rootfs.tar.zst ]]"
 check "F3 picked the NEWEST rootfs (v2, not v1)" "cmp $WORK/dlF/faseela-x86_64-rootfs.tar.zst $OUTA"
 check "F4 sidecar downloaded next to it"   "[[ -s $WORK/dlF/faseela-x86_64-rootfs.tar.zst.sha256 ]]"
 check "F5 names the release it used"       "grep -q 'v2' $WORK/f.err"
+check "F14 rootfs and checksum use direct release URLs" \
+    "grep -qxF 'https://github.com/test-owner/faseela/releases/download/v2/faseela-x86_64-rootfs.tar.zst' $FAKE_CURL_LOG && grep -qxF 'https://github.com/test-owner/faseela/releases/download/v2/faseela-x86_64-rootfs.tar.zst.sha256' $FAKE_CURL_LOG"
+check "F15 asset downloads do not call the GitHub API" \
+    "! grep -q 'api.github.com/repos/.*/releases/assets' $FAKE_CURL_LOG"
 # corrupt download: the sidecar no longer matches
 cp -r "$WORK/rel" "$WORK/rel2"; echo corrupt >> "$WORK/rel2/v2/faseela-x86_64-rootfs.tar.zst"
 FAKE_REL="$WORK/rel2" FAKE_TAGS="v2" PATH="$WORK/fakebin:$PATH" bash "$FETCH" "$WORK/dlF2" > "$WORK/f2.out" 2> "$WORK/f2.err"; RC=$?
@@ -230,6 +257,13 @@ FAKE_TAGS="v0" PATH="$WORK/fakebin:$PATH" bash "$FETCH" "$WORK/dlF7" > "$WORK/f7
 check "F12 legacy asset name accepted for old releases" "[[ $RC -eq 0 && \$(cat $WORK/f7.out) == $WORK/dlF7/mydistro-x86_64-rootfs.tar.zst ]]"
 FAKE_TAGS="v0" ROOTFS_LEGACY_ASSET= PATH="$WORK/fakebin:$PATH" bash "$FETCH" "$WORK/dlF8" > "$WORK/f8.out" 2> "$WORK/f8.err"; RC=$?
 check "F13 legacy fallback can be switched off (exit 3)" "[[ $RC -eq 3 && ! -s $WORK/f8.out ]]"
+# The package workflow uses the smaller rootfs-min asset; it must use the same direct URL path.
+FAKE_TAGS="v2" ROOTFS_ASSET=faseela-x86_64-rootfs-min.tar.zst \
+    PATH="$WORK/fakebin:$PATH" bash "$FETCH" "$WORK/dlF9" > "$WORK/f9.out" 2> "$WORK/f9.err"; RC=$?
+check "F16 rootfs-min asset downloads and verifies" \
+    "[[ $RC -eq 0 && -s $WORK/dlF9/faseela-x86_64-rootfs-min.tar.zst ]]"
+check "F17 rootfs-min uses its direct release URL" \
+    "grep -qxF 'https://github.com/test-owner/faseela/releases/download/v2/faseela-x86_64-rootfs-min.tar.zst' $FAKE_CURL_LOG"
 
 # ================================================== chroot environment (PATH) ==
 say "G. chroot entry exports PATH"
