@@ -48,6 +48,11 @@ if [[ -z $GH_REPO ]]; then
             GH_REPO="${remote#ssh://git@github.com/}" ;;
     esac
     GH_REPO="${GH_REPO%.git}"
+    # Preserve the documented "current repository" default for source archives
+    # or worktrees that have no GitHub origin configured.
+    if [[ -z $GH_REPO ]]; then
+        GH_REPO="$(gh repo view --json nameWithOwner --jq .nameWithOwner 2>/dev/null || true)"
+    fi
 fi
 [[ "$GH_REPO" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || {
     log "set GH_REPO to owner/name (or run from a checkout with a GitHub origin)"
