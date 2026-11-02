@@ -284,7 +284,7 @@ MOUNTED=1
 log "copying the system (this is the slow part)"
 # exclude the actual $MNT prefix, not only /mnt — with a custom MNT inside
 # the live tree rsync would otherwise copy the target into itself
-run rsync -aHAX --numeric-ids \
+run rsync -aHX --numeric-ids \
     --exclude=/dev/* --exclude=/proc/* --exclude=/sys/* --exclude=/run/* \
     --exclude=/tmp/* --exclude=/media/* --exclude=/cdrom/* \
     --exclude="${MNT%/}" --exclude="${MNT%/}"/* \
