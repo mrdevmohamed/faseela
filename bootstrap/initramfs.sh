@@ -236,7 +236,7 @@ fi
 rootdev=""
 for arg in $(cat /proc/cmdline); do
     case "$arg" in
-        root=UUID=*) rootdev="$(findfs "$arg" 2>/dev/null || true)" ;;
+        root=UUID=*) rootdev="$(findfs "${arg#root=}" 2>/dev/null || true)" ;;
         root=/dev/*) rootdev="${arg#root=}" ;;
     esac
 done
