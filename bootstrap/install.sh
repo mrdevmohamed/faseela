@@ -419,6 +419,16 @@ if [ -n "$TZ_ARG" ]; then
     fi
 fi
 
+# passwd reads the controlling terminal through /dev/tty. The target's /dev was
+# deliberately excluded from rsync, so a plain chroot has no tty or pts devices
+# and passwd cannot prompt. Bring the live pseudo-filesystems into the target;
+# cleanup's umount -R removes these mounts on success and failure.
+log "mounting chroot pseudo-filesystems"
+run mount --rbind /dev "$MNT/dev"
+run mount --make-rslave "$MNT/dev"
+run mount -t proc proc "$MNT/proc"
+run mount -t sysfs sysfs "$MNT/sys"
+
 # a normal user: wheel is what /etc/doas.conf allows; seat/video/input/audio are
 # what a sway session needs (gui-session creates those groups — only the ones
 # that exist on the target are used, useradd refuses unknown groups)
