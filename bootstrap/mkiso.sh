@@ -98,6 +98,14 @@ if mountpoint -q "$ROOT/proc" || mountpoint -q "$ROOT/dev" \
     bash "$HERE/umount-chroot.sh" "$ROOT"
 fi
 
+# The disk installer runs inside the live system (docs/boot-and-install.md), and no
+# package ships it: it is a faseela script, so the image build puts it in. Copied,
+# not linked — the squashfs has to be self-contained. The installed system gets it
+# too (the installer copies the live root), which is harmless and handy.
+[[ -f $HERE/install.sh ]] || { echo "mkiso: $HERE/install.sh missing — the ISO would have no installer" >&2; exit 1; }
+install -Dm755 "$HERE/install.sh" "$ROOT/usr/sbin/faseela-install"
+echo "== stage4: installer   = /usr/sbin/faseela-install"
+
 echo "== stage4: mksquashfs of $ROOT"
 # Excludes are relative to ROOT and only passed when they exist (a clean
 # two-root final root has none of the build dirs; the legacy single root does).

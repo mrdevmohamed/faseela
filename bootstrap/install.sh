@@ -11,9 +11,15 @@
 #   5. /etc/fstab from real UUIDs
 #   6. grub-install (BIOS: MBR / UEFI: removable ESP) + static grub.cfg
 #      passing root=UUID=... so the initramfs boots straight off disk
-#   7. hostname + root password (interactive chroot)
+#   7. hostname, time zone, an optional swap file, an optional normal user
+#      (in wheel for doas, plus seat/video/input/audio for the GUI) and the
+#      root password (interactive chroot)
 #   8. package cache (/var/cache/nawa) — kept on the installed system so
 #      `nawa rollback <pkg>` and offline reinstalls work there too
+#
+# On the live ISO this file is /usr/sbin/faseela-install (bootstrap/mkiso.sh
+# puts it there). Without a disk argument, on a terminal, it asks everything
+# step by step; with a disk argument it is fully scriptable.
 #
 # Env overrides (mainly for testing):
 #   MNT      mountpoint prefix    (default /mnt)
@@ -22,19 +28,44 @@
 #   NAWA_INSTALL_DRYRUN=1          log mutating commands instead of running them
 #
 # Usage:
-#   sudo install.sh /dev/vda [--hostname myhost] [--yes] [--no-pkg-cache]
+#   faseela-install                          interactive (asks disk, hostname, ...)
+#   faseela-install /dev/vda [options]       non-interactive disk, others default
+#     --hostname NAME      (default: keep the image's)
+#     --timezone ZONE      e.g. Africa/Cairo (default: keep the image's)
+#     --user NAME          create a normal user (asks for its password)
+#     --swap SIZE|none     swap file, e.g. 2G or 512M (default: none)
+#     --yes                do not ask to confirm erasing the disk
+#     --no-pkg-cache       do not copy /var/cache/nawa
+#     -i, --interactive    ask even when a disk was given
 set -euo pipefail
 
 PROG=install.sh
 MNT="${MNT:-/mnt}"
 DISK=""
 HOSTNAME_ARG=""
+TZ_ARG=""
+USER_ARG=""
+SWAP_ARG=""
+INTERACTIVE=0
 ASSUME_YES=0
 PKG_CACHE=1
 DRYRUN="${NAWA_INSTALL_DRYRUN:-0}"
 
 log()  { echo "install: $*"; }
 die()  { echo "install: error: $*" >&2; exit 1; }
+usage() { sed -n '2,/^set -euo/p' "$0" | sed '$d' | sed 's/^# \{0,1\}//'; }
+
+# --- input validation (shared by the flags and the interactive questions) ----
+# each returns 0 when the value is acceptable; values end up in sed, /etc and
+# chroot command lines, so they are kept boring
+valid_hostname() { [[ "$1" =~ ^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$ ]]; }
+valid_user()     { [[ "$1" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] && [ "$1" != root ]; }
+valid_swap()     { [[ "$1" =~ ^(none|[1-9][0-9]*[MG])$ ]]; }
+valid_tz() {
+    [[ "$1" =~ ^[A-Za-z0-9_+/-]+$ ]] && [[ "$1" != *..* ]] || return 1
+    # with tzdata on the live system the zone must exist; without it, accept
+    [ ! -d /usr/share/zoneinfo ] || [ -f "/usr/share/zoneinfo/$1" ]
+}
 run() {
     if [ "$DRYRUN" = 1 ]; then
         echo "+ $*"
@@ -59,9 +90,13 @@ trap cleanup EXIT
 while [ $# -gt 0 ]; do
     case "$1" in
         --hostname) HOSTNAME_ARG="${2:?--hostname needs a value}"; shift 2 ;;
+        --timezone) TZ_ARG="${2:?--timezone needs a value}"; shift 2 ;;
+        --user)     USER_ARG="${2:?--user needs a value}"; shift 2 ;;
+        --swap)     SWAP_ARG="${2:?--swap needs a value}"; shift 2 ;;
+        -i|--interactive) INTERACTIVE=1; shift ;;
         --yes)      ASSUME_YES=1; shift ;;
         --no-pkg-cache) PKG_CACHE=0; shift ;;
-        -h|--help)  sed -n '2,22p' "$0"; exit 0 ;;
+        -h|--help)  usage; exit 0 ;;
         -*)         die "unknown option $1" ;;
         *)          DISK="$1"; shift ;;
     esac
@@ -69,7 +104,92 @@ done
 
 # NAWA_INSTALL_TEST=1 relaxes the root + block-device checks for stub-based validation
 [ "$(id -u)" = 0 ] || [ "${NAWA_INSTALL_TEST:-0}" = 1 ] || die "must run as root (boot the ISO and log in as root)"
-[ -n "$DISK" ] || { sed -n '2,20p' "$0"; exit 1; }
+# --- interactive questions ----------------------------------------------------
+ask() {                       # ask "prompt" [default]   -> $ANSWER (default on a bare Enter)
+    local ans
+    if [ -n "${2:-}" ]; then printf '%s [%s]: ' "$1" "$2"; else printf '%s: ' "$1"; fi
+    read -r ans || die "no more input (stdin closed) — nothing was changed"
+    ANSWER="${ans:-${2:-}}"
+}
+
+ask_valid() {                 # ask_valid VALIDATOR "prompt" default "hint" — asks again until valid or empty
+    local check="$1" prompt="$2" def="$3" hint="$4"
+    while :; do
+        ask "$prompt" "$def"
+        if [ -z "$ANSWER" ] || "$check" "$ANSWER"; then return 0; fi
+        echo "  $hint"
+    done
+}
+
+list_disks() {                # name<TAB>size<TAB>model of every whole disk that is not in use
+    command -v lsblk >/dev/null 2>&1 || die "lsblk is missing — give the disk on the command line"
+    lsblk -dpn -o NAME,SIZE,TYPE,MODEL 2>/dev/null | while read -r name size type model; do
+        [ "$type" = disk ] || continue
+        # skip disks with a mounted partition: the live medium, the running system
+        if [ "${NAWA_INSTALL_TEST:-0}" != 1 ] && \
+           awk -v d="$name" 'index($1, d) == 1 { found = 1 } END { exit !found }' /proc/mounts; then
+            continue
+        fi
+        printf '%s\t%s\t%s\n' "$name" "$size" "${model:-unknown model}"
+    done
+}
+
+choose_disk() {
+    local lines n s m i choice
+    mapfile -t lines < <(list_disks)
+    [ "${#lines[@]}" -gt 0 ] || die "no installable disk found (disks with a mounted partition, like the live medium, are not offered)"
+    echo "Disks:"
+    for i in "${!lines[@]}"; do
+        IFS=$'\t' read -r n s m <<<"${lines[$i]}"
+        printf '  %d) %s  %s  %s\n' $((i + 1)) "$n" "$s" "$m"
+    done
+    while :; do
+        ask "Install on which disk? (number or /dev path)" ""
+        choice="$ANSWER"
+        if [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le "${#lines[@]}" ]; then
+            DISK="${lines[$((choice - 1))]%%$'\t'*}"
+            return 0
+        fi
+        for i in "${!lines[@]}"; do
+            if [ "${lines[$i]%%$'\t'*}" = "$choice" ]; then DISK="$choice"; return 0; fi
+        done
+        echo "  not one of the listed disks"
+    done
+}
+
+wizard() {
+    echo "faseela installer — nothing is written until the final confirmation."
+    echo
+    [ -n "$DISK" ] || choose_disk
+    ask_valid valid_hostname "Hostname (Enter = keep the image's)" "$HOSTNAME_ARG" \
+        "letters, digits, '-' and '.' only"
+    HOSTNAME_ARG="$ANSWER"
+    ask_valid valid_tz "Time zone, e.g. Africa/Cairo or UTC (Enter = keep the image's)" "$TZ_ARG" \
+        "unknown zone — the names are the files under /usr/share/zoneinfo"
+    TZ_ARG="$ANSWER"
+    ask_valid valid_user "User to create, in group wheel for doas (Enter = root only)" "$USER_ARG" \
+        "lowercase letters, digits, '_' and '-'; not root"
+    USER_ARG="$ANSWER"
+    ask_valid valid_swap "Swap file size, e.g. 2G or 512M (none = no swap)" "${SWAP_ARG:-none}" \
+        "use none, or a size like 512M or 2G"
+    SWAP_ARG="$ANSWER"
+    echo
+    echo "Plan:  disk $DISK  (erased)"
+    echo "       hostname ${HOSTNAME_ARG:-(unchanged)}, time zone ${TZ_ARG:-(unchanged)}"
+    echo "       user ${USER_ARG:-(none — root only)}, swap ${SWAP_ARG:-none}"
+    echo
+}
+
+if [ -z "$DISK" ] || [ "$INTERACTIVE" = 1 ]; then
+    # no disk and nobody to ask: print the usage instead of waiting on a pipe
+    if [ -z "$DISK" ] && [ ! -t 0 ] && [ "${NAWA_INSTALL_TEST:-0}" != 1 ]; then
+        usage >&2
+        exit 1
+    fi
+    wizard
+fi
+
+[ -n "$DISK" ] || { usage >&2; exit 1; }
 [ -b "$DISK" ] || [ "${NAWA_INSTALL_TEST:-0}" = 1 ] || die "$DISK is not a block device"
 
 # only whole disks, never partitions
@@ -93,13 +213,20 @@ esac
 
 # hostnames end up in /etc/hosts and sed — keep them boring
 if [ -n "$HOSTNAME_ARG" ]; then
-    [[ "$HOSTNAME_ARG" =~ ^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$ ]] \
-        || die "invalid hostname: $HOSTNAME_ARG"
+    valid_hostname "$HOSTNAME_ARG" || die "invalid hostname: $HOSTNAME_ARG"
 fi
+[ -z "$USER_ARG" ] || valid_user "$USER_ARG" || die "invalid user name: $USER_ARG (lowercase letters, digits, _ and -; not root)"
+[ -z "$SWAP_ARG" ] || valid_swap "$SWAP_ARG" || die "invalid swap size: $SWAP_ARG (use none, or a size like 512M or 2G)"
+[ -z "$TZ_ARG" ] || valid_tz "$TZ_ARG" || die "unknown time zone: $TZ_ARG (see /usr/share/zoneinfo)"
 
 for tool in parted partprobe mkfs.ext4 rsync blkid grub-install chroot; do
     command -v "$tool" >/dev/null 2>&1 || die "missing tool '$tool' (is $DISK's system the full one?)"
 done
+if [ -n "$SWAP_ARG" ] && [ "$SWAP_ARG" != none ]; then
+    for tool in fallocate mkswap; do
+        command -v "$tool" >/dev/null 2>&1 || die "missing tool '$tool' (util-linux) — needed for --swap"
+    done
+fi
 
 # --- firmware mode ----------------------------------------------------------
 if [ -n "${FW_FORCE:-}" ]; then
@@ -211,6 +338,19 @@ run mkdir -p "$MNT/boot"
 run cp "$KERNEL" "$MNT/boot/$(basename "$KERNEL")"
 run cp "$INITRD" "$MNT/boot/initramfs.img"
 
+# --- 4b) swap file --------------------------------------------------------------
+# a file on the root filesystem, not a partition: resizable later, and ext4
+# (the only root filesystem this installer makes) supports it. fallocate is
+# enough for swap on ext4; mkswap writes the signature.
+SWAP_ROW=0
+if [ -n "$SWAP_ARG" ] && [ "$SWAP_ARG" != none ]; then
+    log "creating a $SWAP_ARG swap file"
+    run fallocate -l "$SWAP_ARG" "$MNT/swapfile"
+    run chmod 600 "$MNT/swapfile"
+    run mkswap -q "$MNT/swapfile"
+    SWAP_ROW=1
+fi
+
 # --- 5) fstab -------------------------------------------------------------------
 ROOT_UUID="$(blkid -s UUID -o value "$PART_ROOT" | head -1)"
 [ -n "$ROOT_UUID" ] || die "could not read UUID of $PART_ROOT"
@@ -226,6 +366,7 @@ log "root UUID: $ROOT_UUID"
     # rows runtime state would persist on disk across boots
     echo "tmpfs            /run   tmpfs defaults,mode=0755,nosuid,nodev 0 0"
     echo "tmpfs            /tmp   tmpfs defaults,nosuid            0 0"
+    [ "$SWAP_ROW" != 1 ] || echo "/swapfile        none   swap  defaults                  0 0"
 } > "$MNT/etc/fstab"
 
 # --- 6) bootloader ---------------------------------------------------------------
@@ -266,6 +407,31 @@ if [ -n "$HOSTNAME_ARG" ]; then
         echo "127.0.0.1 localhost $HOSTNAME_ARG" >> "$MNT/etc/hosts"
     fi
 fi
+
+if [ -n "$TZ_ARG" ]; then
+    if [ -f "$MNT/usr/share/zoneinfo/$TZ_ARG" ]; then
+        log "time zone: $TZ_ARG"
+        run ln -sf "/usr/share/zoneinfo/$TZ_ARG" "$MNT/etc/localtime"
+    else
+        log "warning: $TZ_ARG is not in the installed system's /usr/share/zoneinfo — /etc/localtime left as it was"
+    fi
+fi
+
+# a normal user: wheel is what /etc/doas.conf allows; seat/video/input/audio are
+# what a sway session needs (gui-session creates those groups — only the ones
+# that exist on the target are used, useradd refuses unknown groups)
+if [ -n "$USER_ARG" ]; then
+    GROUPS_CSV=""
+    for g in wheel seat video input audio; do
+        if grep -q "^$g:" "$MNT/etc/group" 2>/dev/null; then GROUPS_CSV="${GROUPS_CSV:+$GROUPS_CSV,}$g"; fi
+    done
+    log "creating user $USER_ARG (groups: ${GROUPS_CSV:-none})"
+    run chroot "$MNT" /usr/bin/env PATH=/usr/sbin:/usr/bin:/sbin:/bin \
+        useradd -m -s /bin/bash ${GROUPS_CSV:+-G "$GROUPS_CSV"} "$USER_ARG"
+    log "password for $USER_ARG (chroot)"
+    run chroot "$MNT" /usr/bin/passwd "$USER_ARG"
+fi
+
 log "setting the root password (chroot)"
 run chroot "$MNT" /usr/bin/passwd root
 
@@ -275,4 +441,5 @@ run umount -R "$MNT" 2>/dev/null || run umount "$MNT"
 MOUNTED=0
 
 log "done — $DISK now boots faseela"
-log "reboot (without the install media) and log in as root"
+log "reboot (without the install media) and log in as ${USER_ARG:-root}"
+[ -z "$USER_ARG" ] || log "$USER_ARG can use doas (group wheel); for the GUI run start-sway from a text console"
