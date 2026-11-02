@@ -48,6 +48,10 @@
       `.nawa-new` config protection with hash baselines
 - [x] Disk installer (`bootstrap/install.sh`): UEFI + BIOS paths,
       UUID fstab, static grub.cfg, root=UUID disk boot in the initramfs
+- [x] Installer in the ISO (`/usr/sbin/faseela-install`), interactive: disk, hostname,
+      time zone, user, swap; both grub platforms in the image
+- [ ] Installer: LUKS/LVM root, installing a flavor from the package repository (nawa)
+      instead of copying the live root, hibernate resume offset, keyboard layout
 - [x] Remote repos: `nawa upgrade --repo https://…` with signature checks,
       per-URL archive cache and offline fallback
 - [x] Native fetch/extract in nawa: HTTP through `ureq` (rustls, bundled

@@ -115,6 +115,9 @@ check "C6 grub-mkrescue got the volid"          "grep -q 'grub-mkrescue .* FASEE
 RC=$(RUN_MKISO VOL_ID=CUSTOM SQUASH_COMP=zstd)
 check "C7 VOL_ID propagates to grub-mkrescue"   "grep -q 'grub-mkrescue .* CUSTOM' $STUB_LOG"
 check "C8 SQUASH_COMP propagates to mksquashfs" "grep -q 'mksquashfs .* -comp zstd' $STUB_LOG"
+# the live image must carry the disk installer (nothing else ships it)
+check "C8a installer is in the image root"      "[[ -x $ROOT/usr/sbin/faseela-install ]] && cmp -s $REPO/bootstrap/install.sh $ROOT/usr/sbin/faseela-install"
+check "C8b mkiso reports the installer"         "OUT | grep -q 'faseela-install'"
 
 # ---- C2. compression options ---------------------------------------------------
 good_ls

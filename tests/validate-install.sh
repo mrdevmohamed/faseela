@@ -22,9 +22,24 @@ exit 0
 EOF
     chmod +x "$STUBS/$name"
 }
-for t in parted mkfs.ext4 mkfs.vfat wipefs partprobe rsync grub-install chroot mount umount; do
+for t in parted mkfs.ext4 mkfs.vfat wipefs partprobe rsync grub-install chroot mount umount mkswap; do
     mkstub "$t"
 done
+# fallocate: log, then create the file (the installer chmods it afterwards)
+cat > "$STUBS/fallocate" <<EOF
+#!/usr/bin/env bash
+echo "fallocate \$*" >> "$CMDLOG"
+for a in "\$@"; do last="\$a"; done
+: > "\$last"
+EOF
+chmod +x "$STUBS/fallocate"
+# lsblk: two whole disks and a loop device; the wizard must offer only the disks
+cat > "$STUBS/lsblk" <<EOF
+#!/usr/bin/env bash
+echo "lsblk \$*" >> "$CMDLOG"
+printf '%s\n' '/dev/loop0 100M loop ' '/dev/vda 20G disk QEMU HARDDISK' '/dev/vdb 8G disk Other Disk'
+EOF
+chmod +x "$STUBS/lsblk"
 # blkid returns a stable fake UUID per device
 cat > "$STUBS/blkid" <<EOF
 #!/usr/bin/env bash
@@ -147,6 +162,80 @@ rm -rf "$WORK/mnt"; mkdir -p "$WORK/mnt/etc"
 check_absent "no cache rsync with --no-pkg-cache" "rsync -a --exclude=remote"
 [ ! -e "$WORK/mnt/var/cache/nawa/zlib-1.3-1.nawa.tar.zst" ] \
     && echo "  ok: cache not copied" || { echo "  FAIL: cache copied despite --no-pkg-cache"; exit 1; }
+
+# ==================================== flags: user, swap, time zone ==========
+echo "== --user / --swap / --timezone =="
+: > "$CMDLOG"
+rm -rf "$WORK/mnt"; mkdir -p "$WORK/mnt/etc" "$WORK/mnt/usr/share/zoneinfo/Africa"
+printf 'root:x:0:\nwheel:x:97:\nvideo:x:98:\naudio:x:99:\n' > "$WORK/mnt/etc/group"
+touch "$WORK/mnt/usr/share/zoneinfo/Africa/Cairo"
+( cd "$WORK" && NAWA_INSTALL_TEST=1 MNT="$WORK/mnt" KERNEL_SRC="$KSRC" FW_FORCE=bios \
+  bash "$HERE/bootstrap/install.sh" /dev/vda --yes --user mohamed --swap 2G --timezone Africa/Cairo >/dev/null )
+check "swap file allocated"        "fallocate -l 2G .*/mnt/swapfile"
+[ "$(stat -c %a "$WORK/mnt/swapfile")" = 600 ] && echo "  ok: swap file mode 600" || { echo "  FAIL: swap file mode"; exit 1; }
+check "swap signature written"     "mkswap -q .*/swapfile"
+grep -q '^/swapfile .*swap' "$WORK/mnt/etc/fstab" && echo "  ok: fstab swap row" || { echo "  FAIL: fstab swap row"; cat "$WORK/mnt/etc/fstab"; exit 1; }
+[ "$(readlink "$WORK/mnt/etc/localtime")" = /usr/share/zoneinfo/Africa/Cairo ] \
+    && echo "  ok: /etc/localtime -> Africa/Cairo" || { echo "  FAIL: time zone link"; exit 1; }
+# only the groups that exist on the target are passed (seat/input are missing here)
+check "useradd with the existing groups only" "chroot .* useradd -m -s /bin/bash -G wheel,video,audio mohamed"
+check "user password asked"        "chroot .* /usr/bin/passwd mohamed"
+check "root password still asked"  "chroot .* /usr/bin/passwd root"
+
+# no flags: nothing swap/user related happens
+: > "$CMDLOG"
+rm -rf "$WORK/mnt"; mkdir -p "$WORK/mnt/etc"
+( cd "$WORK" && NAWA_INSTALL_TEST=1 MNT="$WORK/mnt" KERNEL_SRC="$KSRC" FW_FORCE=bios \
+  bash "$HERE/bootstrap/install.sh" /dev/vda --yes >/dev/null )
+check_absent "no swap without --swap"  "fallocate|mkswap"
+check_absent "no user without --user"  "useradd"
+! grep -q swap "$WORK/mnt/etc/fstab" && echo "  ok: no swap row by default" || { echo "  FAIL: swap row by default"; exit 1; }
+
+# bad input is refused before anything is touched
+for bad in "--user root" "--user Bad_Name" "--swap 2" "--swap -1G" "--timezone ../etc/passwd"; do
+    : > "$CMDLOG"
+    # shellcheck disable=SC2086
+    ( cd "$WORK" && NAWA_INSTALL_TEST=1 MNT="$WORK/mnt" KERNEL_SRC="$KSRC" FW_FORCE=bios \
+      bash "$HERE/bootstrap/install.sh" /dev/vda --yes $bad ) >/dev/null 2>&1 \
+      && { echo "  FAIL: accepted '$bad'"; exit 1; }
+    ! grep -q "parted" "$CMDLOG" && echo "  ok: refused '$bad' before partitioning" || { echo "  FAIL: '$bad' reached parted"; exit 1; }
+done
+
+# ============================================== interactive wizard ==========
+echo "== interactive wizard =="
+: > "$CMDLOG"
+rm -rf "$WORK/mnt"; mkdir -p "$WORK/mnt/etc" "$WORK/mnt/usr/share/zoneinfo/Africa"
+printf 'root:x:0:\nwheel:x:97:\n' > "$WORK/mnt/etc/group"
+touch "$WORK/mnt/usr/share/zoneinfo/Africa/Cairo"
+# answers: disk 1 (vda; loop0 is not offered), a bad hostname then a good one,
+# time zone, user, swap, and the typed confirmation of the disk name
+ANSWERS=$(printf '%s\n' 1 'bad host!' mybox Africa/Cairo mohamed 1G /dev/vda)
+( cd "$WORK" && NAWA_INSTALL_TEST=1 MNT="$WORK/mnt" KERNEL_SRC="$KSRC" FW_FORCE=bios \
+  bash "$HERE/bootstrap/install.sh" <<<"$ANSWERS" > "$WORK/wizard.out" 2>&1 ) \
+  || { echo "  FAIL: wizard run"; cat "$WORK/wizard.out"; exit 1; }
+grep -q '1) /dev/vda' "$WORK/wizard.out" && echo "  ok: disks listed" || { echo "  FAIL: disk list"; cat "$WORK/wizard.out"; exit 1; }
+! grep -q 'loop0' "$WORK/wizard.out" && echo "  ok: loop device not offered" || { echo "  FAIL: loop0 offered"; exit 1; }
+grep -q "letters, digits" "$WORK/wizard.out" && echo "  ok: bad hostname re-asked" || { echo "  FAIL: no re-ask"; exit 1; }
+check "wizard installs on the chosen disk" "parted -s /dev/vda mklabel msdos"
+check "wizard swap size used"       "fallocate -l 1G"
+check "wizard user created"         "useradd -m -s /bin/bash -G wheel mohamed"
+grep -q '^mybox$' "$WORK/mnt/etc/hostname" && echo "  ok: wizard hostname" || { echo "  FAIL: wizard hostname"; exit 1; }
+
+# a wrong typed confirmation aborts before anything is written
+: > "$CMDLOG"
+rm -rf "$WORK/mnt"; mkdir -p "$WORK/mnt/etc"
+ANSWERS=$(printf '%s\n' 1 '' '' '' '' /dev/vdb)
+( cd "$WORK" && NAWA_INSTALL_TEST=1 MNT="$WORK/mnt" KERNEL_SRC="$KSRC" FW_FORCE=bios \
+  bash "$HERE/bootstrap/install.sh" <<<"$ANSWERS" ) >/dev/null 2>&1 \
+  && { echo "  FAIL: wrong confirmation accepted"; exit 1; }
+! grep -q "parted" "$CMDLOG" && echo "  ok: wrong confirmation aborts before partitioning" || { echo "  FAIL: wizard wrote after a wrong confirmation"; exit 1; }
+
+# no disk and no terminal (and not the test hook): usage, exit 1, no waiting
+if ( cd "$WORK" && MNT="$WORK/mnt" bash "$HERE/bootstrap/install.sh" </dev/null ) >"$WORK/usage.out" 2>&1; then
+    echo "  FAIL: ran without a disk"; exit 1
+else
+    grep -q 'Usage' "$WORK/usage.out" && echo "  ok: usage without a disk (non-tty)" || { echo "  FAIL: no usage text"; cat "$WORK/usage.out"; exit 1; }
+fi
 
 echo
 echo "INSTALLER VALIDATION PASSED"
