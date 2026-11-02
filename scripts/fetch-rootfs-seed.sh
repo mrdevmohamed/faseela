@@ -18,7 +18,7 @@
 # progress on stderr.
 #
 # Exit codes: 0 found + verified | 3 no release carries a rootfs (use the
-# Debian seed) | 4 checksum mismatch | 5 gh / download failure | 2 usage
+# Debian seed) | 4 checksum mismatch | 5 gh / curl download failure | 2 usage
 #
 # Usage: scripts/fetch-rootfs-seed.sh OUTDIR
 # Env:   ROOTFS_ASSET  asset name (default faseela-x86_64-rootfs.tar.zst)
@@ -26,18 +26,43 @@
 #                      (default mydistro-x86_64-rootfs.tar.zst)
 #        GH_REPO       owner/name of the repository (default: the current one)
 #        ROOTFS_MAX_RELEASES  how many releases to look at (default 20)
-#        needs the gh CLI, authenticated (GH_TOKEN in Actions)
+#        needs gh (authenticated for release metadata) and curl
 set -euo pipefail
 
 OUTDIR="${1:?usage: fetch-rootfs-seed.sh OUTDIR}"
 ASSET="${ROOTFS_ASSET:-faseela-x86_64-rootfs.tar.zst}"
 LEGACY="${ROOTFS_LEGACY_ASSET-mydistro-x86_64-rootfs.tar.zst}"
 MAXREL="${ROOTFS_MAX_RELEASES:-20}"
-REPO_ARGS=()
-[[ -z ${GH_REPO:-} ]] || REPO_ARGS=(--repo "$GH_REPO")
+GH_REPO="${GH_REPO:-}"
+if [[ -z $GH_REPO ]]; then
+    # Resolve the repository from this script's checkout, not the caller's
+    # working directory (faseela-repo invokes this script from a sibling tree).
+    SCRIPT_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+    remote="$(git -C "$SCRIPT_ROOT" remote get-url origin 2>/dev/null || true)"
+    case "$remote" in
+        https://github.com/*|http://github.com/*)
+            GH_REPO="${remote#*github.com/}" ;;
+        git@github.com:*)
+            GH_REPO="${remote#git@github.com:}" ;;
+        ssh://git@github.com/*)
+            GH_REPO="${remote#ssh://git@github.com/}" ;;
+    esac
+    GH_REPO="${GH_REPO%.git}"
+    # Preserve the documented "current repository" default for source archives
+    # or worktrees that have no GitHub origin configured.
+    if [[ -z $GH_REPO ]]; then
+        GH_REPO="$(gh repo view --json nameWithOwner --jq .nameWithOwner 2>/dev/null || true)"
+    fi
+fi
+[[ "$GH_REPO" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || {
+    log "set GH_REPO to owner/name (or run from a checkout with a GitHub origin)"
+    exit 5
+}
+REPO_ARGS=(--repo "$GH_REPO")
 
 log() { echo "fetch-rootfs-seed: $*" >&2; }
 command -v gh >/dev/null 2>&1 || { log "the gh CLI is required"; exit 5; }
+command -v curl >/dev/null 2>&1 || { log "curl is required"; exit 5; }
 command -v sha256sum >/dev/null 2>&1 || { log "sha256sum is required"; exit 5; }
 
 tags="$(gh release list "${REPO_ARGS[@]}" --limit "$MAXREL" --json tagName --jq '.[].tagName')" \
@@ -67,8 +92,12 @@ while IFS= read -r tag; do
 
     log "using the rootfs of release $tag ($asset)"
     mkdir -p "$OUTDIR"
+    # Public release assets download directly, avoiding the GitHub API asset endpoint.
+    release_url="https://github.com/$GH_REPO/releases/download/$tag"
     for a in "$asset" "$asset.sha256"; do
-        gh release download "$tag" "${REPO_ARGS[@]}" --pattern "$a" --dir "$OUTDIR" --clobber >&2 \
+        curl --fail --location --silent --show-error \
+            --retry 3 --retry-all-errors --retry-delay 2 \
+            --output "$OUTDIR/$a" "$release_url/$a" >&2 \
             || { log "download of $a from $tag failed"; rm -f "$OUTDIR/$asset" "$OUTDIR/$asset.sha256"; exit 5; }
         [[ -s $OUTDIR/$a ]] || { log "$a from $tag is missing or empty after the download"; rm -f "$OUTDIR/$asset" "$OUTDIR/$asset.sha256"; exit 5; }
     done
