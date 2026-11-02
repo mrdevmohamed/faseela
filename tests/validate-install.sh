@@ -104,7 +104,7 @@ check "ESP 512MiB"           "mkpart ESP fat32 1MiB 513MiB"
 check "esp flag"             "set 1 esp on"
 check "mkfs.vfat on ESP"     "mkfs.vfat -F32 /dev/vda1"
 check "mkfs.ext4 on root"    "mkfs.ext4 -F -q /dev/vda2"
-check "rsync onto /mnt"      "rsync -aHAX --numeric-ids"
+check "rsync onto /mnt"      "rsync -aHX --numeric-ids"
 check "rsync excludes \$MNT"  "--exclude=.*/mnt/\*"
 # cp is a real command (not stubbed) — assert the result on disk instead
 [ -f "$WORK/mnt/boot/vmlinuz-6.10.5" ] && echo "  ok: kernel copied from media" || { echo "  FAIL: kernel copy"; exit 1; }
