@@ -2,6 +2,7 @@
 
 ## Unreleased — installing faseela, real hardware, a GUI that moves
 
+- **Fixed** normal users created by `faseela-install` now join the `render` group when it exists. This grants access to `/dev/dri/renderD*` for hardware Vulkan; the GUI session creates the group and documents it alongside `video`.
 - **Fixed** the live ISO had **no installer**: `docs/boot-and-install.md` said `install.sh /dev/vda`, but nothing put the
   script in the image. `mkiso.sh` now installs it as `/usr/sbin/faseela-install` (the build fails without it).
 - **Added** an interactive installer: `faseela-install` with no arguments asks for the disk (whole, unmounted disks only),
