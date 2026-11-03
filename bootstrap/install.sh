@@ -357,7 +357,9 @@ run mv -Tf "$MNT/boot/.initramfs.new" "$MNT/boot/initramfs.img"
 # predates the Faseela initramfs package.
 if [ -x "$MNT/usr/sbin/faseela-mkinitramfs" ]; then
     log "generating the installed-system initramfs for $KVER"
-    run chroot "$MNT" /usr/sbin/faseela-mkinitramfs --kernel "$KVER" --update-default
+    if ! run chroot "$MNT" /usr/sbin/faseela-mkinitramfs --kernel "$KVER" --update-default; then
+        log "warning: installed-system initramfs generation failed; retaining the validated Live ISO initramfs fallback"
+    fi
 fi
 
 # --- 4b) swap file --------------------------------------------------------------
