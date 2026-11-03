@@ -178,7 +178,7 @@ check_absent "no cache rsync with --no-pkg-cache" "rsync -a --exclude=remote"
 echo "== --user / --swap / --timezone =="
 : > "$CMDLOG"
 rm -rf "$WORK/mnt"; mkdir -p "$WORK/mnt/etc" "$WORK/mnt/usr/share/zoneinfo/Africa"
-printf 'root:x:0:\nwheel:x:97:\nvideo:x:98:\naudio:x:99:\n' > "$WORK/mnt/etc/group"
+printf 'root:x:0:\nwheel:x:97:\nvideo:x:98:\nrender:x:100:\naudio:x:99:\n' > "$WORK/mnt/etc/group"
 touch "$WORK/mnt/usr/share/zoneinfo/Africa/Cairo"
 ( cd "$WORK" && NAWA_INSTALL_TEST=1 MNT="$WORK/mnt" KERNEL_SRC="$KSRC" FW_FORCE=bios \
   bash "$HERE/bootstrap/install.sh" /dev/vda --yes --user mohamed --swap 2G --timezone Africa/Cairo >/dev/null )
@@ -189,7 +189,7 @@ grep -q '^/swapfile .*swap' "$WORK/mnt/etc/fstab" && echo "  ok: fstab swap row"
 [ "$(readlink "$WORK/mnt/etc/localtime")" = /usr/share/zoneinfo/Africa/Cairo ] \
     && echo "  ok: /etc/localtime -> Africa/Cairo" || { echo "  FAIL: time zone link"; exit 1; }
 # only the groups that exist on the target are passed (seat/input are missing here)
-check "useradd with the existing groups only" "chroot .* useradd -m -s /bin/bash -G wheel,video,audio mohamed"
+check "useradd includes the render group when available" "chroot .* useradd -m -s /bin/bash -G wheel,video,render,audio mohamed"
 check "user password asked"        "chroot .* /usr/bin/passwd mohamed"
 check "root password still asked"  "chroot .* /usr/bin/passwd root"
 
