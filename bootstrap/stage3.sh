@@ -17,6 +17,8 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 LFS="${1:?usage: stage3.sh /mnt/faseela}"
+STAGE3_PACKAGES="${STAGE3_PACKAGES:-}"
+STAGE3_WORLD="${STAGE3_WORLD:-0}"
 [[ $EUID -eq 0 ]] || { echo "stage3: must run as root"; exit 1; }
 
 # refresh the repo copy inside the chroot (merge semantics; excludes the seed
