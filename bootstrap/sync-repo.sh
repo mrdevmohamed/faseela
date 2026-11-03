@@ -2,8 +2,9 @@
 # bootstrap/sync-repo.sh — copy the build-relevant parts of the repo into the
 # chroot at <TARGET>/faseela (used by stage1/2/3).
 #
-# nawa itself lives in its own repository: fetch-nawa.sh unpacks the pinned
-# commit into $REPO/nawa first (see bootstrap/fetch-nawa.sh).
+# Nawa itself lives in its own repository. Its source pin is owned by this
+# repository (bootstrap/nawa-source.toml); the fetched package recipe is
+# synchronized to that same pin before the source archive is unpacked.
 #
 # Replaces the old `cp -a nawa recipes profiles bootstrap $LFS/faseela/`:
 # that copy carried ~1 GB of seed tarball (bootstrap/seed/seed.tar.zst), any
@@ -39,9 +40,10 @@ bash "$HERE/fetch-recipes.sh"
     echo "sync-repo: $REPO does not look like the repo root (no recipes/ or bootstrap/)" >&2
     exit 1
 }
-# nawa is not part of this repository: unpack the commit pinned in
-# recipes/base/nawa/recipe.toml (faseela-repo) into $REPO/nawa (no-op when
-# already there)
+# Bootstrap owns the Nawa pin. Keep the package recipe in step with it so
+# stage 2 cannot rebuild a different Nawa version from a stale faseela-repo.
+python3 "$HERE/sync-nawa-recipe.py"
+# Unpack the exact source commit pinned by Bootstrap (no-op when already there).
 bash "$HERE/fetch-nawa.sh"
 [[ -d $REPO/nawa ]] || { echo "sync-repo: $REPO/nawa is missing after fetch-nawa" >&2; exit 1; }
 
