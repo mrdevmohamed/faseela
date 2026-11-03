@@ -65,8 +65,11 @@ faseela-install /dev/vda --hostname mybox --timezone Africa/Cairo \
 
 The installer supports both UEFI (GPT + ESP, removable grub) and BIOS
 (MBR), copies the live system with rsync, generates fstab from real
-UUIDs, and writes a static grub.cfg whose `root=UUID=` cmdline makes the
-initramfs boot straight off the disk. Both grub platforms (`i386-pc` and
+UUIDs, and writes a static grub.cfg using the stable `/boot/vmlinuz` and
+`/boot/initramfs.img` aliases. The aliases point to versioned kernel/initramfs
+files and are updated by the Linux package's Nawa hooks. See
+[Kernel and initramfs lifecycle](kernel-initramfs.md) for regeneration, hooks
+and the current initramfs limitations. Both grub platforms (`i386-pc` and
 `x86_64-efi`) are in the image: the `grub` recipe builds them (rel 2).
 
 ## Trying it in QEMU
