@@ -33,9 +33,6 @@ REPO="${REPO:-/faseela}"
 BUILD="${BUILD:-/build}"
 NAWA_BIN="${NAWA_BIN:-/usr/bin/nawa}"
 : "${PKGS:?PKGS is empty}"
-# local: recipe sources are relative to the recipe checkout; make that stable
-# for both CI and manual package builds, regardless of the caller working dir.
-cd "$REPO"
 ISOLATION="${ISOLATION:-sandbox}"
 BUDGET_MIN="${BUDGET_MIN:-0}"
 KEEP_GOING="${KEEP_GOING:-1}"

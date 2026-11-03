@@ -97,6 +97,10 @@ export NAWA_PKG_CACHE_SRC="$PCACHE"
 echo "== UEFI install =="
 mkdir -p "$WORK/mnt/etc"
 printf '127.0.0.1 localhost faseela\n' > "$WORK/mnt/etc/hosts"
+# a rootfs that ships saq: the installer must regenerate the initramfs with it
+mkdir -p "$WORK/mnt/usr/sbin"
+printf '#!/bin/sh\nexit 0\n' > "$WORK/mnt/usr/sbin/saq"
+chmod +x "$WORK/mnt/usr/sbin/saq"
 run_install uefi
 
 check "GPT label"            "parted -s /dev/vda mklabel gpt"
@@ -131,6 +135,7 @@ grep -q "linux /boot/vmlinuz root=UUID=bbbb-2222" "$WORK/mnt/boot/grub/grub.cfg"
 [ -f "$WORK/mnt/boot/initramfs-6.10.5.img" ] && echo "  ok: versioned initramfs stored" || { echo "  FAIL: versioned initramfs"; exit 1; }
 [ "$(readlink "$WORK/mnt/boot/vmlinuz")" = "vmlinuz-6.10.5" ] && echo "  ok: stable kernel symlink" || { echo "  FAIL: stable kernel symlink"; exit 1; }
 [ "$(readlink "$WORK/mnt/boot/initramfs.img")" = "initramfs-6.10.5.img" ] && echo "  ok: stable initramfs symlink" || { echo "  FAIL: stable initramfs symlink"; exit 1; }
+check "installer regenerates the initramfs with saq" "chroot .*/mnt /usr/sbin/saq --kernel 6.10.5 --update-default"
 grep -q "^testhost$" "$WORK/mnt/etc/hostname" && echo "  ok: hostname written" || { echo "  FAIL: hostname"; exit 1; }
 grep -q "localhost testhost" "$WORK/mnt/etc/hosts" && echo "  ok: hosts updated" || { echo "  FAIL: hosts"; exit 1; }
 check "chroot passwd"        "chroot .* /usr/bin/passwd root"

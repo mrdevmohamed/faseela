@@ -354,10 +354,10 @@ run ln -sfn "initramfs-$KVER.img" "$MNT/boot/.initramfs.new"
 run mv -Tf "$MNT/boot/.initramfs.new" "$MNT/boot/initramfs.img"
 # Prefer regenerating against the installed root's modules and firmware. The
 # copied ISO image remains a valid fallback if this is an older rootfs that
-# predates the Faseela initramfs package.
-if [ -x "$MNT/usr/sbin/faseela-mkinitramfs" ]; then
+# predates the saq package (github.com/mrdevmohamed/saq).
+if [ -x "$MNT/usr/sbin/saq" ]; then
     log "generating the installed-system initramfs for $KVER"
-    if ! run chroot "$MNT" /usr/sbin/faseela-mkinitramfs --kernel "$KVER" --update-default; then
+    if ! run chroot "$MNT" /usr/sbin/saq --kernel "$KVER" --update-default; then
         log "warning: installed-system initramfs generation failed; retaining the validated Live ISO initramfs fallback"
     fi
 fi
