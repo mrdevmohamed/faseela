@@ -325,20 +325,42 @@ for src in ${KERNEL_SRC:+"$KERNEL_SRC"} /cdrom/boot /boot; do
     [ -z "$KERNEL" ] || break
     k="$(ls "$src"/vmlinuz-* 2>/dev/null | sort -V | tail -1 || true)"
     [ -n "$k" ] || continue
-    # grub.cfg below always references /boot/initramfs.img, so a kernel
-    # without one would give a system that cannot boot
-    if [ ! -f "$src/initramfs.img" ]; then
-        log "warning: $src has a kernel but no initramfs.img — skipping"
+    KNAME="$(basename "$k")"
+    KVER="${KNAME#vmlinuz-}"
+    # Prefer a version-matched image; the live ISO currently also provides
+    # the compatibility name initramfs.img.
+    if [ -f "$src/initramfs-$KVER.img" ]; then
+        INITRD="$src/initramfs-$KVER.img"
+    elif [ -f "$src/initramfs.img" ]; then
+        INITRD="$src/initramfs.img"
+    else
+        log "warning: $src has $KNAME but no matching initramfs — skipping"
         continue
     fi
     KERNEL="$k"
-    INITRD="$src/initramfs.img"
 done
-[ -n "$KERNEL" ] || die "no kernel with initramfs.img found in /cdrom/boot or /boot"
-log "installing kernel $(basename "$KERNEL")"
+[ -n "$KERNEL" ] || die "no kernel with initramfs found in /cdrom/boot or /boot"
+KNAME="$(basename "$KERNEL")"
+KVER="${KNAME#vmlinuz-}"
+log "installing kernel $KNAME"
 run mkdir -p "$MNT/boot"
-run cp "$KERNEL" "$MNT/boot/$(basename "$KERNEL")"
-run cp "$INITRD" "$MNT/boot/initramfs.img"
+run cp "$KERNEL" "$MNT/boot/$KNAME"
+run cp "$INITRD" "$MNT/boot/initramfs-$KVER.img"
+# The installed GRUB config uses stable aliases. Each kernel hook updates
+# these atomically after its versioned kernel/initramfs pair is complete.
+run ln -sfn "vmlinuz-$KVER" "$MNT/boot/.vmlinuz.new"
+run mv -Tf "$MNT/boot/.vmlinuz.new" "$MNT/boot/vmlinuz"
+run ln -sfn "initramfs-$KVER.img" "$MNT/boot/.initramfs.new"
+run mv -Tf "$MNT/boot/.initramfs.new" "$MNT/boot/initramfs.img"
+# Prefer regenerating against the installed root's modules and firmware. The
+# copied ISO image remains a valid fallback if this is an older rootfs that
+# predates the saq package (github.com/mrdevmohamed/saq).
+if [ -x "$MNT/usr/sbin/saq" ]; then
+    log "generating the installed-system initramfs for $KVER"
+    if ! run chroot "$MNT" /usr/sbin/saq --kernel "$KVER" --update-default; then
+        log "warning: installed-system initramfs generation failed; retaining the validated Live ISO initramfs fallback"
+    fi
+fi
 
 # --- 4b) swap file --------------------------------------------------------------
 # a file on the root filesystem, not a partition: resizable later, and ext4
@@ -388,12 +410,12 @@ set default=0
 set timeout=3
 
 menuentry "faseela" {
-    linux /boot/$KNAME root=UUID=$ROOT_UUID quiet
+    linux /boot/vmlinuz root=UUID=$ROOT_UUID quiet
     initrd /boot/initramfs.img
 }
 
 menuentry "faseela (verbose)" {
-    linux /boot/$KNAME root=UUID=$ROOT_UUID loglevel=7
+    linux /boot/vmlinuz root=UUID=$ROOT_UUID loglevel=7
     initrd /boot/initramfs.img
 }
 EOF
