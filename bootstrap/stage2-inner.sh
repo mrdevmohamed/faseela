@@ -78,8 +78,10 @@ fi
 echo "== [1/3] compiling NAWA with seed rustc"
 if command -v cargo >/dev/null 2>&1; then
     cd "$REPO/nawa"
-    # Offline build from the crates vendored in the nawa repository (unpacked
-    # by bootstrap/fetch-nawa.sh from the commit pinned in the recipe). This is
+    # Offline build from the crates vendored in the Nawa source repository.
+    # bootstrap/fetch-nawa.sh unpacks the commit pinned in
+    # bootstrap/nawa-source.toml; sync-repo.sh aligns the package recipe to
+    # the same lock before this build root is populated. This is
     # only the bootstrap nawa: step 3 rebuilds it from its recipe with the
     # distro's own `rust` package.
     if [ ! -f .cargo/config.toml ] || [ ! -d vendor ]; then
