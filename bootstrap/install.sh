@@ -12,7 +12,7 @@
 #   6. grub-install (BIOS: MBR / UEFI: removable ESP) + static grub.cfg
 #      passing root=UUID=... so the initramfs boots straight off disk
 #   7. hostname, time zone, an optional swap file, an optional normal user
-#      (in wheel for doas, plus seat/video/input/audio for the GUI) and the
+#      (in wheel for doas, plus seat/video/render/input/audio for the GUI) and the
 #      root password (interactive chroot)
 #   8. package cache (/var/cache/nawa) — kept on the installed system so
 #      `nawa rollback <pkg>` and offline reinstalls work there too
@@ -434,7 +434,7 @@ run mount -t sysfs sysfs "$MNT/sys"
 # that exist on the target are used, useradd refuses unknown groups)
 if [ -n "$USER_ARG" ]; then
     GROUPS_CSV=""
-    for g in wheel seat video input audio; do
+    for g in wheel seat video render input audio; do
         if grep -q "^$g:" "$MNT/etc/group" 2>/dev/null; then GROUPS_CSV="${GROUPS_CSV:+$GROUPS_CSV,}$g"; fi
     done
     log "creating user $USER_ARG (groups: ${GROUPS_CSV:-none})"
