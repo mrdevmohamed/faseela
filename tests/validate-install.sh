@@ -127,6 +127,10 @@ grep -q "UUID=aaaa-1111  /boot/efi vfat" "$WORK/mnt/etc/fstab" && echo "  ok: fs
 grep -q "tmpfs            /run   tmpfs" "$WORK/mnt/etc/fstab" && echo "  ok: fstab /run tmpfs" || { echo "  FAIL: fstab /run row"; exit 1; }
 grep -q "root=UUID=bbbb-2222" "$WORK/mnt/boot/grub/grub.cfg" && echo "  ok: grub.cfg root=UUID" || { echo "  FAIL: grub.cfg"; exit 1; }
 grep -q "initrd /boot/initramfs.img" "$WORK/mnt/boot/grub/grub.cfg" && echo "  ok: grub.cfg initrd" || { echo "  FAIL: initrd"; exit 1; }
+grep -q "linux /boot/vmlinuz root=UUID=bbbb-2222" "$WORK/mnt/boot/grub/grub.cfg" && echo "  ok: grub.cfg uses stable kernel alias" || { echo "  FAIL: kernel alias"; exit 1; }
+[ -f "$WORK/mnt/boot/initramfs-6.10.5.img" ] && echo "  ok: versioned initramfs stored" || { echo "  FAIL: versioned initramfs"; exit 1; }
+[ "$(readlink "$WORK/mnt/boot/vmlinuz")" = "vmlinuz-6.10.5" ] && echo "  ok: stable kernel symlink" || { echo "  FAIL: stable kernel symlink"; exit 1; }
+[ "$(readlink "$WORK/mnt/boot/initramfs.img")" = "initramfs-6.10.5.img" ] && echo "  ok: stable initramfs symlink" || { echo "  FAIL: stable initramfs symlink"; exit 1; }
 grep -q "^testhost$" "$WORK/mnt/etc/hostname" && echo "  ok: hostname written" || { echo "  FAIL: hostname"; exit 1; }
 grep -q "localhost testhost" "$WORK/mnt/etc/hosts" && echo "  ok: hosts updated" || { echo "  FAIL: hosts"; exit 1; }
 check "chroot passwd"        "chroot .* /usr/bin/passwd root"
