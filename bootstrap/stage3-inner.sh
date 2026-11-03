@@ -79,7 +79,7 @@ COUNT=$(echo "$ORDER" | awk 'NF{n++} END{print n+0}')
 
 mkdir -p /build3
 # Exact Stage 3 Toolchain outputs; Stage 2 seed archives are not listed here.
-printf '%s\\n' "$TOOLCHAIN_ORDER" > /build3/stage3-toolchain-packages.resolved
+printf '%s\n' "$TOOLCHAIN_ORDER" > /build3/stage3-toolchain-packages.resolved
 
 # two-root: make sure the final root already holds every installed package
 # (e.g. `--from-stage 3` after a build made before the two-root layout)
