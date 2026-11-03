@@ -50,6 +50,15 @@ sudo ./build-all.sh --isolation closure --stage3-world /mnt/faseela
 sudo ./build-all.sh /mnt/faseela               # re-run: finished stages skipped
 ```
 
+**Selective Toolchain rebuilds:** set STAGE3_PACKAGES to one or more names from recipes/toolchain. Stage 3 expands the request to its transitive Toolchain build/run dependencies, preserves Nawa's topological order, and installs rebuilt archives into the build and final roots:
+
+```bash
+sudo env STAGE3_PACKAGES="glibc" ./bootstrap/build-all.sh --no-iso --no-rootfs /mnt/faseela
+sudo env STAGE3_PACKAGES="gcc" ./bootstrap/build-all.sh --no-iso --no-rootfs /mnt/faseela
+```
+
+A partial update runs glibc/binutils/GCC smoke checks, compiles-links-runs a C program, verifies final-root ELF/library closure, and retains the seed toolchain. It does not claim that the distribution is fully self-hosted. Leave STAGE3_PACKAGES unset to rebuild the complete Toolchain and perform the existing seed-removal/self-hosting proof.
+
 The equivalent manual invocation of each stage (what build-all.sh does
 for you):
 
