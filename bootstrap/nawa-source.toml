@@ -4,6 +4,6 @@
 schema = 1
 repository = "mrdevmohamed/nawa"
 version = "1.0.0"
-rel = 10
-commit = "c9261d12c89402fdeb5200a3bb0a0fa8f3be252b"
-sha256 = "084de9f0345a04dc09c8bdbc725f8bb764a2c9a991d2391253422c82c45d8614"
+rel = 11
+commit = "175dd95171cfa9ffe0fe6bcf45d583e12c73661d"
+sha256 = "2c1060e31ef1667e500115dd20865294c650927a38912d80be472be46f39ff57"
