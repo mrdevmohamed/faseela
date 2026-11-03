@@ -33,35 +33,46 @@ case "$ISOLATION" in
 esac
 echo "== stage3: isolation=$ISOLATION"
 
-if [[ "${STAGE3_WORLD:-0}" == "1" ]]; then
+SELECTIVE=0
+TOOLCHAIN_ORDER=""
+if [[ -n "$STAGE3_RESOLVED_PACKAGES" ]]; then
+    SELECTIVE=1
+    ORDER="$STAGE3_RESOLVED_PACKAGES"
+    TOOLCHAIN_ORDER="$ORDER"
+    echo "== stage3: selective Toolchain rebuild (seed retained)"
+elif [[ "$STAGE3_WORLD" == "1" ]]; then
     echo "== stage3: rebuilding the ENTIRE build set (the bootstrap set, or the whole graph when STAGE_SET=all) with the distro's own gcc"
-    # --include-installed: every package IS installed at this point, and
-    # deps-all skips what the db records — without the flag the order would
-    # come back empty and nothing would be rebuilt
     ORDER=$("$NAWA_BIN" --recipes "$REPO/recipes" deps-all --include-installed) || {
         echo "stage3: deps-all --include-installed failed — the installed nawa" >&2
         echo "stage3: may predate the flag; re-run stage2 (it rebuilds nawa) first" >&2
         exit 1
     }
-    if [[ "${WITH_GUI:-0}" != "1" && -d "$REPO/recipes/gui" ]]; then
+    if [[ "$WITH_GUI" != "1" && -d "$REPO/recipes/gui" ]]; then
         GUI_PKGS=" $(ls "$REPO/recipes/gui" | tr '\n' ' ') "
         ORDER=$(for p in $ORDER; do [[ "$GUI_PKGS" == *" $p "* ]] || echo "$p"; done)
     fi
     ORDER=$(filter_skipped <<< "$ORDER" | filter_stage_set)
+    if [[ -d "$REPO/recipes/toolchain" ]]; then
+        TOOLCHAIN_PKGS=" $(ls "$REPO/recipes/toolchain" | tr '\n' ' ') "
+        TOOLCHAIN_ORDER=$(while IFS= read -r p; do
+            case "$TOOLCHAIN_PKGS" in *" $p "*) echo "$p" ;; esac
+        done <<< "$ORDER")
+    fi
 else
-    # The toolchain set is DEFINED by recipes/toolchain (not a hardcoded list
-    # that silently stales): filter the full topological order down to its
-    # members — dependencies between them keep their resolved order.
-    echo "== stage3: rebuilding the toolchain set with the distro's own gcc"
+    echo "== stage3: rebuilding the Toolchain set with the distro's own gcc"
     if [[ ! -d $REPO/recipes/toolchain ]]; then
         echo "stage3: $REPO/recipes/toolchain not found — nothing to self-host" >&2
         exit 1
     fi
     TOOLCHAIN_PKGS=" $(ls "$REPO/recipes/toolchain" | tr '\n' ' ') "
-    ORDER=$("$NAWA_BIN" --recipes "$REPO/recipes" deps-all --include-installed \
-        | while IFS= read -r p; do
-              case "$TOOLCHAIN_PKGS" in *" $p "*) echo "$p" ;; esac
-          done) || { echo "stage3: deps-all failed" >&2; exit 1; }
+    FULL_ORDER=$("$NAWA_BIN" --recipes "$REPO/recipes" deps-all --include-installed) || {
+        echo "stage3: deps-all failed" >&2
+        exit 1
+    }
+    TOOLCHAIN_ORDER=$(while IFS= read -r p; do
+        case "$TOOLCHAIN_PKGS" in *" $p "*) echo "$p" ;; esac
+    done <<< "$FULL_ORDER")
+    ORDER="$TOOLCHAIN_ORDER"
 fi
 COUNT=$(echo "$ORDER" | awk 'NF{n++} END{print n+0}')
 [ "$COUNT" -gt 0 ] || { echo "stage3: rebuild found nothing to build" >&2; exit 1; }
@@ -122,6 +133,67 @@ for pkg in $ORDER; do
     "$NAWA_BIN" --root / install --force --allow-unsigned "$ARCHIVE"
     install_final "$ARCHIVE"
 done
+
+
+if [[ "$SELECTIVE" == "1" ]]; then
+    echo "== stage3: selective Toolchain validation (seed toolchain retained)"
+    case " $TOOLCHAIN_ORDER " in
+        *" glibc "*)
+            ldconfig
+            timeout 20 expr a : '\(a\)' >/dev/null
+            timeout 20 expr 2 + 3 >/dev/null
+            getent passwd root >/dev/null || {
+                echo "stage3: glibc validation failed: getent cannot read the root account" >&2
+                exit 1
+            }
+            ;;
+    esac
+    case " $TOOLCHAIN_ORDER " in
+        *" binutils "*)
+            as --version >/dev/null
+            ld --version >/dev/null
+            ;;
+    esac
+    case " $TOOLCHAIN_ORDER " in
+        *" gcc "*)
+            "$NAWA_BIN" --root / owner /usr/bin/gcc 2>/dev/null | grep -q "is owned by" || {
+                echo "stage3: selected gcc is not owned by the installed Faseela package" >&2
+                exit 1
+            }
+            gcc --version >/dev/null
+            ;;
+    esac
+    T="$(mktemp -d)"
+    trap 'rm -rf "$T"' EXIT
+    cat > "$T/t.c" <<'EOT'
+#include <stdio.h>
+#include <pthread.h>
+static void *f(void *a){ return a; }
+int main(void){ pthread_t t; pthread_create(&t,0,f,0); pthread_join(t,0);
+  puts("toolchain-smoke-ok"); return 0; }
+EOT
+    if ! cc -O2 -pthread "$T/t.c" -o "$T/t"; then
+        echo "stage3: TOOLCHAIN UPDATE FAILED: installed compiler cannot compile/link C" >&2
+        exit 1
+    fi
+    if [[ "$("$T/t")" != "toolchain-smoke-ok" ]]; then
+        echo "stage3: TOOLCHAIN UPDATE FAILED: compiled program cannot run with updated runtime" >&2
+        exit 1
+    fi
+    R="$FINAL_ROOT"
+    [[ -n "$R" ]] || R="/"
+    verify_final_root_no_seed_refs "$R" || {
+        echo "stage3: TOOLCHAIN UPDATE FAILED: final root references a seed path" >&2
+        exit 1
+    }
+    verify_final_root_needed_resolved "$R" || {
+        echo "stage3: TOOLCHAIN UPDATE FAILED: final root has unresolved shared-library dependencies" >&2
+        exit 1
+    }
+    finalize_final_root
+    echo "== stage3: selective Toolchain update passed; seed retained; full self-hosting proof not claimed"
+    exit 0
+fi
 
 echo "== stage3: removing seed toolchain"
 rm -rf /opt/cross-tools /opt/cargo /opt/rustup /opt/seed

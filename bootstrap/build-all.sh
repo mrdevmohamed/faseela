@@ -94,6 +94,8 @@ Options:
   --single-root     legacy layout: install into the build root only and pack
                     TARGET itself into the ISO (default: TWO roots — see below)
   --stage3-world    STAGE3_WORLD=1 — rebuild EVERY package in stage 3
+  STAGE3_PACKAGES="glibc gcc" — selective Toolchain rebuild + Toolchain dependency closure
+                       (retains the seed; unset for full self-hosting proof)
   --with-gui        WITH_GUI=1 — include recipes/gui in stage 2/3 (only with --stage-set all)
   --stage-set S     what stages 2/3 build: a flavor of flavors.toml (default
                     bootstrap: base-devel, nawa, curl and what builds them) or
@@ -143,6 +145,7 @@ TARGET="" OUT_ISO="" FROM_STAGE="" OUT_ROOTFS="" SEED_ROOTFS="" SEED_ROOTFS_SHA2
 OPT_FRESH=0 OPT_WIPE=0 OPT_NO_ISO=0 OPT_NO_ROOTFS=0 OPT_KEEP_MOUNTS=0
 OPT_WORLD=0 OPT_GUI=0 OPT_LIST=0 OPT_DRYRUN=0 OPT_SINGLE=0
 STAGE_SET="${STAGE_SET:-bootstrap}"
+STAGE3_PACKAGES="${STAGE3_PACKAGES:-}"
 OPT_ISOLATION="${STAGE2_ISOLATION:-none}"
 JOBS="${NAWA_JOBS:-}"
 VOL_ID="${VOL_ID:-FASEELA}"
@@ -191,6 +194,9 @@ esac
 # fingerprints below record exactly these effective values.
 if [[ $OPT_ISOLATION == closure ]]; then STAGE2_ISO=sandbox; else STAGE2_ISO=$OPT_ISOLATION; fi
 STAGE3_ISO=$OPT_ISOLATION
+if [[ -n "$STAGE3_PACKAGES" && $OPT_WORLD -eq 1 ]]; then
+    die "STAGE3_PACKAGES cannot be combined with --stage3-world"
+fi
 case "$SQUASH_COMP" in gzip|xz|zstd) ;; *) die "--squash-comp must be gzip|xz|zstd" ;; esac
 if [[ -z $JOBS ]]; then JOBS="$(nproc 2>/dev/null || echo 4)"; fi
 [[ $JOBS =~ ^[0-9]+$ && $JOBS -ge 1 ]] || die "--jobs must be a positive integer (got '$JOBS')"
@@ -376,11 +382,11 @@ stage_inputs() {   # the input contract of a stage, one key=value per line
                          "$HERE/final-root.sh" "$HERE/stage-set.sh" "$HERE/ensure-chroot-mounts.sh" "$HERE/enter-root.sh")" \
                     "$(tree_hash recipes)" "$(tree_hash profiles)" \
                     "$OPT_GUI" "$STAGE2_ISO" "$LAYOUT" "$STAGE_SET:$(hash_files "$REPO/flavors.toml")" ;;
-        stage3) printf 'format=1\nscripts=%s\nrecipes=%s\nprofiles=%s\ngui=%s\nworld=%s\nisolation=%s\nlayout=%s\nset=%s\n' \
-                    "$(hash_files "$HERE/stage3.sh" "$HERE/stage3-inner.sh" "$HERE/sync-repo.sh" \
+        stage3) printf 'format=2\nscripts=%s\nrecipes=%s\nprofiles=%s\ngui=%s\nworld=%s\npackages=%s\nisolation=%s\nlayout=%s\nset=%s\n' \
+                    "$(hash_files "$HERE/stage3.sh" "$HERE/stage3-inner.sh" "$HERE/select-stage3.py" "$HERE/sync-repo.sh" \
                          "$HERE/final-root.sh" "$HERE/stage-set.sh" "$HERE/ensure-chroot-mounts.sh" "$HERE/enter-root.sh")" \
                     "$(tree_hash recipes)" "$(tree_hash profiles)" \
-                    "$OPT_GUI" "$OPT_WORLD" "$STAGE3_ISO" "$LAYOUT" "$STAGE_SET:$(hash_files "$REPO/flavors.toml")" ;;
+                    "$OPT_GUI" "$OPT_WORLD" "$STAGE3_PACKAGES" "$STAGE3_ISO" "$LAYOUT" "$STAGE_SET:$(hash_files "$REPO/flavors.toml")" ;;
         rootfs) printf 'format=1\nscripts=%s\nlevel=%s\nlayout=%s\n' \
                     "$(hash_files "$HERE/mkrootfs.sh")" \
                     "${ROOTFS_ZSTD_LEVEL:-12}" "$LAYOUT" ;;
@@ -703,6 +709,7 @@ fi
 export STAGE3_ISOLATION="$STAGE3_ISO"
 export SINGLE_ROOT="$OPT_SINGLE"
 export STAGE3_WORLD="$OPT_WORLD"
+export STAGE3_PACKAGES
 export STAGE_SET
 # stage1 reads these: a rootfs seed replaces seed.tar.zst (empty = Debian seed)
 export SEED_ROOTFS SEED_ROOTFS_SHA256
