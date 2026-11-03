@@ -49,6 +49,7 @@ name: Build ISO (CD)
 
 on:
   push:
+    branches: ["bootstrap-core-refresh"]
     tags: ["v*"]
   workflow_dispatch:
     inputs:
@@ -170,7 +171,9 @@ jobs:
         run: bash bootstrap/fetch-recipes.sh
       - id: m
         env:
-          ONLY: ${{ inputs.outputs || 'all' }}
+          # This isolated branch exists only to refresh the bootstrap core/rootfs.
+          # Tag pushes and manual runs retain their normal output selection.
+          ONLY: ${{ github.event_name == 'push' && github.ref == 'refs/heads/bootstrap-core-refresh' && 'core' || inputs.outputs || 'all' }}
         run: |
           python3 - >> "$GITHUB_OUTPUT" <<'PY'
           import json, os
@@ -316,7 +319,9 @@ jobs:
       - name: Choose how the core is made (repository or compile)
         id: coremode
         env:
-          WANT: ${{ inputs.core_mode || 'auto' }}
+          # Rebuild the core from Bootstrap's independent Nawa source lock on the
+          # refresh branch; regular tag/manual builds keep the auto/repo fast path.
+          WANT: ${{ inputs.core_mode || (github.event_name == 'push' && github.ref == 'refs/heads/bootstrap-core-refresh' && 'build' || 'auto') }}
           HAVE_SEED: ${{ steps.rootfsseed.outputs.path != '' }}
         run: |
           case "$WANT" in
@@ -842,9 +847,9 @@ jobs:
   release:
     name: GitHub Release
     needs: [plan, core, build, boot-test]
-    # a `v*` tag, or a manual run with `release` ticked. build / boot-test may be
+    # a `v*` tag, the isolated bootstrap-core-refresh branch, or a manual run
     # skipped (outputs=core), but a failure of either still blocks the release.
-    if: ${{ !cancelled() && (startsWith(github.ref, 'refs/tags/v') || inputs.release) && needs.core.result == 'success' && contains(fromJSON('["success","skipped"]'), needs.build.result) && contains(fromJSON('["success","skipped"]'), needs.boot-test.result) }}
+    if: ${{ !cancelled() && (startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'push' && github.ref == 'refs/heads/bootstrap-core-refresh') || inputs.release) && needs.core.result == 'success' && contains(fromJSON('["success","skipped"]'), needs.build.result) && contains(fromJSON('["success","skipped"]'), needs.boot-test.result) }}
     runs-on: ubuntu-24.04
     permissions:
       contents: write
