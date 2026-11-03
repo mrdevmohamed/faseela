@@ -53,8 +53,9 @@ faseela-install /dev/vda --hostname mybox --timezone Africa/Cairo \
 ```
 
 * **user**: created with a home and `/bin/bash`, in `wheel` (what `/etc/doas.conf`
-  allows) and in `seat`, `video`, `input`, `audio` when they exist (the GUI's
-  `gui-session` package creates the last four). Log in on a text console and run
+  allows) and in `seat`, `video`, `render`, `input`, `audio` when they exist (the GUI's
+  `gui-session` package creates these groups). `render` grants access to DRM render
+  nodes used by hardware Vulkan/OpenGL drivers. Log in on a text console and run
   `start-sway`.
 * **swap**: a file, `/swapfile`, made with `fallocate` + `mkswap` and listed in
   fstab. Hibernation needs a resume offset on the kernel command line, which the
