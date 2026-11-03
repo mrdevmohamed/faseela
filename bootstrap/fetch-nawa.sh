@@ -30,6 +30,10 @@ integer_field() {
 }
 
 [[ -r $LOCK ]] || { echo "fetch-nawa: source lock $LOCK not found" >&2; exit 1; }
+SCHEMA="$(integer_field schema)"
+[[ "$SCHEMA" == 1 ]] || {
+    echo "fetch-nawa: unsupported source lock schema '$SCHEMA' (expected 1)" >&2; exit 1;
+}
 SOURCE_REPO="$(string_field repository)"
 VERSION="$(string_field version)"
 REL="$(integer_field rel)"

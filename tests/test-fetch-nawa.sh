@@ -68,7 +68,7 @@ cp "$REPO/bootstrap/fetch-nawa.sh" "$REPO2/bootstrap/"
 cp "$REPO/bootstrap/nawa-source.toml" "$REPO2/bootstrap/"
 echo 'user worktree' > "$REPO2/nawa/KEEP"
 bash "$REPO2/bootstrap/fetch-nawa.sh" > "$W/user.log"
-grep -q 'user checkout' "$W/user.log"
+grep -q 'your own checkout' "$W/user.log"
 grep -qx 'user worktree' "$REPO2/nawa/KEEP"
 [[ "$(wc -l < "$NAWA_CURL_LOG")" -eq 1 ]]
 
