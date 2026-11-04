@@ -947,3 +947,24 @@ jobs:
           name: run-report
           path: run-report.md
           retention-days: 30
+  # One combined notification after the complete release report, even if a
+  # build, optional flavor, boot test, image build, or publication failed.
+  telegram-notify:
+    name: Telegram notification
+    if: ${{ always() }}
+    needs: [recipes, ci, plan, core, build, boot-test, image, release, report]
+    runs-on: ubuntu-24.04
+    continue-on-error: true
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Send workflow result to Telegram
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          JOB_RESULTS: recipes=${{ needs.recipes.result }},ci=${{ needs.ci.result }},plan=${{ needs.plan.result }},core=${{ needs.core.result }},build=${{ needs.build.result }},boot-test=${{ needs.boot-test.result }},image=${{ needs.image.result }},release=${{ needs.release.result }},report=${{ needs.report.result }}
+          BRANCH_NAME: ${{ github.head_ref || github.ref_name }}
+        run: python3 -I scripts/notify-telegram.py
