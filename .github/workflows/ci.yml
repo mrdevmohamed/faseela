@@ -102,6 +102,8 @@ jobs:
         run: bash tests/test-check-sources.sh
       - name: ci-report.py tests (fixture logs and API answers)
         run: bash tests/test-ci-report.sh
+      - name: Telegram notification tests
+        run: python3 -I tests/test-telegram-notify.py
       - name: build-all.sh dry run at every isolation level
         run: |
           # the default stage set (bootstrap) builds no ISO: release.yml passes --no-iso
@@ -151,3 +153,24 @@ jobs:
           printf '%s' "$NEEDS" > needs.json
           python3 scripts/ci-report.py report --needs-json needs.json --exclude "CI passed" \
             | tee run-report.md >> "$GITHUB_STEP_SUMMARY"
+  # Only standalone CI runs send here; release.yml sends one combined report
+  # after its full matrix, so a reusable CI call must not send a duplicate.
+  telegram-notify:
+    name: Telegram notification
+    if: ${{ always() && github.workflow == 'CI' }}
+    needs: [scripts, ci-ok]
+    runs-on: ubuntu-24.04
+    continue-on-error: true
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Send workflow result to Telegram
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          JOB_RESULTS: scripts=${{ needs.scripts.result }},ci-ok=${{ needs.ci-ok.result }}
+          BRANCH_NAME: ${{ github.head_ref || github.ref_name }}
+        run: python3 -I scripts/notify-telegram.py
