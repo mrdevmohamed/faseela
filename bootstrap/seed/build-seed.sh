@@ -103,7 +103,7 @@ if command -v apt-get >/dev/null 2>&1; then
             grep '^[A-Za-z0-9]' "$DEPS_FILE" | sort -u \
             | while IFS= read -r p; do
                 # Drop virtual packages / names with no installable candidate.
-                apt-cache show --no-all-versions "$p" >/dev/null 2>&1 && printf '%s\\n' "$p"
+                apt-cache show --no-all-versions "$p" >/dev/null 2>&1 && echo "$p"
               done
         )
         if (( ${#ALL_PKGS[@]} == 0 )); then
@@ -140,7 +140,7 @@ if command -v apt-get >/dev/null 2>&1; then
 
     # Record exactly what was downloaded (name_version_arch.deb carries the
     # resolved versions — the seed's provenance record).
-    mapfile -t DOWNLOADED_DEBS < <(printf '%s\\n' ./*.deb | sed 's|^\./||' | sort)
+    mapfile -t DOWNLOADED_DEBS < <(ls ./*.deb 2>/dev/null | sed 's|^\./||' | sort)
     for deb in ./*.deb; do
         dpkg -x "$deb" "$SEED_ROOT"
     done
