@@ -67,24 +67,79 @@ if command -v apt-get >/dev/null 2>&1; then
     # dependencies. Without libc6, libgcc-s1, libtinfo6, libacl1, ... nothing
     # in the seed can run (the chroot fails with "No such file or directory"
     # because the ELF loader is missing). So resolve the full closure.
-    echo "seed: resolving dependency closure of ${#DEB_PKGS[@]} packages"
-    mapfile -t ALL_PKGS < <(
-        apt-cache depends --recurse --no-recommends --no-suggests \
-            --no-conflicts --no-breaks --no-replaces --no-enhances \
-            "${DEB_PKGS[@]}" 2>/dev/null \
-        | grep '^[A-Za-z0-9]' | sort -u \
-        | while read -r p; do
-            # drop virtual packages / names with no installable candidate
-            apt-cache show --no-all-versions "$p" >/dev/null 2>&1 && echo "$p"
-          done
-    )
-    echo "seed: fetching ${#ALL_PKGS[@]} debian packages"
+    #
+    # CI images can contain stale APT indexes, and Ubuntu mirrors can be
+    # between syncs. In that case apt-cache selects versions whose .deb files
+    # have already moved (404). Refresh the indexes before resolving anything,
+    # and retry the whole resolve/download transaction after a failed fetch.
     TMP_DEBS="$(mktemp -d)"
     chmod 755 "$TMP_DEBS"            # let the _apt user write when run as root
     cd "$TMP_DEBS"
-    apt-get download "${ALL_PKGS[@]}" >/dev/null
-    # record exactly what was downloaded (name_version_arch.deb carries the
-    # resolved versions — the seed's provenance record)
+    DOWNLOAD_OK=0
+    MAX_ATTEMPTS=3
+
+    for attempt in $(seq 1 "$MAX_ATTEMPTS"); do
+        echo "seed: refreshing APT indexes (attempt $attempt/$MAX_ATTEMPTS)"
+        if ! apt-get \
+            -o Acquire::Retries=3 \
+            -o Acquire::http::Timeout=30 \
+            -o Acquire::https::Timeout=30 \
+            update; then
+            echo "seed: WARNING: apt-get update failed (attempt $attempt/$MAX_ATTEMPTS)" >&2
+            [[ "$attempt" -lt "$MAX_ATTEMPTS" ]] && sleep "$attempt"
+            continue
+        fi
+
+        DEPS_FILE="$TMP_DEBS/dependencies.txt"
+        if ! apt-cache depends --recurse --no-recommends --no-suggests \
+            --no-conflicts --no-breaks --no-replaces --no-enhances \
+            "${DEB_PKGS[@]}" > "$DEPS_FILE"; then
+            echo "seed: WARNING: could not resolve the Debian package dependency graph" >&2
+            [[ "$attempt" -lt "$MAX_ATTEMPTS" ]] && sleep "$attempt"
+            continue
+        fi
+
+        mapfile -t ALL_PKGS < <(
+            grep '^[A-Za-z0-9]' "$DEPS_FILE" | sort -u \
+            | while IFS= read -r p; do
+                # Drop virtual packages / names with no installable candidate.
+                apt-cache show --no-all-versions "$p" >/dev/null 2>&1 && echo "$p"
+              done
+        )
+        if (( ${#ALL_PKGS[@]} == 0 )); then
+            echo "seed: ERROR: APT resolved an empty dependency closure" >&2
+            cd - >/dev/null
+            rm -rf "$TMP_DEBS"
+            exit 1
+        fi
+
+        # Remove partial downloads from a previous attempt before retrying.
+        rm -f -- ./*.deb
+        echo "seed: fetching ${#ALL_PKGS[@]} Debian packages"
+        if apt-get \
+            -o Acquire::Retries=3 \
+            -o Acquire::http::Timeout=30 \
+            -o Acquire::https::Timeout=30 \
+            download "${ALL_PKGS[@]}"; then
+            DOWNLOAD_OK=1
+            break
+        fi
+
+        echo "seed: WARNING: package download failed; indexes will be refreshed before retry" >&2
+        rm -f -- ./*.deb
+        [[ "$attempt" -lt "$MAX_ATTEMPTS" ]] && sleep "$attempt"
+    done
+
+    if (( ! DOWNLOAD_OK )); then
+        cd - >/dev/null
+        rm -rf "$TMP_DEBS"
+        echo "seed: ERROR: unable to download the Debian dependency closure after $MAX_ATTEMPTS refreshed APT attempts" >&2
+        echo "seed: check the runner's Ubuntu mirrors and package index consistency" >&2
+        exit 1
+    fi
+
+    # Record exactly what was downloaded (name_version_arch.deb carries the
+    # resolved versions — the seed's provenance record).
     mapfile -t DOWNLOADED_DEBS < <(ls ./*.deb 2>/dev/null | sed 's|^\./||' | sort)
     for deb in ./*.deb; do
         dpkg -x "$deb" "$SEED_ROOT"
