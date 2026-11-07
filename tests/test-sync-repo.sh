@@ -13,7 +13,7 @@ mk() {   # $1 = tree dir; a minimal repo checkout with stub fetchers
     mkdir -p "$1/bootstrap/seed" "$1/recipes/base/nawa" "$1/profiles" "$1/nawa/src" "$1/nawa/target"
     cp "$REPO/bootstrap/sync-repo.sh" "$REPO/bootstrap/sync-nawa-recipe.py" "$1/bootstrap/"
     cp "$REPO/bootstrap/nawa-source.toml" "$1/bootstrap/"
-    cat > "$1/recipes/base/nawa/recipe.toml" <<'TOML'
+cat > "$1/recipes/base/nawa/recipe.toml" <<'TOML'
 [package]
 name = "nawa"
 version = "0.1.0"
@@ -21,9 +21,13 @@ rel = 1
 arch = ["x86_64"]
 summary = "test"
 license = ["GPL-3.0"]
-source = "https://example.invalid/old.tar.gz"
+source = "local:/nawa-schema-2-requires-a-newer-nawa"
+
+[[package.sources]]
+name = "nawa"
+url = "https://github.com/mrdevmohamed/nawa/archive/0000000000000000000000000000000000000000.tar.gz"
 sha256 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-source_dir = "old"
+strip_components = 1
 
 [depends]
 build = []
