@@ -117,7 +117,7 @@ if bash "$REPO4/bootstrap/fetch-nawa.sh" > "$W/missing.log" 2>&1; then
     echo "FAIL: fetch accepted a recipe without the named Nawa source" >&2
     exit 1
 fi
-grep -q "exactly one source named 'nawa'" "$W/missing.log"
+grep -q "recipe must contain [[package.sources]]" "$W/missing.log"
 [[ "$(wc -l < "$NAWA_CURL_LOG")" -eq 1 ]]
 
 echo "fetch-nawa tests: 5 scenarios passed"
