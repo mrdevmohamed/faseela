@@ -1,9 +1,0 @@
-# The bootstrap Nawa source of truth.
-# Keep this pin independent from faseela-repo: Bootstrap must be able to build
-# its package manager before the binary package repository is refreshed.
-schema = 1
-repository = "mrdevmohamed/nawa"
-version = "1.0.0"
-rel = 11
-commit = "175dd95171cfa9ffe0fe6bcf45d583e12c73661d"
-sha256 = "2c1060e31ef1667e500115dd20865294c650927a38912d80be472be46f39ff57"
