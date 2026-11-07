@@ -78,17 +78,16 @@ fi
 echo "== [1/3] compiling NAWA with seed rustc"
 if command -v cargo >/dev/null 2>&1; then
     cd "$REPO/nawa"
-    # Offline build from the crates vendored in the Nawa source repository.
-    # bootstrap/fetch-nawa.sh unpacks the commit pinned in
-    # bootstrap/nawa-source.toml; sync-repo.sh aligns the package recipe to
-    # the same lock before this build root is populated. This is
-    # only the bootstrap nawa: step 3 rebuilds it from its recipe with the
-    # distro's own `rust` package.
-    if [ ! -f .cargo/config.toml ] || [ ! -d vendor ]; then
-        echo "stage2-inner: nawa/vendor or nawa/.cargo/config.toml is missing —" >&2
+    # The source archive carries Cargo.toml + Cargo.lock, not vendored crates.
+    # Bootstrap is the one pre-Nawa exception: use the seed Cargo toolchain to
+    # fetch the exact locked dependency graph, then compile with networking off.
+    # The normal package build later uses Nawa's [fetch.cargo] cache.
+    if [ ! -f Cargo.lock ] || [ ! -f Cargo.toml ]; then
+        echo "stage2-inner: Nawa source is missing Cargo.toml or Cargo.lock —" >&2
         echo "stage2-inner: run bootstrap/fetch-nawa.sh on the host and sync the repo again" >&2
         exit 1
     fi
+    cargo fetch --locked
     cargo build --release --offline --locked
     install -Dm755 target/release/nawa /usr/bin/nawa
 else
