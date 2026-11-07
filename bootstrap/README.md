@@ -36,6 +36,7 @@ grub (hybrid BIOS+UEFI)
 * stage 5 (ISO) tools: `squashfs-tools`, `grub-pc-bin`, `grub-efi-amd64-bin`,
   `xorriso`, `mtools` (Debian names) + gcc/make for the initramfs busybox
 * ~10 GB free disk, decent network
+* host `python3` 3.11+ (TOML parsing), `curl` or `wget`, `sha256sum` and `tar` for recipe-pinned Nawa source fetching
 
 ## Quick start
 
