@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# bootstrap/fetch-nawa.sh — fetch the Nawa source named by the fetched recipe.
+# bootstrap/fetch-nawa.sh — fetch Nawa from the recipe shipped by faseela-repo.
 #
-# recipes/base/nawa/recipe.toml is the single source of truth for the source
-# URL and SHA-256. Bootstrap reads that same pin before Nawa exists, then
-# builds from the extracted tree with the seed Cargo toolchain.
+# recipes/base/nawa/recipe.toml is the only source pin. Bootstrap reads that
+# same named source before Nawa exists, verifies the archive, then uses the
+# seed Cargo toolchain to build Nawa.
 #
 # Behaviour:
 #   * the archive is cached in $REPO/srccache and checked against the recipe SHA;
@@ -24,7 +24,7 @@ if [[ -d $DEST && ! -f $DEST/.pinned-sha256 ]]; then
     exit 0
 fi
 
-# The normal build driver fetches recipes first; keep the standalone script safe too.
+# The normal build driver fetches recipes first; keep this script safe standalone too.
 if [[ ! -r $RECIPE ]]; then
     bash "$REPO/bootstrap/fetch-recipes.sh"
 fi
@@ -33,9 +33,9 @@ fi
     exit 1
 }
 
-# Parse TOML structurally. Do not scrape package.source: it is a deliberate
-# local marker for old Nawa binaries. The real source is the single named
-# package.sources entry.
+# Parse TOML structurally. package.source is a fail-closed compatibility
+# marker; the downloadable source is the unique package.sources entry named
+# "nawa".
 SOURCE_META="$(
 python3 - "$RECIPE" <<'PY'
 import re
@@ -91,11 +91,21 @@ rel = package.get("rel")
 if not isinstance(rel, int) or isinstance(rel, bool) or rel < 1:
     raise SystemExit("fetch-nawa: package.rel must be a positive integer")
 
-print("\t".join((repository, commit, sha256, version, str(rel))))
+for value in (repository, commit, sha256, version, str(rel)):
+    print(value)
 PY
 )" || exit 1
 
-IFS=$'\t' read -r SOURCE_REPO COMMIT SHA VERSION REL <<< "$SOURCE_META"
+mapfile -t SOURCE_FIELDS <<< "$SOURCE_META"
+if [[ ${#SOURCE_FIELDS[@]} -ne 5 ]]; then
+    echo "fetch-nawa: internal error while reading the Nawa recipe pin" >&2
+    exit 1
+fi
+SOURCE_REPO="${SOURCE_FIELDS[0]}"
+COMMIT="${SOURCE_FIELDS[1]}"
+SHA="${SOURCE_FIELDS[2]}"
+VERSION="${SOURCE_FIELDS[3]}"
+REL="${SOURCE_FIELDS[4]}"
 TOP="nawa-$COMMIT"
 URL="https://github.com/$SOURCE_REPO/archive/$COMMIT.tar.gz"
 
@@ -142,52 +152,4 @@ ACTUAL_VERSION="$(awk -F '"' '/^version = "/ { print $2; exit }' "$TMP/$TOP/Carg
 rm -rf "$DEST"
 mv "$TMP/$TOP" "$DEST"
 printf '%s\n' "$SHA" > "$DEST/.pinned-sha256"
-echo "fetch-nawa: Nawa $VERSION-$REL ($COMMIT) ready in $DEST"
-\t' read -r SOURCE_REPO COMMIT SHA VERSION REL <<< "$SOURCE_META"
-TOP="nawa-$COMMIT"
-URL="https://github.com/$SOURCE_REPO/archive/$COMMIT.tar.gz"
-
-if [[ -f $DEST/.pinned-sha256 && "$(cat "$DEST/.pinned-sha256")" == "$SHA" ]]; then
-    echo "fetch-nawa: $DEST is already at the recipe-pinned source ($COMMIT)"
-    exit 0
-fi
-
-mkdir -p "$CACHE"
-TARBALL="$CACHE/$TOP.tar.gz"
-if [[ ! -f $TARBALL ]] || ! echo "$SHA  $TARBALL" | sha256sum -c --status; then
-    echo "fetch-nawa: downloading $URL"
-    rm -f "$TARBALL.part"
-    if command -v curl >/dev/null 2>&1; then
-        curl -fSL --retry 3 -o "$TARBALL.part" "$URL"
-    elif command -v wget >/dev/null 2>&1; then
-        wget -q -O "$TARBALL.part" "$URL"
-    else
-        echo "fetch-nawa: need curl or wget on the host to download the Nawa source" >&2
-        exit 1
-    fi
-    if ! echo "$SHA  $TARBALL.part" | sha256sum -c --status; then
-        echo "fetch-nawa: sha256 mismatch for $URL — expected $SHA" >&2
-        rm -f "$TARBALL.part"
-        exit 1
-    fi
-    mv "$TARBALL.part" "$TARBALL"
-fi
-
-TMP="$(mktemp -d "$REPO/.nawa-fetch.XXXXXX")"
-trap 'rm -rf "$TMP"' EXIT
-tar -C "$TMP" -xzf "$TARBALL"
-[[ -f $TMP/$TOP/Cargo.toml ]] || {
-    echo "fetch-nawa: $TOP/Cargo.toml missing in the archive" >&2
-    exit 1
-}
-# Reject a recipe pin whose version does not match the downloaded source.
-ACTUAL_VERSION="$(awk -F '"' '/^version = "/ { print $2; exit }' "$TMP/$TOP/Cargo.toml")"
-[[ "$ACTUAL_VERSION" == "$VERSION" ]] || {
-    echo "fetch-nawa: source version $ACTUAL_VERSION does not match recipe version $VERSION" >&2
-    exit 1
-}
-
-rm -rf "$DEST"
-mv "$TMP/$TOP" "$DEST"
-printf '%s\\n' "$SHA" > "$DEST/.pinned-sha256"
 echo "fetch-nawa: Nawa $VERSION-$REL ($COMMIT) ready in $DEST"
