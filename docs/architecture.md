@@ -7,13 +7,19 @@ contracts and every option are in [bootstrap/README.md](../bootstrap/README.md).
 ## The three repositories
 
 ```
- faseela-repo  ── recipes/ (TOML) ──┐
-                                    ▼ bootstrap/fetch-recipes.sh (one commit per run, recorded in .recipes-rev)
- nawa          ── source, pinned ──► faseela ── build-all.sh ──► ISO, rootfs, rootfs-min
-                  in a recipe        ▲   (this repo)
-                  bootstrap/fetch-nawa.sh    │
- faseela-repo's packages.yml ────────┘ checks this repo out for bootstrap/*, profiles/, scripts/fetch-rootfs-seed.sh
+faseela-repo  ── recipes/ (TOML, including Nawa archive URL + SHA-256) ─┐
+                                                                      ▼
+nawa upstream ── source archive ──► bootstrap/fetch-nawa.sh (reads and verifies that recipe)
+                                      ▲
+                                      │
+faseela ── build-all.sh / bootstrap scripts ──► ISO, rootfs, rootfs-min
 ```
+
+`fetch-recipes.sh` fetches one faseela-repo commit per build and records it in
+`.recipes-rev`. `fetch-nawa.sh` reads the named `nawa` source entry from that
+same recipe tree, verifies its SHA-256, and extracts the source for the seed
+build. The ordinary Nawa package build uses the same recipe and pin. There is
+no second Bootstrap-only Nawa lock to keep synchronized.
 
 ## The pipeline
 

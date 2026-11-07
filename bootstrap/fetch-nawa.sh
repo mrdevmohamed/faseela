@@ -1,16 +1,12 @@
 #!/usr/bin/env bash
-# bootstrap/fetch-nawa.sh — unpack the Nawa source pinned by Bootstrap itself.
+# bootstrap/fetch-nawa.sh — fetch Nawa from the recipe shipped by faseela-repo.
 #
-# bootstrap/nawa-source.toml is the authoritative source lock. It deliberately
-# lives in the Faseela repository, not in faseela-repo: the bootstrap compiler
-# must not depend on the binary package repository being updated first.
-#
-# The same lock is applied to recipes/base/nawa/recipe.toml by
-# sync-nawa-recipe.py before stage 2, so the bootstrap binary and the Nawa
-# package installed into the final root always come from the same source.
+# recipes/base/nawa/recipe.toml is the only source pin. Bootstrap reads that
+# same named source before Nawa exists, verifies the archive, then uses the
+# seed Cargo toolchain to build Nawa.
 #
 # Behaviour:
-#   * the archive is cached in $REPO/srccache and checked against the lock SHA;
+#   * the archive is cached in $REPO/srccache and checked against the recipe SHA;
 #   * $REPO/nawa carries a .pinned-sha256 stamp for safe no-op reruns;
 #   * an unstamped $REPO/nawa is a developer checkout and is never overwritten.
 #
@@ -18,49 +14,103 @@
 set -euo pipefail
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
-LOCK="$REPO/bootstrap/nawa-source.toml"
+RECIPE="$REPO/recipes/base/nawa/recipe.toml"
 DEST="$REPO/nawa"
 CACHE="${NAWA_SRC_CACHE:-$REPO/srccache}"
 
-string_field() {
-    awk -F ' = ' -v key="$1" '$1 == key { gsub(/^"/, "", $2); gsub(/"$/, "", $2); print $2; exit }' "$LOCK"
-}
-integer_field() {
-    awk -F ' = ' -v key="$1" '$1 == key { print $2; exit }' "$LOCK"
-}
-
-[[ -r $LOCK ]] || { echo "fetch-nawa: source lock $LOCK not found" >&2; exit 1; }
-SCHEMA="$(integer_field schema)"
-[[ "$SCHEMA" == 1 ]] || {
-    echo "fetch-nawa: unsupported source lock schema '$SCHEMA' (expected 1)" >&2; exit 1;
-}
-SOURCE_REPO="$(string_field repository)"
-VERSION="$(string_field version)"
-REL="$(integer_field rel)"
-COMMIT="$(string_field commit)"
-SHA="$(string_field sha256)"
-TOP="nawa-$COMMIT"
-URL="https://github.com/$SOURCE_REPO/archive/$COMMIT.tar.gz"
-
-[[ "$SOURCE_REPO" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || {
-    echo "fetch-nawa: invalid repository in $LOCK" >&2; exit 1;
-}
-[[ "$COMMIT" =~ ^[0-9a-f]{40}$ ]] || {
-    echo "fetch-nawa: commit in $LOCK must be a full 40-character lowercase SHA" >&2; exit 1;
-}
-[[ "$SHA" =~ ^[0-9a-f]{64}$ && $SHA != 0000000000000000000000000000000000000000000000000000000000000000 ]] || {
-    echo "fetch-nawa: invalid or empty sha256 in $LOCK" >&2; exit 1;
-}
-[[ "$VERSION" =~ ^[0-9A-Za-z.+_-]+$ && "$REL" =~ ^[1-9][0-9]*$ ]] || {
-    echo "fetch-nawa: invalid version/rel in $LOCK" >&2; exit 1;
-}
-
+# Preserve an explicit developer checkout, even when the recipe tree is absent.
 if [[ -d $DEST && ! -f $DEST/.pinned-sha256 ]]; then
     echo "fetch-nawa: using your own checkout in $DEST (no .pinned-sha256 stamp) — not touching it"
     exit 0
 fi
+
+# The normal build driver fetches recipes first; keep this script safe standalone too.
+if [[ ! -r $RECIPE ]]; then
+    bash "$REPO/bootstrap/fetch-recipes.sh"
+fi
+[[ -r $RECIPE ]] || {
+    echo "fetch-nawa: missing $RECIPE (fetch the Faseela package recipes first)" >&2
+    exit 1
+}
+
+# Parse TOML structurally. package.source is a fail-closed compatibility
+# marker; the downloadable source is the unique package.sources entry named
+# "nawa".
+SOURCE_META="$(
+python3 - "$RECIPE" <<'PY'
+import re
+import sys
+import tomllib
+from pathlib import Path
+
+recipe = Path(sys.argv[1])
+try:
+    document = tomllib.loads(recipe.read_text(encoding="utf-8"))
+except (OSError, tomllib.TOMLDecodeError) as exc:
+    raise SystemExit(f"fetch-nawa: cannot parse {recipe}: {exc}")
+
+package = document.get("package", {})
+if package.get("name") != "nawa":
+    raise SystemExit("fetch-nawa: recipe package.name must be 'nawa'")
+
+sources = package.get("sources")
+if not isinstance(sources, list):
+    raise SystemExit("fetch-nawa: recipe must contain [[package.sources]]")
+
+matches = [
+    source for source in sources
+    if isinstance(source, dict) and source.get("name") == "nawa"
+]
+if len(matches) != 1:
+    raise SystemExit("fetch-nawa: recipe must contain exactly one source named 'nawa'")
+
+source = matches[0]
+url = source.get("url")
+match = re.fullmatch(
+    r"https://github\.com/([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+)/archive/([0-9a-f]{40})\.tar\.gz",
+    url if isinstance(url, str) else "",
+)
+if not match:
+    raise SystemExit(f"fetch-nawa: invalid Nawa GitHub archive URL: {url!r}")
+
+repository = f"{match.group(1)}/{match.group(2)}"
+if repository != "mrdevmohamed/nawa":
+    raise SystemExit(f"fetch-nawa: unexpected upstream repository {repository!r}")
+
+commit = match.group(3)
+sha256 = source.get("sha256")
+if not isinstance(sha256, str) or not re.fullmatch(r"[0-9a-f]{64}", sha256):
+    raise SystemExit("fetch-nawa: source sha256 must be 64 lowercase hex characters")
+if sha256 == "0" * 64:
+    raise SystemExit("fetch-nawa: source sha256 is an empty placeholder")
+
+version = package.get("version")
+if not isinstance(version, str) or not re.fullmatch(r"[0-9A-Za-z.+_-]+", version):
+    raise SystemExit("fetch-nawa: invalid package.version")
+rel = package.get("rel")
+if not isinstance(rel, int) or isinstance(rel, bool) or rel < 1:
+    raise SystemExit("fetch-nawa: package.rel must be a positive integer")
+
+for value in (repository, commit, sha256, version, str(rel)):
+    print(value)
+PY
+)" || exit 1
+
+mapfile -t SOURCE_FIELDS <<< "$SOURCE_META"
+if [[ ${#SOURCE_FIELDS[@]} -ne 5 ]]; then
+    echo "fetch-nawa: internal error while reading the Nawa recipe pin" >&2
+    exit 1
+fi
+SOURCE_REPO="${SOURCE_FIELDS[0]}"
+COMMIT="${SOURCE_FIELDS[1]}"
+SHA="${SOURCE_FIELDS[2]}"
+VERSION="${SOURCE_FIELDS[3]}"
+REL="${SOURCE_FIELDS[4]}"
+TOP="nawa-$COMMIT"
+URL="https://github.com/$SOURCE_REPO/archive/$COMMIT.tar.gz"
+
 if [[ -f $DEST/.pinned-sha256 && "$(cat "$DEST/.pinned-sha256")" == "$SHA" ]]; then
-    echo "fetch-nawa: $DEST is already at the pinned source ($COMMIT)"
+    echo "fetch-nawa: $DEST is already at the recipe-pinned source ($COMMIT)"
     exit 0
 fi
 
@@ -92,10 +142,10 @@ tar -C "$TMP" -xzf "$TARBALL"
     echo "fetch-nawa: $TOP/Cargo.toml missing in the archive" >&2
     exit 1
 }
-# Reject a lock whose package version does not match its source archive.
+# Reject a recipe pin whose version does not match the downloaded source.
 ACTUAL_VERSION="$(awk -F '"' '/^version = "/ { print $2; exit }' "$TMP/$TOP/Cargo.toml")"
 [[ "$ACTUAL_VERSION" == "$VERSION" ]] || {
-    echo "fetch-nawa: source version $ACTUAL_VERSION does not match lock version $VERSION" >&2
+    echo "fetch-nawa: source version $ACTUAL_VERSION does not match recipe version $VERSION" >&2
     exit 1
 }
 

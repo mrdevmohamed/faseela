@@ -375,7 +375,8 @@ stage_inputs() {   # the input contract of a stage, one key=value per line
         stage1) printf 'format=1\nscripts=%s\nseed=%s\n' \
                     "$(hash_files "$HERE/stage1.sh" "$HERE/stage1-inner.sh" "$HERE/sync-repo.sh" \
                          "$HERE/seed-from-rootfs.sh" \
-                         "$HERE/ensure-chroot-mounts.sh" "$HERE/enter-root.sh")" \
+                         "$HERE/ensure-chroot-mounts.sh" "$HERE/enter-root.sh" \
+                         "$HERE/fetch-recipes.sh" "$HERE/fetch-nawa.sh")" \
                     "$(seed_identity)" ;;
         stage2) printf 'format=1\nscripts=%s\nrecipes=%s\nprofiles=%s\ngui=%s\nisolation=%s\nlayout=%s\nset=%s\n' \
                     "$(hash_files "$HERE/stage2.sh" "$HERE/stage2-inner.sh" "$HERE/sync-repo.sh" \

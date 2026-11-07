@@ -58,12 +58,8 @@ jobs:
         run: shellcheck --severity=error bootstrap/*.sh bootstrap/seed/*.sh scripts/*.sh
       - name: fetch-recipes.sh tests (local fake GitHub)
         run: bash tests/test-fetch-recipes.sh
-      - name: fetch-nawa.sh tests (locked source archive, stubbed curl)
+      - name: fetch-nawa.sh tests (recipe-pinned archive, stubbed curl)
         run: bash tests/test-fetch-nawa.sh
-      - name: Nawa package recipe follows the independent Bootstrap lock
-        run: |
-          python3 bootstrap/sync-nawa-recipe.py
-          python3 bootstrap/sync-nawa-recipe.py --check
       - name: rootfs-min closure resolves (base-devel + nawa + network tools)
         run: python3 scripts/rootfs-closure.py recipes base-devel nawa git curl ca-certificates > /dev/null
       - name: selective Stage 3 Toolchain dependency-order tests
