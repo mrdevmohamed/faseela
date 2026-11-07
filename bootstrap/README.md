@@ -81,6 +81,22 @@ a specific one, `RECIPES_DIR=<path>` for another local tree). The commit is
 recorded in `.recipes-rev`. A `recipes/` without that stamp is your own copy
 and is never touched.
 
+### Nawa source: one pin, one recipe
+
+Bootstrap does not keep a separate `bootstrap/nawa-source.toml`. The source
+URL and SHA-256 live only in `recipes/base/nawa/recipe.toml`, under the
+`[[package.sources]]` entry named `nawa`. `fetch-nawa.sh` reads that entry
+directly, verifies the downloaded archive against its SHA-256, and checks the
+source version before extracting it. The same recipe is then used by Nawa to
+build the package in stage 2.
+
+This avoids a second version/commit/hash that could drift from the package
+recipe. For a reproducible build, keep the recipe revision recorded in
+`.recipes-rev` (or pass the same `RECIPES_REF` when rebuilding); Bootstrap and
+the package build then consume the same recipe pin. Stage 2 still uses the
+seed Cargo toolchain for `cargo fetch --locked` before its offline compile,
+because Nawa cannot run its own fetch backend until it has been built.
+
 ### Iterating on a few recipes: `rebuild.sh`
 
 `build-all.sh` fingerprints the WHOLE recipe tree, so editing one recipe
