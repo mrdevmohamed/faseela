@@ -2,6 +2,8 @@
 
 ## Unreleased — installing faseela, real hardware, a GUI that moves
 
+- **Simplified Bootstrap's Nawa source flow**: removed `bootstrap/nawa-source.toml` and `sync-nawa-recipe.py`; `fetch-nawa.sh` now reads the named `nawa` source and SHA-256 directly from the fetched package recipe, so the early seed build and the normal package build share one pin.
+
 - **Fixed** normal users created by `faseela-install` now join the `render` group when it exists. This grants access to `/dev/dri/renderD*` for hardware Vulkan; the GUI session creates the group and documents it alongside `video`.
 - **Fixed** the live ISO had **no installer**: `docs/boot-and-install.md` said `install.sh /dev/vda`, but nothing put the
   script in the image. `mkiso.sh` now installs it as `/usr/sbin/faseela-install` (the build fails without it).
