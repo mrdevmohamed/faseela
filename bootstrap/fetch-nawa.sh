@@ -16,7 +16,7 @@ set -euo pipefail
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 RECIPE="$REPO/recipes/base/nawa/recipe.toml"
 DEST="$REPO/nawa"
-CACHE="\${NAWA_SRC_CACHE:-$REPO/srccache}"
+CACHE="${NAWA_SRC_CACHE:-$REPO/srccache}"
 
 # Preserve an explicit developer checkout, even when the recipe tree is absent.
 if [[ -d $DEST && ! -f $DEST/.pinned-sha256 ]]; then
