@@ -11,13 +11,12 @@ check(){ if eval "$2" >/dev/null 2>&1; then echo "PASS $1"; PASS=$((PASS+1)); el
 
 mk() {   # $1 = tree dir; a minimal repo checkout with stub fetchers
     mkdir -p "$1/bootstrap/seed" "$1/recipes/base/nawa" "$1/profiles" "$1/nawa/src" "$1/nawa/target"
-    cp "$REPO/bootstrap/sync-repo.sh" "$REPO/bootstrap/sync-nawa-recipe.py" "$1/bootstrap/"
-    cp "$REPO/bootstrap/nawa-source.toml" "$1/bootstrap/"
+    cp "$REPO/bootstrap/sync-repo.sh" "$1/bootstrap/"
 cat > "$1/recipes/base/nawa/recipe.toml" <<'TOML'
 [package]
 name = "nawa"
-version = "0.1.0"
-rel = 1
+version = "1.0.0"
+rel = 17
 arch = ["x86_64"]
 summary = "test"
 license = ["GPL-3.0"]
@@ -40,7 +39,9 @@ TOML
 mk "$W/with"; mkdir -p "$W/with/dist"; echo 068fd409 > "$W/with/dist/nawa.pub"
 check "sync succeeds"                    "bash $W/with/bootstrap/sync-repo.sh $W/t1"
 check "dist/nawa.pub reaches the chroot" "[[ -s $W/t1/faseela/dist/nawa.pub ]]"
-check "Nawa recipe is synchronized from the Faseela lock" "grep -q "$(sed -n 's/^commit = "\(.*\)"/\1/p' bootstrap/nawa-source.toml)" $W/with/recipes/base/nawa/recipe.toml"
+check "recipe source pin is preserved for Bootstrap" "grep -q '0000000000000000000000000000000000000000' $W/t1/faseela/recipes/base/nawa/recipe.toml"
+check "no duplicate Nawa lock is copied" "[[ ! -e $W/t1/faseela/bootstrap/nawa-source.toml ]]"
+check "no Nawa recipe rewrite helper is copied" "[[ ! -e $W/t1/faseela/bootstrap/sync-nawa-recipe.py ]]"
 check "recipes and bootstrap are copied" "[[ -d $W/t1/faseela/recipes/base && -f $W/t1/faseela/bootstrap/sync-repo.sh ]]"
 check "seed tarball is still excluded"   "[[ ! -e $W/t1/faseela/bootstrap/seed ]]"
 check "nawa/target is still excluded"    "[[ ! -e $W/t1/faseela/nawa/target && -f $W/t1/faseela/nawa/src/main.rs ]]"
