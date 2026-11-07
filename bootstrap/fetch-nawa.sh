@@ -91,11 +91,59 @@ rel = package.get("rel")
 if not isinstance(rel, int) or isinstance(rel, bool) or rel < 1:
     raise SystemExit("fetch-nawa: package.rel must be a positive integer")
 
-print("\\t".join((repository, commit, sha256, version, str(rel))))
+print("\t".join((repository, commit, sha256, version, str(rel))))
 PY
 )" || exit 1
 
-IFS=$'\\t' read -r SOURCE_REPO COMMIT SHA VERSION REL <<< "$SOURCE_META"
+IFS= read -r SOURCE_REPO COMMIT SHA VERSION REL <<< "$SOURCE_META"
+TOP="nawa-$COMMIT"
+URL="https://github.com/$SOURCE_REPO/archive/$COMMIT.tar.gz"
+
+if [[ -f $DEST/.pinned-sha256 && "$(cat "$DEST/.pinned-sha256")" == "$SHA" ]]; then
+    echo "fetch-nawa: $DEST is already at the recipe-pinned source ($COMMIT)"
+    exit 0
+fi
+
+mkdir -p "$CACHE"
+TARBALL="$CACHE/$TOP.tar.gz"
+if [[ ! -f $TARBALL ]] || ! echo "$SHA  $TARBALL" | sha256sum -c --status; then
+    echo "fetch-nawa: downloading $URL"
+    rm -f "$TARBALL.part"
+    if command -v curl >/dev/null 2>&1; then
+        curl -fSL --retry 3 -o "$TARBALL.part" "$URL"
+    elif command -v wget >/dev/null 2>&1; then
+        wget -q -O "$TARBALL.part" "$URL"
+    else
+        echo "fetch-nawa: need curl or wget on the host to download the Nawa source" >&2
+        exit 1
+    fi
+    if ! echo "$SHA  $TARBALL.part" | sha256sum -c --status; then
+        echo "fetch-nawa: sha256 mismatch for $URL — expected $SHA" >&2
+        rm -f "$TARBALL.part"
+        exit 1
+    fi
+    mv "$TARBALL.part" "$TARBALL"
+fi
+
+TMP="$(mktemp -d "$REPO/.nawa-fetch.XXXXXX")"
+trap 'rm -rf "$TMP"' EXIT
+tar -C "$TMP" -xzf "$TARBALL"
+[[ -f $TMP/$TOP/Cargo.toml ]] || {
+    echo "fetch-nawa: $TOP/Cargo.toml missing in the archive" >&2
+    exit 1
+}
+# Reject a recipe pin whose version does not match the downloaded source.
+ACTUAL_VERSION="$(awk -F '"' '/^version = "/ { print $2; exit }' "$TMP/$TOP/Cargo.toml")"
+[[ "$ACTUAL_VERSION" == "$VERSION" ]] || {
+    echo "fetch-nawa: source version $ACTUAL_VERSION does not match recipe version $VERSION" >&2
+    exit 1
+}
+
+rm -rf "$DEST"
+mv "$TMP/$TOP" "$DEST"
+printf '%s\n' "$SHA" > "$DEST/.pinned-sha256"
+echo "fetch-nawa: Nawa $VERSION-$REL ($COMMIT) ready in $DEST"
+\t' read -r SOURCE_REPO COMMIT SHA VERSION REL <<< "$SOURCE_META"
 TOP="nawa-$COMMIT"
 URL="https://github.com/$SOURCE_REPO/archive/$COMMIT.tar.gz"
 
