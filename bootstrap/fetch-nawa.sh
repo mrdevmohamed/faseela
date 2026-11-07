@@ -95,7 +95,7 @@ print("\t".join((repository, commit, sha256, version, str(rel))))
 PY
 )" || exit 1
 
-IFS= read -r SOURCE_REPO COMMIT SHA VERSION REL <<< "$SOURCE_META"
+IFS=$'\t' read -r SOURCE_REPO COMMIT SHA VERSION REL <<< "$SOURCE_META"
 TOP="nawa-$COMMIT"
 URL="https://github.com/$SOURCE_REPO/archive/$COMMIT.tar.gz"
 
