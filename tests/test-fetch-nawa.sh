@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Test bootstrap/fetch-nawa.sh using the source pinned in recipes/base/nawa.
 # No network, root privileges, or real Nawa source download is needed.
-set -euo pipefail
+set -Eeuo pipefail
+trap 'rc=$?; echo "test-fetch-nawa: failed at line $LINENO: $BASH_COMMAND (exit $rc)" >&2; for log in "$W/first.log" "$W/second.log" "$W/user.log" "$W/bad.log" "$W/missing.log"; do if [[ -f $log ]]; then echo "--- $log ---" >&2; cat "$log" >&2; fi; done; exit "$rc"' ERR
 
 SOURCE_REPO="$(cd "$(dirname "$0")/.." && pwd)"
 W="$(mktemp -d /tmp/fetch-nawa-test.XXXXXX)"
