@@ -201,13 +201,12 @@ out= url=
 while (($#)); do
     case "$1" in
         --output|-o) out="$2"; shift 2 ;;
-        --retry|--retry-delay) shift 2 ;;
+        --retry|--retry-delay|--retry-max-time|--connect-timeout|--max-time) shift 2 ;;
         --*) shift ;;
         *) url="$1"; shift ;;
     esac
 done
 [[ -n "$out" && -n "$url" ]] || exit 2
-[[ -z "${FAKE_FAIL_DOWNLOAD:-}" ]] || exit 22
 prefix="https://github.com/${FAKE_GH_REPO}/releases/download/"
 [[ "$url" == "$prefix"* ]] || exit 22
 path="${url#"$prefix"}"
@@ -215,13 +214,18 @@ tag="${path%%/*}"
 asset="${path#*/}"
 [[ "$tag" != "$path" && -n "$asset" && "$asset" != */* ]] || exit 22
 src="$FAKE_REL/$tag/$asset"
+printf '%s\n' "$url" >> "$FAKE_CURL_LOG"
+if [[ -n "${FAKE_FAIL_DOWNLOAD:-}" || "${FAKE_FAIL_TAG:-}" == "$tag" ]]; then
+    printf 'partial download' > "$out"
+    exit 22
+fi
 [[ -s "$src" ]] || exit 22
 cp "$src" "$out"
-printf '%s\n' "$url" >> "$FAKE_CURL_LOG"
 EOF
 chmod +x "$WORK/fakebin/gh" "$WORK/fakebin/curl"
 export FAKE_REL="$WORK/rel" FAKE_TAGS="v3 v2 v1" FAKE_FAIL_DOWNLOAD=
 export FAKE_GH_REPO="test-owner/faseela" GH_REPO="test-owner/faseela"
+export FAKE_FAIL_TAG=
 export FAKE_CURL_LOG="$WORK/curl.log"
 PATH="$WORK/fakebin:$PATH" bash "$FETCH" "$WORK/dlF" > "$WORK/f.out" 2> "$WORK/f.err"; RC=$?
 check "F1 exit 0"                          "[[ $RC -eq 0 ]]"
@@ -233,6 +237,16 @@ check "F14 rootfs and checksum use direct release URLs" \
     "grep -qxF 'https://github.com/test-owner/faseela/releases/download/v2/faseela-x86_64-rootfs.tar.zst' $FAKE_CURL_LOG && grep -qxF 'https://github.com/test-owner/faseela/releases/download/v2/faseela-x86_64-rootfs.tar.zst.sha256' $FAKE_CURL_LOG"
 check "F15 asset downloads do not call the GitHub API" \
     "! grep -q 'api.github.com/repos/.*/releases/assets' $FAKE_CURL_LOG"
+# A transient CDN failure on the newest matching release must fall back to an
+# older release, then still verify that older release's checksum before use.
+FAKE_TAGS="v2 v1" FAKE_FAIL_TAG=v2 PATH="$WORK/fakebin:$PATH" \
+    bash "$FETCH" "$WORK/dlF10" > "$WORK/f10.out" 2> "$WORK/f10.err"; RC=$?
+check "F18 temporary newest-release download failure falls back to an older verified rootfs" \
+    "[[ $RC -eq 0 && \$(cat $WORK/f10.out) == $WORK/dlF10/faseela-x86_64-rootfs.tar.zst ]] && \
+     cmp -s $WORK/dlF10/faseela-x86_64-rootfs.tar.zst $WORK/rel/v1/faseela-x86_64-rootfs.tar.zst && \
+     grep -q 'trying an older rootfs release' $WORK/f10.err && \
+     grep -q '/v2/faseela-x86_64-rootfs.tar.zst' $FAKE_CURL_LOG && \
+     grep -q '/v1/faseela-x86_64-rootfs.tar.zst' $FAKE_CURL_LOG"
 # corrupt download: the sidecar no longer matches
 cp -r "$WORK/rel" "$WORK/rel2"; echo corrupt >> "$WORK/rel2/v2/faseela-x86_64-rootfs.tar.zst"
 FAKE_REL="$WORK/rel2" FAKE_TAGS="v2" PATH="$WORK/fakebin:$PATH" bash "$FETCH" "$WORK/dlF2" > "$WORK/f2.out" 2> "$WORK/f2.err"; RC=$?
