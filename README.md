@@ -20,6 +20,8 @@ it turns an empty directory into a bootable ISO and a self-hosting rootfs.
 | [faseela-repo](https://github.com/mrdevmohamed/faseela-repo) | every package recipe, and the workflow that builds + publishes signed packages |
 | [nawa](https://github.com/mrdevmohamed/nawa) | the package manager (`nawa install/build/upgrade/sync/...`) |
 
+**Online documentation:** [Faseela Linux docs](https://mrdevmohamed.github.io/faseela/)
+
 ## Quick start
 
 ```bash
