@@ -2,7 +2,7 @@
 
 faseela is a build system: a chain of scripts, each doing one stage, driven by
 `bootstrap/build-all.sh`. This page shows how the pieces connect; the stage
-contracts and every option are in [bootstrap/README.md](../bootstrap/README.md).
+contracts and every option are in [bootstrap/README.md](https://github.com/mrdevmohamed/faseela/blob/master/bootstrap/README.md).
 
 ## The three repositories
 

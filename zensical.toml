@@ -1,0 +1,29 @@
+[project]
+site_name = "Faseela Linux"
+site_description = "Documentation for Faseela Linux: installation, package management, architecture, and development."
+site_url = "https://mrdevmohamed.github.io/faseela/"
+site_author = "Faseela contributors"
+repo_url = "https://github.com/mrdevmohamed/faseela"
+edit_uri = "edit/master/docs/"
+docs_dir = "docs"
+site_dir = "site"
+
+nav = [
+  "index.md",
+  { "Getting started" = ["getting-started.md"] },
+  { "User guide" = ["boot-and-install.md", "nawa-usage.md"] },
+  { "Build and architecture" = ["building-faseela.md", "architecture.md", "kernel-initramfs.md", "design/build-isolation.md"] },
+  { "Project" = ["ci.md", "roadmap.md", "contributing.md"] },
+  { "Historical notes" = ["history/bootstrap-audit.md"] },
+]
+
+[project.theme]
+variant = "modern"
+features = [
+  "navigation.instant",
+  "navigation.sections",
+  "navigation.top",
+  "navigation.footer",
+  "search.suggest",
+  "search.highlight",
+]
