@@ -72,6 +72,8 @@ if [[ -z $tags ]]; then
     exit 3
 fi
 
+saw_candidate=0
+
 while IFS= read -r tag; do
     [[ -n $tag ]] || continue
     assets="$(gh release view "$tag" "${REPO_ARGS[@]}" --json assets --jq '.assets[].name')" \
@@ -90,18 +92,49 @@ while IFS= read -r tag; do
         continue
     fi
 
-    log "using the rootfs of release $tag ($asset)"
+    saw_candidate=1
+    log "trying rootfs from release $tag ($asset)"
     mkdir -p "$OUTDIR"
     # Public release assets download directly, avoiding the GitHub API asset endpoint.
     release_url="https://github.com/$GH_REPO/releases/download/$tag"
+
+    download_asset() { # URL DESTINATION; keep incomplete downloads out of the usable path
+        local url="$1" destination="$2" part="${2}.part"
+        rm -f "$part"
+        if ! curl --fail --location --silent --show-error \
+            --retry 8 --retry-all-errors --retry-delay 5 --retry-max-time 240 \
+            --connect-timeout 30 --max-time 1800 \
+            --output "$part" "$url" >&2; then
+            rm -f "$part"
+            return 1
+        fi
+        if [[ ! -s "$part" ]]; then
+            log "$(basename "$destination") from $tag is empty after download"
+            rm -f "$part"
+            return 1
+        fi
+        mv -f "$part" "$destination"
+    }
+
+    download_failed=0
     for a in "$asset" "$asset.sha256"; do
-        curl --fail --location --silent --show-error \
-            --retry 3 --retry-all-errors --retry-delay 2 \
-            --output "$OUTDIR/$a" "$release_url/$a" >&2 \
-            || { log "download of $a from $tag failed"; rm -f "$OUTDIR/$asset" "$OUTDIR/$asset.sha256"; exit 5; }
-        [[ -s $OUTDIR/$a ]] || { log "$a from $tag is missing or empty after the download"; rm -f "$OUTDIR/$asset" "$OUTDIR/$asset.sha256"; exit 5; }
+        if ! download_asset "$release_url/$a" "$OUTDIR/$a"; then
+            log "download of $a from $tag failed after retries"
+            download_failed=1
+            break
+        fi
     done
-    # the sidecar is `sha256sum` format with the bare file name (mkrootfs.sh)
+    if (( download_failed )); then
+        # A CDN/edge failure is not evidence that the release is corrupt. Try
+        # the next older release that carries both files; never use a partial
+        # download and never skip checksum verification.
+        rm -f "$OUTDIR/$asset" "$OUTDIR/$asset.sha256" \
+            "$OUTDIR/$asset.part" "$OUTDIR/$asset.sha256.part"
+        log "release $tag is temporarily unavailable; trying an older rootfs release"
+        continue
+    fi
+
+    # The sidecar is sha256sum format with the bare file name (mkrootfs.sh).
     if ! ( cd "$OUTDIR" && sha256sum -c --quiet "$asset.sha256" ) >&2; then
         log "sha256 of $asset (release $tag) does not match its .sha256 — refusing to use it"
         rm -f "$OUTDIR/$asset" "$OUTDIR/$asset.sha256"
@@ -112,5 +145,9 @@ while IFS= read -r tag; do
     exit 0
 done <<< "$tags"
 
+if (( saw_candidate )); then
+    log "rootfs assets were found in the last $MAXREL release(s), but none could be downloaded"
+    exit 5
+fi
 log "none of the last $MAXREL release(s) carries $ASSET"
 exit 3
