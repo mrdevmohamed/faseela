@@ -1,4 +1,10 @@
-# faseela
+<p align="center">
+  <img src="docs/assets/logo.svg" alt="Faseela: a young date palm leaning left" width="120" height="120">
+</p>
+
+<h1 align="center">faseela</h1>
+
+<p align="center"><em>Grown from seed.</em></p>
 
 A from-scratch, source-based Linux distribution (Gentoo-style): glibc, gcc, runit, and its
 own package manager written in Rust. This repository is the **distribution build system**:
