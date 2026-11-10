@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" width="1920" height="1080" role="img" aria-label="Faseela wallpaper: night dunes under a crescent moon, with a small young palm leaning left on a dune ridge">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0A1422"/>
+      <stop offset="0.65" stop-color="#16294A"/>
+      <stop offset="1" stop-color="#24395C"/>
+    </linearGradient>
+    <radialGradient id="moonGlow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#F4EBD3" stop-opacity="0.28"/>
+      <stop offset="1" stop-color="#F4EBD3" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="sproutGlow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#E6B53A" stop-opacity="0.32"/>
+      <stop offset="1" stop-color="#E6B53A" stop-opacity="0"/>
+    </radialGradient>
+    <mask id="trunkMask" maskUnits="userSpaceOnUse" x="0" y="0" width="120" height="120">
+      <rect width="120" height="120" fill="#fff"/>
+      <path d="M42 96 L54 100 M44 88 L56 92 M48 80 L59 84" fill="none" stroke="#000" stroke-width="2.4" stroke-linecap="round"/>
+    </mask>
+    <mask id="crescent">
+      <rect width="1280" height="720" fill="#000"/>
+      <circle cx="300" cy="170" r="60" fill="#fff"/>
+      <circle cx="328" cy="156" r="52" fill="#000"/>
+    </mask>
+  </defs>
+  <rect width="1280" height="720" fill="url(#sky)"/>
+  <g fill="#EADFC8">
+    <circle cx="90" cy="70" r="1.6" opacity="0.8"/><circle cx="180" cy="130" r="1.2" opacity="0.6"/><circle cx="470" cy="60" r="1.8" opacity="0.8"/>
+    <circle cx="560" cy="150" r="1.2" opacity="0.5"/><circle cx="650" cy="90" r="1.6" opacity="0.7"/><circle cx="760" cy="48" r="1.2" opacity="0.6"/>
+    <circle cx="840" cy="170" r="1.4" opacity="0.6"/><circle cx="930" cy="80" r="1.8" opacity="0.8"/><circle cx="1040" cy="140" r="1.2" opacity="0.5"/>
+    <circle cx="1130" cy="60" r="1.6" opacity="0.8"/><circle cx="1210" cy="190" r="1.2" opacity="0.6"/><circle cx="380" cy="270" r="1.2" opacity="0.5"/>
+    <circle cx="700" cy="260" r="1.2" opacity="0.4"/><circle cx="1090" cy="280" r="1.4" opacity="0.5"/><circle cx="130" cy="250" r="1.4" opacity="0.5"/>
+    <circle cx="250" cy="40" r="1.2" opacity="0.6"/><circle cx="1000" cy="35" r="1.2" opacity="0.5"/><circle cx="520" cy="300" r="1" opacity="0.4"/>
+  </g>
+  <circle cx="300" cy="170" r="190" fill="url(#moonGlow)"/>
+  <circle cx="300" cy="170" r="60" fill="#F4EBD3" mask="url(#crescent)"/>
+  <path d="M0 470 C200 420 360 460 560 440 C760 420 980 380 1280 450 L1280 720 L0 720Z" fill="#1A2D4A"/>
+  <path d="M0 560 C240 500 420 540 640 520 C860 500 1060 470 1280 530 L1280 720 L0 720Z" fill="#101F34"/>
+  <circle cx="880" cy="452" r="140" fill="url(#sproutGlow)"/>
+  <g transform="translate(900 500) scale(-1.6 1.6) translate(-48 -106)">
+    <path mask="url(#trunkMask)" d="M40 106 C40 94 46 82 58 66 L66 70 C58 84 56 94 56 106Z" fill="#D8CBAE"/>
+    <g transform="translate(62 68) rotate(14)" fill="#5DBB63">
+      <path d="M0 0 C-5 -10 -5 -28 0 -48 C5 -28 5 -10 0 0Z"/>
+      <path transform="rotate(34)" d="M0 0 C-3 -12 3 -29 21 -40 C13 -26 7 -12 0 0Z"/>
+      <path transform="rotate(66)" d="M0 0 C-3 -12 3 -29 21 -40 C13 -26 7 -12 0 0Z"/>
+      <path transform="scale(-1 1) rotate(30)" d="M0 0 C-3 -12 3 -29 19 -40 C12 -26 7 -12 0 0Z"/>
+      <path transform="scale(-1 1) rotate(62)" d="M0 0 C-3 -12 3 -29 17 -36 C11 -24 6 -12 0 0Z"/>
+    </g>
+    <circle cx="62" cy="68" r="5" fill="#E6B53A"/>
+  </g>
+  <path d="M0 640 C260 600 520 650 800 625 C1000 607 1150 600 1280 625 L1280 720 L0 720Z" fill="#0A1422"/>
+</svg>
