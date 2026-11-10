@@ -2,6 +2,7 @@
 
 ## Unreleased — installing faseela, real hardware, a GUI that moves
 
+- **Added** a Faseela GRUB theme (`branding/grub/`, exported by `branding/build.sh`): logo, night background, centred menu with a highlight bar. `mkiso.sh` and `faseela-install` use it only when both the theme and `unicode.pf2` are present, and fall back to the plain menu otherwise. Tests cover both cases (`tests/test-mkiso.sh`, `tests/validate-install.sh`); checked by booting the ISO in QEMU (BIOS and UEFI). Ships in faseela-repo's `faseela-branding` rel 2.
 - **Simplified Bootstrap's Nawa source flow**: removed `bootstrap/nawa-source.toml` and `sync-nawa-recipe.py`; `fetch-nawa.sh` now reads the named `nawa` source and SHA-256 directly from the fetched package recipe, so the early seed build and the normal package build share one pin.
 
 - **Fixed** normal users created by `faseela-install` now join the `render` group when it exists. This grants access to `/dev/dri/renderD*` for hardware Vulkan; the GUI session creates the group and documents it alongside `video`.
