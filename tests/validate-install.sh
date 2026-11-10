@@ -142,6 +142,11 @@ check "chroot passwd"        "chroot .* /usr/bin/passwd root"
 check "unmount"              "umount -R .*"
 [ -f "$WORK/mnt/boot/initramfs.img" ] && echo "  ok: initramfs copied" || { echo "  FAIL: initramfs copy"; exit 1; }
 
+# no theme on the media and none in the installed root: the plain menu, entries intact
+! grep -q 'theme' "$WORK/mnt/boot/grub/grub.cfg" && echo "  ok: no theme settings without a theme" || { echo "  FAIL: theme settings without a theme"; exit 1; }
+[ ! -e "$WORK/mnt/boot/grub/themes" ] && echo "  ok: no theme directory without a theme" || { echo "  FAIL: theme directory without a theme"; exit 1; }
+grep -q '^menuentry "faseela"' "$WORK/mnt/boot/grub/grub.cfg" && echo "  ok: boot entry still written" || { echo "  FAIL: boot entry missing"; cat "$WORK/mnt/boot/grub/grub.cfg"; exit 1; }
+
 # package cache: copied for rollback, minus the remote subcache (the stub
 # rsync only logs — assert the invocation, not the result on disk)
 check "pkg cache rsync"      "rsync -a --exclude=remote .*/pkgcache/ .*mnt/var/cache/nawa"
@@ -153,6 +158,11 @@ echo "== BIOS install =="
 : > "$CMDLOG"
 rm -rf "$WORK/mnt"; mkdir -p "$WORK/mnt/etc"
 printf '127.0.0.1 localhost faseela\n' > "$WORK/mnt/etc/hosts"
+# the live media carries the boot screen: theme from faseela-branding, font from grub-mkrescue
+mkdir -p "$KSRC/grub/themes/faseela" "$KSRC/grub/fonts"
+printf 'desktop-color: "#0E1A2B"\n' > "$KSRC/grub/themes/faseela/theme.txt"
+printf 'png\n' > "$KSRC/grub/themes/faseela/background.png"
+printf 'pf2\n' > "$KSRC/grub/fonts/unicode.pf2"
 run_install bios
 
 check "MBR label"            "parted -s /dev/vda mklabel msdos"
@@ -164,6 +174,29 @@ check "grub MBR target"      "grub-install --target=i386-pc --boot-directory=.* 
 check_absent "no UEFI target on BIOS" "x86_64-efi"
 grep -q "UUID=aaaa-1111  /      ext4" "$WORK/mnt/etc/fstab" && echo "  ok: fstab root = vda1 UUID" || { echo "  FAIL: bios fstab"; cat "$WORK/mnt/etc/fstab"; exit 1; }
 ! grep -q "/boot/efi" "$WORK/mnt/etc/fstab" && echo "  ok: no EFI row on BIOS" || { echo "  FAIL: efi row present"; exit 1; }
+
+# boot screen: theme and font land in /boot/grub and grub.cfg loads them before the entries
+GCFG="$WORK/mnt/boot/grub/grub.cfg"
+[ -f "$WORK/mnt/boot/grub/themes/faseela/theme.txt" ] && [ -f "$WORK/mnt/boot/grub/themes/faseela/background.png" ] \
+    && echo "  ok: grub theme installed" || { echo "  FAIL: grub theme not installed"; exit 1; }
+[ -f "$WORK/mnt/boot/grub/fonts/unicode.pf2" ] && echo "  ok: grub font installed" || { echo "  FAIL: grub font missing"; exit 1; }
+grep -q '^if loadfont ${prefix}/fonts/unicode.pf2; then' "$GCFG" && grep -q '^    set theme=${prefix}/themes/faseela/theme.txt' "$GCFG" \
+    && echo "  ok: grub.cfg loads font and theme" || { echo "  FAIL: grub.cfg theme lines"; cat "$GCFG"; exit 1; }
+[ "$(grep -n 'set theme=' "$GCFG" | head -1 | cut -d: -f1)" -lt "$(grep -n '^menuentry' "$GCFG" | head -1 | cut -d: -f1)" ] \
+    && echo "  ok: theme is set before the entries" || { echo "  FAIL: theme after the entries"; exit 1; }
+grep -q '^set timeout=3' "$GCFG" && grep -q '^menuentry "faseela"' "$GCFG" \
+    && echo "  ok: entries and timeout unchanged" || { echo "  FAIL: entries changed"; cat "$GCFG"; exit 1; }
+
+# a theme without a font must not produce a half-working config: plain menu again
+echo "== BIOS install, theme but no font =="
+: > "$CMDLOG"
+rm -rf "$WORK/mnt"; mkdir -p "$WORK/mnt/etc"
+printf '127.0.0.1 localhost faseela\n' > "$WORK/mnt/etc/hosts"
+mv "$KSRC/grub/fonts/unicode.pf2" "$WORK/unicode.pf2.hidden"
+run_install bios
+! grep -q 'theme' "$GCFG" && [ ! -e "$WORK/mnt/boot/grub/themes" ] \
+    && echo "  ok: no font -> plain menu, no theme copied" || { echo "  FAIL: theme used without a font"; cat "$GCFG"; exit 1; }
+mv "$WORK/unicode.pf2.hidden" "$KSRC/grub/fonts/unicode.pf2"
 
 # ==================================================== refusal behaviors ===
 echo "== safety checks =="

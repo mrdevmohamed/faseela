@@ -21,6 +21,8 @@ Fonts: **Cairo** (Arabic and display), **Space Grotesk** (Latin headings and UI)
 | `mark.tpl.svg` | the bare mark; `@INK@` `@LEAF@` `@GOLD@` are filled in per colour variant |
 | `icon.tpl.svg` | the app icon: the mark on a rounded night square |
 | `wallpaper.svg` | the default wallpaper (night dunes, crescent moon, the young palm) |
+| `grub-background.svg` | the boot-menu background (the wallpaper without the palm; the logo is drawn on top) |
+| `grub/theme.txt` | the GRUB theme: logo, gold name, centred menu with a highlight bar |
 | `build.sh` | exports everything to `branding/out/` (git-ignored) |
 
 ```bash
@@ -28,8 +30,8 @@ branding/build.sh                       # needs rsvg-convert (librsvg)
 branding/build.sh --sync ../faseela-repo   # also refresh faseela-repo's faseela-branding recipe
 ```
 
-The installed system gets the icon (`hicolor/…/apps/faseela`), the marks and the
-wallpaper from the **faseela-branding** package in
+The installed system gets the icon (`hicolor/…/apps/faseela`), the marks, the
+wallpaper and the GRUB theme (`/usr/share/grub/themes/faseela`) from the **faseela-branding** package in
 [faseela-repo](https://github.com/mrdevmohamed/faseela-repo). After changing a source
 here, run `--sync` and bump that recipe's `rel`.
 

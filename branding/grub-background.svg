@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" width="1280" height="720" role="img" aria-label="Faseela boot screen background: night dunes under a crescent moon">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0A1422"/>
+      <stop offset="0.65" stop-color="#16294A"/>
+      <stop offset="1" stop-color="#24395C"/>
+    </linearGradient>
+    <radialGradient id="moonGlow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#F4EBD3" stop-opacity="0.28"/>
+      <stop offset="1" stop-color="#F4EBD3" stop-opacity="0"/>
+    </radialGradient>
+    <mask id="crescent">
+      <rect width="1280" height="720" fill="#000"/>
+      <circle cx="300" cy="170" r="60" fill="#fff"/>
+      <circle cx="328" cy="156" r="52" fill="#000"/>
+    </mask>
+  </defs>
+  <rect width="1280" height="720" fill="url(#sky)"/>
+  <g fill="#EADFC8">
+    <circle cx="90" cy="70" r="1.6" opacity="0.8"/><circle cx="180" cy="130" r="1.2" opacity="0.6"/><circle cx="470" cy="60" r="1.8" opacity="0.8"/>
+    <circle cx="560" cy="150" r="1.2" opacity="0.5"/><circle cx="650" cy="90" r="1.6" opacity="0.7"/><circle cx="760" cy="48" r="1.2" opacity="0.6"/>
+    <circle cx="840" cy="170" r="1.4" opacity="0.6"/><circle cx="930" cy="80" r="1.8" opacity="0.8"/><circle cx="1040" cy="140" r="1.2" opacity="0.5"/>
+    <circle cx="1130" cy="60" r="1.6" opacity="0.8"/><circle cx="1210" cy="190" r="1.2" opacity="0.6"/><circle cx="380" cy="270" r="1.2" opacity="0.5"/>
+    <circle cx="700" cy="260" r="1.2" opacity="0.4"/><circle cx="1090" cy="280" r="1.4" opacity="0.5"/><circle cx="130" cy="250" r="1.4" opacity="0.5"/>
+    <circle cx="250" cy="40" r="1.2" opacity="0.6"/><circle cx="1000" cy="35" r="1.2" opacity="0.5"/><circle cx="520" cy="300" r="1" opacity="0.4"/>
+  </g>
+  <circle cx="300" cy="170" r="190" fill="url(#moonGlow)"/>
+  <circle cx="300" cy="170" r="60" fill="#F4EBD3" mask="url(#crescent)"/>
+  <path d="M0 470 C200 420 360 460 560 440 C760 420 980 380 1280 450 L1280 720 L0 720Z" fill="#1A2D4A"/>
+  <path d="M0 560 C240 500 420 540 640 520 C860 500 1060 470 1280 530 L1280 720 L0 720Z" fill="#101F34"/>
+  <path d="M0 640 C260 600 520 650 800 625 C1000 607 1150 600 1280 625 L1280 720 L0 720Z" fill="#0A1422"/>
+</svg>

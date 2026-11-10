@@ -1,0 +1,72 @@
+# Faseela GRUB theme.
+#
+# Uses only what GRUB ships: the font loaded from unicode.pf2 ("Unifont Regular 16")
+# and three images exported by branding/build.sh (background.png, logo.png,
+# select_c.png). No Arabic text on purpose: GRUB does not shape Arabic.
+
+desktop-image: "background.png"
+desktop-image-scale-method: "crop"
+desktop-image-h-align: "center"
+desktop-image-v-align: "center"
+desktop-color: "#0E1A2B"
+
+title-text: ""
+terminal-font: "Unifont Regular 16"
+terminal-left: "0"
+terminal-top: "0"
+terminal-width: "100%"
+terminal-height: "100%"
+terminal-border: "0"
+
++ image {
+    left = 50%-64
+    top = 7%
+    width = 128
+    height = 128
+    file = "logo.png"
+}
+
++ label {
+    left = 0
+    top = 31%
+    width = 100%
+    align = "center"
+    color = "#E6B53A"
+    font = "Unifont Regular 16"
+    text = "F A S E E L A"
+}
+
++ boot_menu {
+    left = 50%-230
+    top = 40%
+    width = 460
+    height = 34%
+    item_font = "Unifont Regular 16"
+    item_color = "#EADFC8"
+    selected_item_color = "#E6B53A"
+    item_height = 34
+    item_padding = 10
+    item_spacing = 6
+    selected_item_pixmap_style = "select_*.png"
+}
+
++ label {
+    id = "__timeout__"
+    left = 0
+    top = 84%
+    width = 100%
+    align = "center"
+    color = "#B9C2D0"
+    font = "Unifont Regular 16"
+    text = "Booting in %d seconds"
+}
+
++ label {
+    left = 0
+    top = 94%
+    width = 100%
+    align = "center"
+    color = "#8E99AB"
+    font = "Unifont Regular 16"
+    text = "Up/Down: choose    Enter: boot    e: edit    c: command line"
+}

@@ -8,6 +8,8 @@
 #     that cannot boot
 #   * failure propagation from initramfs/mksquashfs (non-zero in = non-zero out)
 #   * knob propagation (VOL_ID, SQUASH_COMP reach the tools)
+#   * the GRUB boot screen: theme copied from the root when faseela-branding is
+#     there, plain menu (and a still-valid grub.cfg) when it is not
 #
 # No root and no real ISO tooling is needed — everything is stubbed.
 set -uo pipefail
@@ -31,9 +33,11 @@ EOF
 cat > "$BIN/grub-mkrescue" <<'EOF'
 #!/bin/sh
 echo "grub-mkrescue $*" >> "$STUB_LOG"
-out=""; prev=""
-for a in "$@"; do [ "$prev" = "-o" ] && out="$a"; prev="$a"; done
+out=""; prev=""; src=""
+for a in "$@"; do [ "$prev" = "-o" ] && out="$a"; [ -d "$a" ] && src="$a"; prev="$a"; done
 dd if=/dev/zero of="$out" bs=1K count=8 status=none
+# the tree the image is built from is deleted when mkiso.sh exits: keep a copy to inspect
+if [ -n "${CAPTURE:-}" ] && [ -n "$src" ]; then rm -rf "$CAPTURE"; cp -r "$src" "$CAPTURE"; fi
 EOF
 cat > "$BIN/xorriso" <<'EOF'
 #!/bin/sh
@@ -54,6 +58,7 @@ printf 'initramfs-bytes' > "$out"
 EOF
 chmod +x "$BIN"/*
 export STUB_LOG="$W/stub.log"
+export CAPTURE="$W/iso-tree"
 
 # ---- root fixture ------------------------------------------------------------
 ROOT="$W/root"
@@ -167,5 +172,26 @@ RC=$(RUN_MKISO)
 check "E3 mksquashfs failure propagates (exit 5)" "[[ $RC -eq 5 ]]"
 check "E4 no ISO shipped"                         "[[ ! -s $W/out/my.iso ]]"
 mv "$W/mksquashfs.good" "$BIN/mksquashfs"
+
+# ---- G. boot screen (GRUB theme) ---------------------------------------------
+GCFG="$CAPTURE/boot/grub/grub.cfg"
+good_ls
+RC=$(RUN_MKISO)
+check "G1 no theme in the root: the build still succeeds"   "[[ $RC -eq 0 ]] && OUT | grep -q 'grub theme  = none'"
+check "G2 plain menu: no theme settings in grub.cfg"        "[[ -f $GCFG ]] && ! grep -q 'theme' $GCFG"
+check "G3 plain menu: no theme directory on the image"      "[[ ! -e $CAPTURE/boot/grub/themes ]]"
+check "G4 plain menu: the three entries are intact"         "[[ \$(grep -c '^menuentry' $GCFG) -eq 3 ]]"
+mkdir -p "$ROOT/usr/share/grub/themes/faseela"
+printf 'desktop-color: "#0E1A2B"\n' > "$ROOT/usr/share/grub/themes/faseela/theme.txt"
+printf 'png\n' > "$ROOT/usr/share/grub/themes/faseela/background.png"
+good_ls
+RC=$(RUN_MKISO)
+check "G5 theme in the root: reported"                      "[[ $RC -eq 0 ]] && OUT | grep -q 'grub theme  = faseela'"
+check "G6 theme files are copied onto the image"            "[[ -f $CAPTURE/boot/grub/themes/faseela/theme.txt && -f $CAPTURE/boot/grub/themes/faseela/background.png ]]"
+check "G7 grub.cfg loads the font"                          "grep -q '^if loadfont \${prefix}/fonts/unicode.pf2; then' $GCFG"
+check "G8 grub.cfg sets the theme"                          "grep -q '^    set theme=\${prefix}/themes/faseela/theme.txt' $GCFG"
+check "G9 the theme is set before the first entry"          "[[ \$(grep -n 'set theme=' $GCFG | head -1 | cut -d: -f1) -lt \$(grep -n '^menuentry' $GCFG | head -1 | cut -d: -f1) ]]"
+check "G10 entries and kernel arguments are unchanged"      "[[ \$(grep -c '^menuentry' $GCFG) -eq 3 ]] && grep -q 'linux /boot/$KVER' $GCFG && grep -q '^set timeout=' $GCFG"
+rm -rf "$ROOT/usr/share/grub"
 
 echo; echo "  PASS: $PASS   FAIL: $FAIL"; [[ $FAIL -eq 0 ]]

@@ -72,6 +72,16 @@ files and are updated by the Linux package's Nawa hooks. See
 and the current initramfs limitations. Both grub platforms (`i386-pc` and
 `x86_64-efi`) are in the image: the `grub` recipe builds them (rel 2).
 
+### Boot screen
+
+When the `faseela-branding` package is in the image, `mkiso.sh` puts its GRUB theme
+(`/usr/share/grub/themes/faseela`) on the ISO, and the live menu and the installed
+system show the Faseela logo, a night background and a centred menu (BIOS and UEFI alike).
+The theme needs GRUB's `unicode.pf2` font: `grub-mkrescue` ships it on the ISO and the
+installer copies it from the live media. If either the theme or the font is missing,
+the plain text menu is kept and nothing else changes. The theme has no Arabic text,
+because GRUB cannot shape Arabic.
+
 ## Trying it in QEMU
 
 ```

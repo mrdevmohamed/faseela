@@ -405,7 +405,50 @@ fi
 
 KNAME="$(basename "$KERNEL")"
 mkdir -p "$MNT/boot/grub"
-cat > "$MNT/boot/grub/grub.cfg" <<EOF
+
+# The Faseela boot screen. Optional, like in mkiso.sh: it needs the theme (from the live
+# media, or from the faseela-branding package in the installed root) AND a GRUB font.
+# grub-install brings the font when the grub package ships one; otherwise it comes from
+# the live media, where grub-mkrescue put it. Missing either one keeps the plain menu.
+MEDIA_BOOT="${KERNEL_SRC:-/cdrom/boot}"   # the live media's /boot (KERNEL_SRC is the test hook)
+THEME_SRC=""
+for d in "$MEDIA_BOOT/grub/themes/faseela" "$MNT/usr/share/grub/themes/faseela"; do
+    if [ -f "$d/theme.txt" ]; then THEME_SRC="$d"; break; fi
+done
+FONT_SRC=""
+for f in "$MNT/boot/grub/fonts/unicode.pf2" "$MEDIA_BOOT/grub/fonts/unicode.pf2" "$MNT/usr/share/grub/unicode.pf2"; do
+    if [ -f "$f" ]; then FONT_SRC="$f"; break; fi
+done
+GRUB_THEME=0
+if [ -n "$THEME_SRC" ] && [ -n "$FONT_SRC" ]; then
+    run mkdir -p "$MNT/boot/grub/themes/faseela" "$MNT/boot/grub/fonts"
+    run cp -r "$THEME_SRC/." "$MNT/boot/grub/themes/faseela/"
+    [ "$FONT_SRC" = "$MNT/boot/grub/fonts/unicode.pf2" ] || run cp "$FONT_SRC" "$MNT/boot/grub/fonts/unicode.pf2"
+    GRUB_THEME=1
+    log "grub theme: faseela"
+else
+    log "grub theme: none (theme: ${THEME_SRC:-missing}, font: ${FONT_SRC:-missing}) — keeping the plain boot menu"
+fi
+
+: > "$MNT/boot/grub/grub.cfg"
+if [ "$GRUB_THEME" = 1 ]; then
+    cat >> "$MNT/boot/grub/grub.cfg" <<'GFX'
+set menu_color_normal=white/black
+set menu_color_highlight=black/yellow
+if loadfont ${prefix}/fonts/unicode.pf2; then
+    set gfxmode=auto
+    insmod all_video
+    insmod gfxterm
+    insmod gfxmenu
+    insmod png
+    terminal_output gfxterm
+    set theme=${prefix}/themes/faseela/theme.txt
+    export theme
+fi
+
+GFX
+fi
+cat >> "$MNT/boot/grub/grub.cfg" <<EOF
 set default=0
 set timeout=3
 

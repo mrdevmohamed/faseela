@@ -123,7 +123,41 @@ mksquashfs "$ROOT" "$ISO/live/rootfs.squashfs" \
 # (CI boots the ISO in QEMU and waits for the login prompt there), while
 # /dev/console stays the screen, so a real machine behaves as before.
 cp "$KERNEL" "$ISO/boot/$KVER"
-cat > "$ISO/boot/grub/grub.cfg" <<EOF
+
+# The Faseela boot screen (theme from the faseela-branding package). Optional: a root
+# without the package keeps GRUB's plain menu. No font to copy: grub-mkrescue installs
+# unicode.pf2 into the image itself (its --fonts option defaults to unicode), and the
+# disk installer later takes it from /cdrom/boot/grub/fonts.
+THEME_SRC="$ROOT/usr/share/grub/themes/faseela"
+if [[ -f $THEME_SRC/theme.txt ]]; then
+    mkdir -p "$ISO/boot/grub/themes/faseela"
+    cp -r "$THEME_SRC/." "$ISO/boot/grub/themes/faseela/"
+    echo "== stage4: grub theme  = faseela"
+else
+    echo "== stage4: grub theme  = none ($THEME_SRC missing: install faseela-branding)"
+fi
+
+: > "$ISO/boot/grub/grub.cfg"
+if [[ -f $ISO/boot/grub/themes/faseela/theme.txt ]]; then
+    # every step is optional: without the font, or when no video mode can be set,
+    # GRUB keeps its plain text menu (the colours below are that menu's colours)
+    cat >> "$ISO/boot/grub/grub.cfg" <<'GFX'
+set menu_color_normal=white/black
+set menu_color_highlight=black/yellow
+if loadfont ${prefix}/fonts/unicode.pf2; then
+    set gfxmode=auto
+    insmod all_video
+    insmod gfxterm
+    insmod gfxmenu
+    insmod png
+    terminal_output gfxterm
+    set theme=${prefix}/themes/faseela/theme.txt
+    export theme
+fi
+
+GFX
+fi
+cat >> "$ISO/boot/grub/grub.cfg" <<EOF
 set default=0
 set timeout=5
 
