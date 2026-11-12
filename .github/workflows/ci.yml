@@ -86,6 +86,8 @@ jobs:
         run: bash tests/test-mkflavor.sh
       - name: check-flavor-packages.py tests
         run: bash tests/test-check-flavor-packages.sh
+      - name: automatic release flavor discovery tests
+        run: bash tests/test-plan-flavors.sh
       - name: check-closure.py tests
         run: bash tests/test-check-closure.sh
       - name: verify-reproducible.sh tests (stage 3 vs stage 4 compare)

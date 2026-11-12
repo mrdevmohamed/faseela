@@ -29,10 +29,9 @@ Tested by `tests/test-ci-report.sh`.
 ## release.yml
 
 ```
-recipes ─ ci ─ plan ─ core (seed → stage1 → stage2 → stage3 → rootfs) ─┬─ build[iso-nogui]  ─┐
-                                                             ├─ build[iso-gui]    ─┼─ release (tags)
-                                                             └─ build[rootfs-min] ─┴─ image → ghcr.io
-                        boot-test[iso-nogui, iso-gui] (QEMU) ───────┘ gates the release
+recipes ─ ci ─ plan (read flavors.toml) ─ core ─┬─ build[each selected flavor] ─┐
+                                               └─ ISO-only boot-test (QEMU) ────┴─ release (tags)
+                                                         rootfs-min ─ image → ghcr.io
 ```
 
 * `recipes` fixes the faseela-repo commit once for the whole run (`recipes_ref`
@@ -58,7 +57,8 @@ recipes ─ ci ─ plan ─ core (seed → stage1 → stage2 → stage3 → root
   (`outputs=core`) does not. The release notes list only what the run produced.
 * **First setup (no release, no packages yet):** run *Build ISO (CD)* with `outputs=core`
   and `release` → a release holding the seed rootfs; run faseela-repo's *Build packages*
-  with `rootfs=seed` and `flavor:iso-nogui flavor:iso-gui flavor:rootfs-min`; then run
+  with `rootfs=seed` and the desired `flavor:<name>` targets (for example
+  `flavor:iso-nogui flavor:iso-gui flavor:iso-xfce flavor:rootfs-min`); then run
   *Build ISO (CD)* with `outputs=all` and `release`.
 * `verify_reproducible` (dispatch only) rebuilds the core once more and compares
   stage 3 with stage 4 (`bootstrap/verify-reproducible.sh`), report only.
@@ -69,11 +69,23 @@ recipes ─ ci ─ plan ─ core (seed → stage1 → stage2 → stage3 → root
   hardware behaves as before. On failure the serial log and a VGA screenshot
   are uploaded as `qemu-boot-<variant>`. Remove `boot-test` from the `needs`
   of the `release` job if you do not want it to gate releases.
-* Two rootfs tarballs, two jobs: `faseela-x86_64-rootfs.tar.zst` (full, with
-  rust) is the **seed** of the next build and keeps its name because
-  `scripts/fetch-rootfs-seed.sh` looks for it; `-rootfs-min` is the **build
-  environment** (also pushed as `ghcr.io/<owner>/faseela-build`).
-* Manual runs: choose `outputs` (all | iso-nogui | iso-gui | rootfs-min).
+* The core job always publishes `faseela-x86_64-rootfs.tar.zst`, the **seed**
+  of the next self-hosting build; its name is fixed because
+  `scripts/fetch-rootfs-seed.sh` looks for it. Selected `rootfs-*` flavors create
+  additional rootfs archives. The `rootfs-min` flavor keeps the established
+  `faseela-x86_64-rootfs-min.tar.zst` name and is also pushed as
+  `ghcr.io/<owner>/faseela-build`.
+* Manual runs: `outputs` is a text input, not a fixed dropdown:
+  * `all` discovers every `iso-*` and `rootfs-*` flavor in the pinned `flavors.toml`.
+  * `core` builds only the bootstrap seed.
+  * One or more exact names (space- or comma-separated), such as `iso-xfce` or
+    `iso-xfce iso-gui`, build only those flavors. Any selected `iso-*` flavor is
+    automatically packaged as an ISO and added to the QEMU boot-test matrix;
+    other explicitly selected flavors are packed as rootfs archives.
+  Adding an `iso-*` or `rootfs-*` entry to `flavors.toml` automatically includes
+  it in `outputs=all`; no edit to this workflow is needed. GitHub Actions does not
+  support choice inputs populated dynamically from a repository file, so the
+  input accepts names as text.
   Dispatch runs save the build target to the Actions cache and `resume`
   continues from it after a timeout.
 

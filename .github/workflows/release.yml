@@ -12,12 +12,10 @@ name: Build ISO (CD)
 #                   bootstrap flavor (flavors.toml: base-devel, nawa, curl and what
 #                   builds them), with the seed toolchain and then again with its own
 #                   publishes  faseela-x86_64-rootfs.tar.zst  = the SEED of the next build
-#   build (matrix)  one runner per flavor, in parallel, on the finished core. Nothing
-#                   is compiled: bootstrap/mkflavor.sh INSTALLS the flavor's packages
-#                   from the package repository (faseela-repo, packages.yml):
-#                     iso-nogui   faseela-x86_64.iso
-#                     iso-gui     faseela-gui-x86_64.iso   (iso-nogui + the sway/Wayland stack)
-#                     rootfs-min  faseela-x86_64-rootfs-min.tar.zst  (base-devel + nawa; the docker image)
+#   build (matrix)  one runner per selected flavor, discovered from flavors.toml.
+#                   Names beginning iso- become ISOs; names beginning rootfs-
+#                   become rootfs archives. New flavors need no release.yml edits.
+#                   Other flavors can be selected explicitly and become rootfs archives.
 #   boot-test       boots each ISO in QEMU, waits for the login prompt (gates the release)
 #   image           rootfs-min -> ghcr.io/<owner>/faseela-build (container build environment)
 #   release         one GitHub Release with everything above (tags only)
@@ -26,10 +24,11 @@ name: Build ISO (CD)
 #                   of the failing log and the artifacts (scripts/ci-report.py)
 #
 # Why a pipeline and not a matrix over the whole build: every package is built
-# ONCE (faseela-repo's packages.yml publishes it), the flavors are only lists of
-# packages (flavors.toml). Run packages.yml with `flavor:iso-gui` (and the others)
-# before a release; the `plan` job warns when the repository lacks a package of a
-# flavor, and a flavor build then stops with the list instead of compiling.
+# The planner reads flavors.toml from the exact faseela-repo commit selected by
+# this run. "all" discovers every iso-* and rootfs-* flavor automatically.
+# Before a release, packages.yml must publish those flavors' package archives;
+# the plan job warns when anything is missing, and the affected flavor names the
+# missing packages rather than silently compiling them.
 #
 #   * push a tag `v*`         -> everything, then a GitHub Release
 #   * Actions > Run workflow  -> artifacts only (pick what to build in `outputs`)
@@ -53,10 +52,9 @@ on:
   workflow_dispatch:
     inputs:
       outputs:
-        description: "What to build on top of the core system"
-        type: choice
-        options: [all, core, iso-nogui, iso-gui, rootfs-min]
-        default: all
+        description: "all = auto-discover every iso-* and rootfs-* flavor; core = only the bootstrap seed; or enter one or more exact flavor names (e.g. iso-xfce iso-gui)"
+        type: string
+        default: "all"
       isolation:
         description: "Build isolation for stages 2 and 3"
         type: choice
@@ -151,7 +149,7 @@ jobs:
     with:
       recipes_ref: ${{ needs.recipes.outputs.rev }}
 
-  # Turns the `outputs` choice into the build matrix (tag pushes: everything).
+  # Turns the `outputs` selection into a matrix using the pinned flavors.toml.
   plan:
     name: plan
     needs: [recipes, ci]
@@ -162,6 +160,7 @@ jobs:
       isos: ${{ steps.m.outputs.isos }}
       has_iso: ${{ steps.m.outputs.has_iso }}
       has_variants: ${{ steps.m.outputs.has_variants }}
+      has_rootfs_min: ${{ steps.m.outputs.has_rootfs_min }}
     steps:
       - uses: actions/checkout@v4
       - name: Fetch the recipes (faseela-repo @ the commit chosen by this run)
@@ -172,24 +171,26 @@ jobs:
         env:
           ONLY: ${{ inputs.outputs || 'all' }}
         run: |
-          python3 - >> "$GITHUB_OUTPUT" <<'PY'
-          import json, os
-          only = os.environ["ONLY"]
-          variants = [
-              {"variant": "iso-nogui", "kind": "iso",
-               "iso": "faseela-x86_64.iso", "vol": "FASEELA"},
-              {"variant": "iso-gui", "kind": "iso",
-               "iso": "faseela-gui-x86_64.iso", "vol": "FASEELA_GUI"},
-              {"variant": "rootfs-min", "kind": "rootfs"},
-          ]
-          sel = [v for v in variants if only in ("all", v["variant"])]
-          print("matrix=" + json.dumps({"include": sel}))
-          isos = [v for v in sel if v["kind"] == "iso"]
-          print("isos=" + json.dumps({"include": isos}))
-          print("has_iso=" + ("true" if isos else "false"))
-          print("has_variants=" + ("true" if sel else "false"))
+          # flavors.toml is fetched above at the pinned faseela-repo commit.
+          # The planner discovers ISO/rootfs flavors and derives their output
+          # names, volume IDs, and the ISO-only QEMU matrix.
+          python3 -I scripts/plan-flavors.py --selection "$ONLY" > flavor-plan.json
+          python3 - flavor-plan.json >> "$GITHUB_OUTPUT" <<'PY'
+          import json, os, sys
+          plan = json.load(open(sys.argv[1], encoding="utf-8"))
+          for key in ("matrix", "isos"):
+              print(f"{key}=" + json.dumps(plan[key], separators=(",", ":")))
+          for key in ("has_iso", "has_variants", "has_rootfs_min"):
+              print(f"{key}=" + ("true" if plan[key] else "false"))
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+              summary.write("### Discovered flavor build plan\n\n")
+              summary.write("| flavor | output |\n|---|---|\n")
+              for item in plan["matrix"]["include"]:
+                  output = item.get("iso") or item.get("rootfs")
+                  summary.write(f"| `{item['variant']}` | `{output}` |\n")
+              if not plan["matrix"]["include"]:
+                  summary.write("| _core only_ | bootstrap seed |\n")
           PY
-
       # Minutes instead of hours: does the package repository hold what the
       # flavors will install? A warning, not a failure: packages.yml may be
       # publishing them while the core builds (the flavor jobs run last).
@@ -686,7 +687,7 @@ jobs:
         if: ${{ matrix.kind == 'rootfs' }}
         run: |
           mkdir -p out
-          sudo bash bootstrap/mkrootfs.sh "$TARGET/sysroot-${{ matrix.variant }}" "$PWD/out/faseela-x86_64-rootfs-min.tar.zst"
+          sudo bash bootstrap/mkrootfs.sh "$TARGET/sysroot-${{ matrix.variant }}" "$PWD/out/${{ matrix.rootfs }}"
           sudo chown -R "$(id -u):$(id -g)" out
           ls -lh out
 
@@ -804,8 +805,8 @@ jobs:
   # anyone else can build in (`docker run ghcr.io/<owner>/faseela-build`).
   image:
     name: container image (rootfs-min → ghcr.io)
-    needs: build
-    if: ${{ (startsWith(github.ref, 'refs/tags/v') || inputs.push_image) && (inputs.outputs == '' || inputs.outputs == 'all' || inputs.outputs == 'rootfs-min') }}
+    needs: [plan, build]
+    if: ${{ needs.plan.outputs.has_rootfs_min == 'true' && (startsWith(github.ref, 'refs/tags/v') || inputs.push_image) }}
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -890,15 +891,31 @@ jobs:
             files+=("$f")
           done
           (( ${#files[@]} )) || { echo "::error::no build output to publish"; exit 1; }
-          # only the files this run produced (outputs=core makes the rootfs alone)
-          row() { [[ -e "artifacts/$1" ]] && printf '| `%s` | %s |\n' "$1" "$2"; return 0; }
+          # Describe the artifacts actually produced by the dynamically selected flavors.
           {
             echo '| file | what |'; echo '|---|---|'
-            row faseela-x86_64.iso "live ISO, no GUI (xz; common firmware only)"
-            row faseela-gui-x86_64.iso "live ISO with the sway/Wayland stack (xz; common firmware only)"
-            row faseela-x86_64-rootfs-min.tar.zst "small rootfs: base-devel + nawa (build environment, also ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/faseela-build)"
-            row faseela-x86_64-rootfs.tar.zst "build seed: the bootstrap core (toolchain incl. rust, nawa, curl), without kernel, firmware and docs (build-all.sh --seed-rootfs; faseela-repo's package workflow builds in it)"
-            echo
+            shopt -s nullglob
+            for f in artifacts/*; do
+              base="${f##*/}"
+              what=""
+              case "$base" in
+                faseela-x86_64.iso) what="live ISO without a graphical desktop" ;;
+                faseela-gui-x86_64.iso) what="live ISO with the Sway / Wayland desktop" ;;
+                faseela-*-x86_64.iso)
+                  flavor="iso-${base#faseela-}"
+                  flavor="${flavor%-x86_64.iso}"
+                  what="live ISO for flavor \`$flavor\`" ;;
+                faseela-x86_64-rootfs-min.tar.zst)
+                  what="small build rootfs: base-devel + nawa (also used for ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/faseela-build)" ;;
+                faseela-x86_64-rootfs.tar.zst)
+                  what="bootstrap seed rootfs for the next self-hosting build" ;;
+                faseela-*-x86_64-rootfs.tar.zst)
+                  flavor="${base#faseela-}"
+                  flavor="${flavor%-x86_64-rootfs.tar.zst}"
+                  what="root filesystem for flavor \`$flavor\`" ;;
+              esac
+              [[ -n "$what" ]] && printf '%s\n' "| \`$base\` | $what"
+            done
             echo "This release was built from: ${SEED}."
             echo
             echo "Recipes: [faseela-repo@${RECIPES_REV:0:12}](https://github.com/mrdevmohamed/faseela-repo/tree/${RECIPES_REV})."
