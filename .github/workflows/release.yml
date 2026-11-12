@@ -914,7 +914,7 @@ jobs:
                   flavor="${flavor%-x86_64-rootfs.tar.zst}"
                   what="root filesystem for flavor \`$flavor\`" ;;
               esac
-              [[ -n "$what" ]] && printf '| \`%s\` | %s |\n' "$base" "$what"
+              [[ -n "$what" ]] && printf '%s\n' "| \`$base\` | $what"
             done
             echo "This release was built from: ${SEED}."
             echo
