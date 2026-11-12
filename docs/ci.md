@@ -46,7 +46,7 @@ recipes ─ ci ─ plan (read flavors.toml) ─ core ─┬─ build[each select
 * Every matrix leg runs `bootstrap/mkflavor.sh`: the flavor's packages are
   **installed from the package repository** (faseela-repo, `packages.yml`) into an
   empty root `sysroot-<flavor>`, which `mkiso.sh` / `mkrootfs.sh` then pack.
-  `iso-gui` is `iso-nogui` plus `@gui`; `rootfs-min` is base-devel + nawa + git, curl,
+  `iso-sway` is `iso-nogui` plus `@gui`; `rootfs-min` is base-devel + nawa + git, curl,
   ca-certificates (no kernel, no rust, no GUI). A package the repository lacks stops
   the leg with the list; `plan` warns about it up front
   (`scripts/check-flavor-packages.py`). Fix: run faseela-repo's *Build packages*
@@ -58,7 +58,7 @@ recipes ─ ci ─ plan (read flavors.toml) ─ core ─┬─ build[each select
 * **First setup (no release, no packages yet):** run *Build ISO (CD)* with `outputs=core`
   and `release` → a release holding the seed rootfs; run faseela-repo's *Build packages*
   with `rootfs=seed` and the desired `flavor:<name>` targets (for example
-  `flavor:iso-nogui flavor:iso-gui flavor:iso-xfce flavor:rootfs-min`); then run
+  `flavor:iso-nogui flavor:iso-sway flavor:iso-xfce flavor:rootfs-min`); then run
   *Build ISO (CD)* with `outputs=all` and `release`.
 * `verify_reproducible` (dispatch only) rebuilds the core once more and compares
   stage 3 with stage 4 (`bootstrap/verify-reproducible.sh`), report only.
@@ -79,7 +79,7 @@ recipes ─ ci ─ plan (read flavors.toml) ─ core ─┬─ build[each select
   * `all` discovers every `iso-*` and `rootfs-*` flavor in the pinned `flavors.toml`.
   * `core` builds only the bootstrap seed.
   * One or more exact names (space- or comma-separated), such as `iso-xfce` or
-    `iso-xfce iso-gui`, build only those flavors. Any selected `iso-*` flavor is
+    `iso-xfce iso-sway`, build only those flavors. Any selected `iso-*` flavor is
     automatically packaged as an ISO and added to the QEMU boot-test matrix;
     other explicitly selected flavors are packed as rootfs archives.
   Adding an `iso-*` or `rootfs-*` entry to `flavors.toml` automatically includes
