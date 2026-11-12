@@ -69,10 +69,12 @@ recipes ─ ci ─ plan (read flavors.toml) ─ core ─┬─ build[each select
   hardware behaves as before. On failure the serial log and a VGA screenshot
   are uploaded as `qemu-boot-<variant>`. Remove `boot-test` from the `needs`
   of the `release` job if you do not want it to gate releases.
-* Two rootfs tarballs, two jobs: `faseela-x86_64-rootfs.tar.zst` (full, with
-  rust) is the **seed** of the next build and keeps its name because
-  `scripts/fetch-rootfs-seed.sh` looks for it; `-rootfs-min` is the **build
-  environment** (also pushed as `ghcr.io/<owner>/faseela-build`).
+* The core job always publishes `faseela-x86_64-rootfs.tar.zst`, the **seed**
+  of the next self-hosting build; its name is fixed because
+  `scripts/fetch-rootfs-seed.sh` looks for it. Selected `rootfs-*` flavors create
+  additional rootfs archives. The `rootfs-min` flavor keeps the established
+  `faseela-x86_64-rootfs-min.tar.zst` name and is also pushed as
+  `ghcr.io/<owner>/faseela-build`.
 * Manual runs: `outputs` is a text input, not a fixed dropdown:
   * `all` discovers every `iso-*` and `rootfs-*` flavor in the pinned `flavors.toml`.
   * `core` builds only the bootstrap seed.
