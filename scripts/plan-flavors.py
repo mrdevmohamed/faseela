@@ -41,7 +41,7 @@ def artifact(name):
 
 
 def build_plan(selection, flavors, recipes):
-    tokens = [x for x in re.split(r"[\\s,]+", selection.strip()) if x]
+    tokens = [x for x in re.split(r"[\s,]+", selection.strip()) if x]
     if not tokens:
         raise ValueError("outputs is empty; use 'all', 'core', or one or more flavor names")
     if "all" in tokens and len(tokens) != 1:
@@ -99,7 +99,7 @@ def main():
         print(f"plan-flavors: {exc}", file=sys.stderr)
         return 2
     json.dump(result, sys.stdout, sort_keys=True, separators=(",", ":"))
-    sys.stdout.write("\\n")
+    sys.stdout.write("\n")
     return 0
 
 
