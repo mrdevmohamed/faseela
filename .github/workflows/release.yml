@@ -51,7 +51,7 @@ on:
   workflow_dispatch:
     inputs:
       outputs:
-        description: "all = auto-discover every iso-* and rootfs-* flavor; core = only the bootstrap seed; or enter one or more exact flavor names (e.g. iso-xfce iso-gui)"
+        description: "all = auto-discover every iso-* and rootfs-* flavor; core = only the bootstrap seed; or enter one or more exact flavor names (e.g. iso-xfce iso-sway)"
         type: string
         default: "all"
       isolation:
