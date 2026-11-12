@@ -183,13 +183,13 @@ jobs:
           for key in ("has_iso", "has_variants", "has_rootfs_min"):
               print(f"{key}=" + ("true" if plan[key] else "false"))
           with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
-              summary.write("### Discovered flavor build plan\\n\\n")
-              summary.write("| flavor | output |\\n|---|---|\\n")
+              summary.write("### Discovered flavor build plan\n\n")
+              summary.write("| flavor | output |\n|---|---|\n")
               for item in plan["matrix"]["include"]:
                   output = item.get("iso") or item.get("rootfs")
-                  summary.write(f"| `{item['variant']}` | `{output}` |\\n")
+                  summary.write(f"| `{item['variant']}` | `{output}` |\n")
               if not plan["matrix"]["include"]:
-                  summary.write("| _core only_ | bootstrap seed |\\n")
+                  summary.write("| _core only_ | bootstrap seed |\n")
           PY
       # Minutes instead of hours: does the package repository hold what the
       # flavors will install? A warning, not a failure: packages.yml may be
@@ -896,25 +896,25 @@ jobs:
             echo '| file | what |'; echo '|---|---|'
             shopt -s nullglob
             for f in artifacts/*; do
-              base="\${f##*/}"
+              base="${f##*/}"
               what=""
               case "$base" in
                 faseela-x86_64.iso) what="live ISO without a graphical desktop" ;;
                 faseela-gui-x86_64.iso) what="live ISO with the Sway / Wayland desktop" ;;
                 faseela-*-x86_64.iso)
-                  flavor="iso-\${base#faseela-}"
-                  flavor="\${flavor%-x86_64.iso}"
+                  flavor="iso-${base#faseela-}"
+                  flavor="${flavor%-x86_64.iso}"
                   what="live ISO for flavor \`$flavor\`" ;;
                 faseela-x86_64-rootfs-min.tar.zst)
-                  what="small build rootfs: base-devel + nawa (also used for ghcr.io/\${GITHUB_REPOSITORY_OWNER,,}/faseela-build)" ;;
+                  what="small build rootfs: base-devel + nawa (also used for ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/faseela-build)" ;;
                 faseela-x86_64-rootfs.tar.zst)
                   what="bootstrap seed rootfs for the next self-hosting build" ;;
                 faseela-*-x86_64-rootfs.tar.zst)
-                  flavor="\${base#faseela-}"
-                  flavor="\${flavor%-x86_64-rootfs.tar.zst}"
+                  flavor="${base#faseela-}"
+                  flavor="${flavor%-x86_64-rootfs.tar.zst}"
                   what="root filesystem for flavor \`$flavor\`" ;;
               esac
-              [[ -n "$what" ]] && printf '| \`%s\` | %s |\\n' "$base" "$what"
+              [[ -n "$what" ]] && printf '| \`%s\` | %s |\n' "$base" "$what"
             done
             echo "This release was built from: ${SEED}."
             echo
