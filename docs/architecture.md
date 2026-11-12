@@ -67,5 +67,5 @@ stages are invalidated with it. In CI the target is also cached, so a re-run of 
 
 ## CI
 
-`release.yml` mirrors the pipeline: `core` runs stages 0-4 once; a matrix then derives `iso-nogui`, `iso-gui` and
+`release.yml` mirrors the pipeline: `core` runs stages 0-4 once; a matrix then derives `iso-nogui`, `iso-sway` and
 `rootfs-min` from the finished core; QEMU boots each ISO; the release publishes them. See [ci.md](ci.md).
