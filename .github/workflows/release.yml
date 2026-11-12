@@ -861,7 +861,7 @@ jobs:
                   flavor="${flavor%-x86_64.iso}"
                   what="live ISO for flavor \`$flavor\`" ;;
                 faseela-x86_64-rootfs-min.tar.zst)
-                  what="small build rootfs: base-devel + nawa (also used for ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/faseela-build)" ;;
+                  what="small build rootfs: base-devel + nawa" ;;
                 faseela-x86_64-rootfs.tar.zst)
                   what="bootstrap seed rootfs for the next self-hosting build" ;;
                 faseela-*-x86_64-rootfs.tar.zst)
@@ -920,7 +920,7 @@ jobs:
           path: run-report.md
           retention-days: 30
   # One combined notification after the complete release report, even if a
-  # build, optional flavor, boot test, image build, or publication failed.
+  # build, optional flavor, boot test, or publication failed.
   telegram-notify:
     name: Telegram notification
     if: ${{ always() }}
