@@ -149,7 +149,7 @@ jobs:
     with:
       recipes_ref: ${{ needs.recipes.outputs.rev }}
 
-  # Turns the `outputs` choice into the build matrix (tag pushes: everything).
+  # Turns the `outputs` selection into a matrix using the pinned flavors.toml.
   plan:
     name: plan
     needs: [recipes, ci]
