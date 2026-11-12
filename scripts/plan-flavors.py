@@ -26,8 +26,6 @@ def artifact(name):
         slug = name[4:]
         if name == "iso-nogui":
             filename, volume = "faseela-x86_64.iso", "FASEELA"
-        elif name == "iso-gui":
-            filename, volume = "faseela-gui-x86_64.iso", "FASEELA_GUI"
         else:
             filename = f"faseela-{slug}-x86_64.iso"
             volume = ("FASEELA_" + re.sub(r"[^A-Z0-9_]", "_", slug.upper()))[:32]
