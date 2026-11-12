@@ -174,7 +174,7 @@ jobs:
           plan = json.load(open(sys.argv[1], encoding="utf-8"))
           for key in ("matrix", "isos"):
               print(f"{key}=" + json.dumps(plan[key], separators=(",", ":")))
-          for key in ("has_iso", "has_variants", "has_rootfs_min"):
+          for key in ("has_iso", "has_variants"):
               print(f"{key}=" + ("true" if plan[key] else "false"))
           with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
               summary.write("### Discovered flavor build plan\n\n")
