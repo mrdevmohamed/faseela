@@ -23,7 +23,7 @@ extends = ["bootstrap"]
 [flavor.iso-nogui]
 include = ["pkg"]
 
-[flavor.iso-gui]
+[flavor.iso-sway]
 extends = ["iso-nogui"]
 
 [flavor.iso-xfce]
@@ -47,7 +47,7 @@ import json, sys
 p = json.load(open(sys.argv[1], encoding="utf-8"))
 items = p["matrix"]["include"]
 names = [x["variant"] for x in items]
-assert names == ["iso-gui", "iso-nogui", "iso-xfce", "rootfs-min"], names
+assert names == ["iso-sway", "iso-nogui", "iso-xfce", "rootfs-min"], names
 assert p["has_iso"] is True
 assert p["has_variants"] is True
 assert p["has_rootfs_min"] is True
@@ -55,10 +55,10 @@ by_name = {x["variant"]: x for x in items}
 assert by_name["iso-xfce"]["iso"] == "faseela-xfce-x86_64.iso"
 assert by_name["iso-xfce"]["vol"] == "FASEELA_XFCE"
 assert by_name["iso-nogui"]["iso"] == "faseela-x86_64.iso"
-assert by_name["iso-gui"]["iso"] == "faseela-gui-x86_64.iso"
+assert by_name["iso-sway"]["iso"] == "faseela-sway-x86_64.iso"\nassert by_name["iso-sway"]["vol"] == "FASEELA_SWAY"
 assert by_name["rootfs-min"]["rootfs"] == "faseela-x86_64-rootfs-min.tar.zst"
 assert [x["variant"] for x in p["isos"]["include"]] == [
-    "iso-gui", "iso-nogui", "iso-xfce"
+    "iso-sway", "iso-nogui", "iso-xfce"
 ]
 PY
 
