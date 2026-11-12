@@ -32,7 +32,7 @@ extends = ["iso-nogui"]
 [flavor.rootfs-min]
 include = ["pkg"]
 
-[flavor.developer-base]
+[flavor.tools]
 include = ["pkg"]
 T
 
@@ -47,7 +47,7 @@ import json, sys
 p = json.load(open(sys.argv[1], encoding="utf-8"))
 items = p["matrix"]["include"]
 names = [x["variant"] for x in items]
-assert names == ["iso-sway", "iso-nogui", "iso-xfce", "rootfs-min"], names
+assert names == ["iso-nogui", "iso-sway", "iso-xfce", "rootfs-min"], names
 assert p["has_iso"] is True
 assert p["has_variants"] is True
 assert p["has_rootfs_min"] is True
@@ -55,21 +55,22 @@ by_name = {x["variant"]: x for x in items}
 assert by_name["iso-xfce"]["iso"] == "faseela-xfce-x86_64.iso"
 assert by_name["iso-xfce"]["vol"] == "FASEELA_XFCE"
 assert by_name["iso-nogui"]["iso"] == "faseela-x86_64.iso"
-assert by_name["iso-sway"]["iso"] == "faseela-sway-x86_64.iso"\nassert by_name["iso-sway"]["vol"] == "FASEELA_SWAY"
+assert by_name["iso-sway"]["iso"] == "faseela-sway-x86_64.iso"
+assert by_name["iso-sway"]["vol"] == "FASEELA_SWAY"
 assert by_name["rootfs-min"]["rootfs"] == "faseela-x86_64-rootfs-min.tar.zst"
 assert [x["variant"] for x in p["isos"]["include"]] == [
-    "iso-sway", "iso-nogui", "iso-xfce"
+    "iso-nogui", "iso-sway", "iso-xfce"
 ]
 PY
 
-plan "iso-xfce, developer-base" > "$W/selected.json"
+plan "iso-xfce, tools" > "$W/selected.json"
 python3 - "$W/selected.json" <<'PY'
 import json, sys
 items = json.load(open(sys.argv[1], encoding="utf-8"))["matrix"]["include"]
-assert [x["variant"] for x in items] == ["iso-xfce", "developer-base"]
+assert [x["variant"] for x in items] == ["iso-xfce", "tools"]
 assert items[0]["kind"] == "iso"
 assert items[1]["kind"] == "rootfs"
-assert items[1]["rootfs"] == "faseela-developer-base-x86_64-rootfs.tar.zst"
+assert items[1]["rootfs"] == "faseela-tools-x86_64-rootfs.tar.zst"
 PY
 
 plan core > "$W/core.json"
