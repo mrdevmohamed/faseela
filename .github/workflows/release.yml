@@ -855,7 +855,7 @@ jobs:
               what=""
               case "$base" in
                 faseela-x86_64.iso) what="live ISO without a graphical desktop" ;;
-                faseela-gui-x86_64.iso) what="live ISO with the Sway / Wayland desktop" ;;
+                faseela-sway-x86_64.iso) what="live ISO with the Sway / Wayland desktop" ;;
                 faseela-*-x86_64.iso)
                   flavor="iso-${base#faseela-}"
                   flavor="${flavor%-x86_64.iso}"
