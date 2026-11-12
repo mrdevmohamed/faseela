@@ -17,7 +17,6 @@ name: Build ISO (CD)
 #                   become rootfs archives. New flavors need no release.yml edits.
 #                   Other flavors can be selected explicitly and become rootfs archives.
 #   boot-test       boots each ISO in QEMU, waits for the login prompt (gates the release)
-#   image           rootfs-min -> ghcr.io/<owner>/faseela-build (container build environment)
 #   release         one GitHub Release with everything above (tags only)
 #   report          always last: ONE page (run summary + `run-report` artifact) with the
 #                   verdict, every job and its time, the failed step, the error lines
@@ -78,10 +77,6 @@ on:
         type: choice
         options: [auto, rootfs, debian]
         default: auto
-      push_image:
-        description: "Also publish rootfs-min as a container image (tags do this anyway)"
-        type: boolean
-        default: true
       recipes_ref:
         description: "faseela-repo branch, tag or commit to build the recipes from (empty = its default branch)"
         type: string
@@ -160,7 +155,6 @@ jobs:
       isos: ${{ steps.m.outputs.isos }}
       has_iso: ${{ steps.m.outputs.has_iso }}
       has_variants: ${{ steps.m.outputs.has_variants }}
-      has_rootfs_min: ${{ steps.m.outputs.has_rootfs_min }}
     steps:
       - uses: actions/checkout@v4
       - name: Fetch the recipes (faseela-repo @ the commit chosen by this run)
@@ -180,7 +174,7 @@ jobs:
           plan = json.load(open(sys.argv[1], encoding="utf-8"))
           for key in ("matrix", "isos"):
               print(f"{key}=" + json.dumps(plan[key], separators=(",", ":")))
-          for key in ("has_iso", "has_variants", "has_rootfs_min"):
+          for key in ("has_iso", "has_variants"):
               print(f"{key}=" + ("true" if plan[key] else "false"))
           with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
               summary.write("### Discovered flavor build plan\n\n")
@@ -801,45 +795,6 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
-  # The small rootfs as a container image: the environment packages.yml (in faseela-repo) and
-  # anyone else can build in (`docker run ghcr.io/<owner>/faseela-build`).
-  image:
-    name: container image (rootfs-min → ghcr.io)
-    needs: [plan, build]
-    if: ${{ needs.plan.outputs.has_rootfs_min == 'true' && (startsWith(github.ref, 'refs/tags/v') || inputs.push_image) }}
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: read
-      packages: write
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          name: out-rootfs-min
-          path: rootfs
-      - uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Import and push
-        run: |
-          set -euo pipefail
-          img="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/faseela-build"
-          tag="${GITHUB_REF_NAME//\//-}"
-          cd rootfs
-          sha256sum -c faseela-x86_64-rootfs-min.tar.zst.sha256
-          zstd -dc faseela-x86_64-rootfs-min.tar.zst \
-            | docker import \
-                --change 'ENV PATH=/usr/sbin:/usr/bin:/sbin:/bin' \
-                --change 'CMD ["/usr/bin/bash"]' \
-                - "$img:$tag"
-          docker push "$img:$tag"
-          # `latest` only ever points at a release, never at a branch run
-          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
-            docker tag "$img:$tag" "$img:latest"
-            docker push "$img:latest"
-          fi
-
   release:
     name: GitHub Release
     needs: [plan, core, build, boot-test]
@@ -906,7 +861,7 @@ jobs:
                   flavor="${flavor%-x86_64.iso}"
                   what="live ISO for flavor \`$flavor\`" ;;
                 faseela-x86_64-rootfs-min.tar.zst)
-                  what="small build rootfs: base-devel + nawa (also used for ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/faseela-build)" ;;
+                  what="small build rootfs: base-devel + nawa" ;;
                 faseela-x86_64-rootfs.tar.zst)
                   what="bootstrap seed rootfs for the next self-hosting build" ;;
                 faseela-*-x86_64-rootfs.tar.zst)
@@ -931,7 +886,7 @@ jobs:
   report:
     name: run report
     if: ${{ always() }}
-    needs: [recipes, ci, plan, core, build, boot-test, image, release]
+    needs: [recipes, ci, plan, core, build, boot-test, release]
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -965,11 +920,11 @@ jobs:
           path: run-report.md
           retention-days: 30
   # One combined notification after the complete release report, even if a
-  # build, optional flavor, boot test, image build, or publication failed.
+  # build, optional flavor, boot test, or publication failed.
   telegram-notify:
     name: Telegram notification
     if: ${{ always() }}
-    needs: [recipes, ci, plan, core, build, boot-test, image, release, report]
+    needs: [recipes, ci, plan, core, build, boot-test, release, report]
     runs-on: ubuntu-24.04
     continue-on-error: true
     permissions:
@@ -982,6 +937,6 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          JOB_RESULTS: recipes=${{ needs.recipes.result }},ci=${{ needs.ci.result }},plan=${{ needs.plan.result }},core=${{ needs.core.result }},build=${{ needs.build.result }},boot-test=${{ needs.boot-test.result }},image=${{ needs.image.result }},release=${{ needs.release.result }},report=${{ needs.report.result }}
+          JOB_RESULTS: recipes=${{ needs.recipes.result }},ci=${{ needs.ci.result }},plan=${{ needs.plan.result }},core=${{ needs.core.result }},build=${{ needs.build.result }},boot-test=${{ needs.boot-test.result }},release=${{ needs.release.result }},report=${{ needs.report.result }}
           BRANCH_NAME: ${{ github.head_ref || github.ref_name }}
         run: python3 -I scripts/notify-telegram.py
