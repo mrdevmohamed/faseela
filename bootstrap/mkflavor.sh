@@ -7,7 +7,7 @@
 #
 #   TARGET  a finished bootstrap build root (stages 1-3 done): it supplies the
 #           nawa that does the installing and the chroot it runs in
-#   FLAVOR  iso-nogui | iso-gui | rootfs-min | docker | ...  (see flavors.toml)
+#   FLAVOR  iso-nogui | iso-sway | iso-xfce | rootfs-min | ...  (see flavors.toml)
 #
 # Result: TARGET/sysroot-FLAVOR — a clean root holding exactly the flavor's
 # packages and the distribution's signing key. Pack it with

@@ -21,7 +21,7 @@ cat > "$W/flavors.toml" <<'T'
 include = ["nawa"]
 [flavor.iso-nogui]
 include = ["@base", "@extra"]
-[flavor.iso-gui]
+[flavor.iso-sway]
 extends = ["iso-nogui"]
 include = ["@gui"]
 T
@@ -31,7 +31,7 @@ printf 'vim-9.1-2.nawa.tar.zst\n' > "$W/assets"
 out="$(chk "$W/assets" iso-nogui)" || fail "complete flavor reported missing: $out"
 grep -q 'all 1 packages' <<< "$out" || fail "bootstrap packages must not be expected in the repository: $out"
 
-out="$(chk "$W/assets" iso-gui)" && fail "missing sway not detected"
+out="$(chk "$W/assets" iso-sway)" && fail "missing sway not detected"
 grep -q 'sway' <<< "$out" || fail "sway not named: $out"
 
 printf 'vim-9.0-1.nawa.tar.zst\n' > "$W/assets"   # an OLD version is not the recipe's version

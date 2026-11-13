@@ -36,8 +36,8 @@ The repositories are separate on purpose. A package recipe belongs in `faseela-r
 
 Depending on the selected release workflow outputs, a release can include:
 
-- `faseela-x86_64.iso` — live ISO without the graphical flavor.
-- `faseela-gui-x86_64.iso` — live ISO with the graphical flavor.
+- `faseela-x86_64.iso` — live ISO without a desktop environment.
+- `faseela-sway-x86_64.iso` — live ISO with the Sway Wayland desktop.
 - `faseela-x86_64-rootfs.tar.zst` — full root filesystem, used as the seed for a later build.
 - `faseela-x86_64-rootfs-min.tar.zst` — smaller build/container root filesystem.
 

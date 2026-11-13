@@ -85,10 +85,10 @@ because GRUB cannot shape Arabic.
 ## Trying it in QEMU
 
 ```
-scripts/qemu-run.sh faseela-gui-x86_64.iso --disk faseela.qcow2 --create-disk 20G
+scripts/qemu-run.sh faseela-sway-x86_64.iso --disk faseela.qcow2 --create-disk 20G
 #   ... boot, run faseela-install, pick the disk, reboot ...
 scripts/qemu-run.sh --boot-disk --disk faseela.qcow2          # from the installed disk
-scripts/qemu-run.sh faseela-gui-x86_64.iso --disk faseela.qcow2 --create-disk 20G --uefi   # UEFI path (OVMF)
+scripts/qemu-run.sh faseela-sway-x86_64.iso --disk faseela.qcow2 --create-disk 20G --uefi   # UEFI path (OVMF)
 ```
 
 **If the GUI is slow**, it is almost always one of these (the script warns about the first):

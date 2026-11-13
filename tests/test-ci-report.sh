@@ -34,7 +34,7 @@ cat > "$W/jobs.json" <<'J'
  {"name":"recipes revision","conclusion":"success","status":"completed","started_at":"2026-10-31T01:00:00Z","completed_at":"2026-10-31T01:00:20Z","html_url":"https://x/job/1","steps":[]},
  {"name":"core (seed → stage3 → rootfs)","conclusion":"failure","status":"completed","started_at":"2026-10-31T01:01:00Z","completed_at":"2026-10-31T03:57:00Z","html_url":"https://x/job/2",
   "steps":[{"name":"Checkout","number":2,"conclusion":"success"},{"name":"Build the core","number":14,"conclusion":"failure"}]},
- {"name":"iso-gui","conclusion":"skipped","status":"completed","started_at":null,"completed_at":null,"html_url":"https://x/job/3","steps":[]},
+ {"name":"iso-sway","conclusion":"skipped","status":"completed","started_at":null,"completed_at":null,"html_url":"https://x/job/3","steps":[]},
  {"name":"run report","conclusion":null,"status":"in_progress","started_at":"2026-10-31T03:58:00Z","completed_at":null,"steps":[]}
 ]}
 J
