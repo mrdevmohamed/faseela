@@ -167,6 +167,15 @@ def collect_build_files(directory: Path) -> list[Path]:
     return sorted(p for p in directory.rglob("*") if p.is_file())
 
 
+def _try_send_document(token: str, chat_id: str, path: Path, caption: str) -> bool:
+    try:
+        send_document(token, chat_id, path, caption)
+        return True
+    except Exception as exc:
+        print(f"::warning::Telegram could not send {path.name} ({type(exc).__name__}); continuing.")
+        return False
+
+
 def deliver_files(token: str, chat_id: str, environ: Mapping[str, str]) -> None:
     run_id = environ.get("GITHUB_RUN_ID", "")
     repository = environ.get("GITHUB_REPOSITORY", "")
@@ -175,7 +184,7 @@ def deliver_files(token: str, chat_id: str, environ: Mapping[str, str]) -> None:
     report_value = environ.get("TELEGRAM_REPORT_PATH", "").strip()
     report = Path(report_value) if report_value else None
     if report and report.is_file() and report.stat().st_size <= MAX_DOCUMENT_BYTES:
-        send_document(token, chat_id, report, "تقرير التشغيل الكامل")
+        _try_send_document(token, chat_id, report, "تقرير التشغيل الكامل")
     logs_value = environ.get("TELEGRAM_LOGS_DIR", "").strip()
     logs = Path(logs_value) if logs_value else None
     if logs and logs.is_dir():
@@ -183,7 +192,7 @@ def deliver_files(token: str, chat_id: str, environ: Mapping[str, str]) -> None:
             archive = Path(temp) / "faseela-build-logs.tar.gz"
             if make_logs_archive(logs, archive):
                 if archive.stat().st_size <= MAX_DOCUMENT_BYTES:
-                    send_document(token, chat_id, archive, "سجلات البناء (بعد تنقية بيانات الاعتماد)")
+                    _try_send_document(token, chat_id, archive, "سجلات البناء (بعد تنقية بيانات الاعتماد)")
                 else:
                     send_message(token, chat_id, "حجم أرشيف السجلات يتجاوز حد Telegram. يمكن تنزيله من صفحة التشغيل: " + run_url)
     if environ.get("TELEGRAM_SEND_BUILDS", "").lower() == "true":
@@ -192,7 +201,7 @@ def deliver_files(token: str, chat_id: str, environ: Mapping[str, str]) -> None:
         too_large = []
         for path in collect_build_files(build_dir) if build_dir and build_dir.is_dir() else []:
             if path.stat().st_size <= MAX_DOCUMENT_BYTES:
-                send_document(token, chat_id, path, f"Build artifact: {path.name}")
+                _try_send_document(token, chat_id, path, f"Build artifact: {path.name}")
             else:
                 too_large.append(f"{path.name} ({path.stat().st_size / (1024**2):.1f} MiB)")
         if too_large:
