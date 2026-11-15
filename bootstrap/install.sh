@@ -287,6 +287,7 @@ log "copying the system (this is the slow part)"
 run rsync -aHX --numeric-ids \
     --exclude=/dev/* --exclude=/proc/* --exclude=/sys/* --exclude=/run/* \
     --exclude=/tmp/* --exclude=/media/* --exclude=/cdrom/* \
+    --exclude=/etc/faseela-live \
     --exclude="${MNT%/}" --exclude="${MNT%/}"/* \
     --exclude=/lost+found --exclude=/var/cache/nawa \
     --exclude=/build --exclude=/build3 --exclude=/sources --exclude=/.nawa \
@@ -483,6 +484,20 @@ if [ -n "$TZ_ARG" ]; then
         log "warning: $TZ_ARG is not in the installed system's /usr/share/zoneinfo — /etc/localtime left as it was"
     fi
 fi
+
+# The live session's extras (initramfs.sh: make_live_user) were copied with the rest of
+# the root: the passwordless `live` user, its home, its doas rule, the login banner and
+# root's empty password. None of that belongs on an installed system — remove it, and
+# lock root until the password is set below (so an aborted install never leaves a
+# passwordless root behind).
+log "removing the live session's user and passwordless logins from the target"
+sed -i '/^live:/d' "$MNT/etc/passwd" "$MNT/etc/shadow" "$MNT/etc/group" 2>/dev/null || true
+[ ! -f "$MNT/etc/gshadow" ] || sed -i '/^live:/d' "$MNT/etc/gshadow"
+sed -i 's/:live,/:/; s/,live,/,/; s/,live$//; s/:live$/:/' "$MNT/etc/group" 2>/dev/null || true
+[ ! -f "$MNT/etc/doas.conf" ] || sed -i '/^permit nopass live$/d' "$MNT/etc/doas.conf"
+[ ! -f "$MNT/etc/issue" ] || sed -i '/Faseela live session/,/doas faseela-install/d' "$MNT/etc/issue"
+run rm -rf "$MNT/home/live"
+[ ! -f "$MNT/etc/shadow" ] || sed -i 's/^root:[^:]*:/root:*:/' "$MNT/etc/shadow"
 
 # passwd reads the controlling terminal through /dev/tty. The target's /dev was
 # deliberately excluded from rsync, so a plain chroot has no tty or pts devices

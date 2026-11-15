@@ -16,13 +16,57 @@ grub (BIOS+UEFI)
                               └─ /etc/runit/1 → runsvdir (getty, udevd,
                                  dhcpcd, sysklogd, crond) → login on tty1-4
 
+### Trying it without installing: the `live` user
+
+The live session has an ordinary user, **`live`**, with **no password**: at the login
+prompt type `live` and press Enter (the banner says so). It is in `wheel` (and in `seat`,
+`video`, `render`, `input`, `audio`, `cdrom` when they exist), `doas` asks it for nothing,
+and its home is filled from `/etc/skel`. `root` also has an empty password in the live
+session. `faseela-install` is `doas faseela-install` away.
+
+Both accounts exist only in the live session's overlay (made by `/init`, see
+`make_live_user` in `bootstrap/initramfs.sh`); the squashfs is untouched. The installer
+**removes them from the installed system**: the `live` user, its home, its doas rule and
+the banner are deleted and root is locked until you set its password, so an install never
+carries a passwordless login over. A disk boot never creates them.
+
+### Ventoy (and other "ISO as a file" boots)
+
+Copy `faseela-*.iso` onto a [Ventoy](https://www.ventoy.net/) stick and pick it in the
+Ventoy menu — no `dd`, and one stick holds many ISOs. It works because the initramfs finds
+the medium two ways, on every pass of its 15-second wait:
+
+1. **a device that is the ISO**: a CD, a `dd`-written stick, or a device-mapper device
+   (`/dev/mapper/*`, `/dev/dm-*`) that Ventoy builds over the ISO file;
+2. **an ISO file on a partition**: every partition is mounted read-only, the ISO is found
+   (`iso-scan/filename=/path/faseela.iso` or `findiso=` on the kernel command line names it;
+   otherwise `*.iso` up to three directories deep, the ones with `faseela` in the name
+   first) and loop-mounted. Ventoy's data partition is exFAT by default, so the initramfs
+   carries `exfat` and `ntfs3` next to `vfat`/`ext4`. The partition stays mounted at
+   `/media/iso-host` in the live system, and `faseela-install` therefore never offers the
+   stick as an install target.
+
+The ISO also carries `/boot/grub/loopback.cfg` (the standard hook for booting an ISO from
+GRUB's `loopback`), and `grub.cfg` adds `iso-scan/filename=${iso_path}` when Ventoy sets
+`iso_path` (GRUB2 mode). On the same Ventoy stick, from a GRUB prompt:
+
+```
+loopback loop (hd0,1)/faseela.iso
+set iso_path=/faseela.iso ; set root=(loop) ; configfile /boot/grub/loopback.cfg
+```
+
+Persistence: Ventoy's own persistence files are not used; a partition labelled
+`FASEELA_PERSIST` (below) still works if one is on another disk or partition of the stick.
+Verify a new image the first time on your hardware (BIOS and UEFI, secure boot off — Ventoy
+needs its own key enrolled with secure boot on).
+
 ### Persistence
 
 Label an ext4 partition `FASEELA_PERSIST` (e.g. on the USB stick, after the ISO
 image: `mkfs.ext4 -L FASEELA_PERSIST /dev/sdX3`) and the live system keeps its
 changes there; the grub entry "without persistence" (or `nopersist` on the
-kernel command line) ignores it. The live session unlocks root with an empty
-password at every boot, so a root password set in a persistent session does not
+kernel command line) ignores it. The live session unlocks root and re-applies the
+`live` user at every boot, so a root password set in a persistent session does not
 stick.
 
 live session → faseela-install → reboots into the installed disk
@@ -52,6 +96,8 @@ faseela-install /dev/vda --hostname mybox --timezone Africa/Cairo \
     --user mohamed --swap 2G --yes
 ```
 
+* **live session leftovers**: removed (see "the `live` user"); root stays locked until the
+  password prompt at the end.
 * **user**: created with a home and `/bin/bash`, in `wheel` (what `/etc/doas.conf`
   allows) and in `seat`, `video`, `render`, `input`, `audio` when they exist (the GUI's
   `gui-session` package creates these groups). `render` grants access to DRM render

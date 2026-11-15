@@ -105,10 +105,11 @@ fi
 # ---------------------------------------------------------------------------
 TREE="$WORK/tree"
 mkdir -p "$TREE/bin" "$TREE/modules" "$TREE/dev" "$TREE/proc" "$TREE/sys" \
-         "$TREE/tmp" "$TREE/run" "$TREE/cdrom" "$TREE/ro" "$TREE/rw" "$TREE/newroot"
+         "$TREE/tmp" "$TREE/run" "$TREE/cdrom" "$TREE/iso-host" "$TREE/ro" "$TREE/rw" "$TREE/newroot"
 install -m755 "$BBDIR/busybox" "$TREE/bin/busybox"
 for applet in sh cat echo mount umount mkdir mknod switch_root insmod modprobe mdev \
-              sleep seq ls blkid findfs grep sed cp rm ln dmesg sync uname reboot poweroff; do
+              sleep seq ls blkid findfs grep sed cp rm ln dmesg sync uname reboot poweroff \
+              chown chmod losetup tail; do
     ln -sf busybox "$TREE/bin/$applet"
 done
 
@@ -117,7 +118,7 @@ done
 # assignment would kill the script silently (exit 2) before the warning
 # below could run
 KVER="$(ls "$ROOT/lib/modules" 2>/dev/null | sort -V | tail -1 || true)"
-MODLIST="scsi_mod cdrom sr_mod sd_mod sg ahci ata_piix nvme virtio virtio_ring virtio_pci virtio_blk virtio_scsi usb_common usbcore usb_storage uas xhci_pci ehci_pci uhci_hcd hid usbhid hid_generic iso9660 squashfs overlay loop fat vfat nls_cp437 dm_mod ext4"
+MODLIST="scsi_mod cdrom sr_mod sd_mod sg ahci ata_piix nvme virtio virtio_ring virtio_pci virtio_blk virtio_scsi usb_common usbcore usb_storage uas xhci_pci ehci_pci uhci_hcd hid usbhid hid_generic iso9660 squashfs overlay loop fat vfat nls_cp437 dm_mod ext4 exfat ntfs3"
 if [[ -z $KVER ]]; then
     echo "initramfs: WARNING no modules in $ROOT/lib/modules — CD/DVD boot may" \
          "need sr_mod built into the kernel" >&2
@@ -196,7 +197,7 @@ fi
 cat > "$TREE/init" <<'INIT_EOF'
 #!/bin/busybox sh
 # faseela live-boot initramfs /init
-busybox mkdir -p /bin /dev /proc /sys /tmp /run /cdrom /ro /rw /newroot
+busybox mkdir -p /bin /dev /proc /sys /tmp /run /cdrom /iso-host /ro /rw /newroot
 busybox --install -s /bin
 export PATH=/bin
 
@@ -212,7 +213,7 @@ MODLIST="scsi_mod cdrom sr_mod sd_mod sg ahci ata_piix nvme \
     virtio virtio_ring virtio_pci virtio_blk virtio_scsi \
     usb_common usbcore usb_storage uas \
     xhci_pci ehci_pci uhci_hcd hid usbhid hid_generic \
-    iso9660 squashfs overlay loop fat vfat nls_cp437 dm_mod ext4"
+    iso9660 squashfs overlay loop fat vfat nls_cp437 dm_mod ext4 exfat ntfs3"
 kv="$(uname -r)"
 if [ -f "/lib/modules/$kv/modules.dep" ]; then
     for m in $MODLIST; do modprobe "$m" 2>/dev/null; done
@@ -256,10 +257,53 @@ echo "initramfs: waiting for boot media"
 # The media is the device whose filesystem contains /live/rootfs.squashfs
 # (mkiso.sh layout). Checking for the file — not just "mountable" — skips the
 # EFI system partition that a hybrid ISO written to a USB stick exposes.
+#
+# Two ways to find it, tried in turn on every pass:
+#   1. direct: a block device that IS the ISO filesystem — a burnt CD, a USB stick
+#      written with dd, or the device-mapper device Ventoy builds over the ISO file
+#      (/dev/mapper/*, /dev/dm-*)
+#   2. iso-scan: the ISO is a FILE on some partition (Ventoy's data partition, or any
+#      disk booted through GRUB's loopback). Every partition is mounted read-only, the
+#      ISO is found there and loop-mounted. `iso-scan/filename=/path.iso` (or
+#      `findiso=`) on the kernel command line names the file; without it, the
+#      *.iso files up to three directories deep are tried, faseela's first.
 SQUASH=/cdrom/live/rootfs.squashfs
+isohint=""
+for arg in $(cat /proc/cmdline); do
+    case "$arg" in
+        iso-scan/filename=*) isohint="${arg#iso-scan/filename=}" ;;
+        findiso=*)           isohint="${arg#findiso=}" ;;
+    esac
+done
+
+# try_iso <file>: loop-mount an ISO image at /cdrom, success only when it holds the live image
+try_iso() {
+    mount -t iso9660 -o ro,loop "$1" /cdrom 2>/dev/null || return 1
+    [ -f "$SQUASH" ] && return 0
+    umount /cdrom 2>/dev/null
+    return 1
+}
+
+# scan_iso_files <dev>: look for a faseela ISO on one partition. On success the partition
+# stays mounted at /iso-host (the loop device needs it) and $found names the ISO.
+scan_iso_files() {
+    mount -o ro "$1" /iso-host 2>/dev/null || return 1
+    if [ -n "$isohint" ] && [ -f "/iso-host$isohint" ] && try_iso "/iso-host$isohint"; then
+        found="$1:$isohint"; return 0
+    fi
+    for f in /iso-host/*[Ff]aseela*.iso /iso-host/*/*[Ff]aseela*.iso /iso-host/*/*/*[Ff]aseela*.iso \
+             /iso-host/*.iso /iso-host/*/*.iso /iso-host/*/*/*.iso; do
+        [ -f "$f" ] || continue
+        if try_iso "$f"; then found="$1:${f#/iso-host}"; return 0; fi
+    done
+    umount /iso-host 2>/dev/null
+    return 1
+}
+
 found=""
 for i in $(seq 1 15); do
-    for dev in /dev/sr[0-9]* /dev/sd[a-z] /dev/sd[a-z]*[0-9] /dev/vd[a-z] /dev/vd[a-z]*[0-9] /dev/nvme*n*p[0-9] /dev/nvme*n[0-9]; do
+    for dev in /dev/sr[0-9]* /dev/sd[a-z] /dev/sd[a-z]*[0-9] /dev/vd[a-z] /dev/vd[a-z]*[0-9] \
+               /dev/nvme*n*p[0-9] /dev/nvme*n[0-9] /dev/mmcblk*p[0-9] /dev/mapper/* /dev/dm-[0-9]*; do
         [ -b "$dev" ] || continue
         for fs in iso9660 ""; do
             if [ -n "$fs" ]; then mount -t "$fs" -o ro "$dev" /cdrom 2>/dev/null || continue
@@ -267,6 +311,11 @@ for i in $(seq 1 15); do
             if [ -f "$SQUASH" ]; then found="$dev"; break 3; fi
             umount /cdrom 2>/dev/null
         done
+    done
+    for dev in /dev/sd[a-z]*[0-9] /dev/sd[a-z] /dev/vd[a-z]*[0-9] /dev/vd[a-z] \
+               /dev/nvme*n*p[0-9] /dev/mmcblk*p[0-9]; do
+        [ -b "$dev" ] || continue
+        scan_iso_files "$dev" && break 2
     done
     sleep 1
 done
@@ -299,12 +348,48 @@ mkdir -p /rw/upper /rw/work
 mount -t overlay overlay -o lowerdir=/ro,upperdir=/rw/upper,workdir=/rw/work /newroot \
     || { echo "initramfs: overlayfs mount failed"; exec sh; }
 
+# >>> live-user
 # live session only: unlock root (base-files ships `root:*`, which makes login
-# impossible on the ISO). The change lives in the tmpfs overlay — the squashfs
-# and disk installs are untouched (the installer sets a real root password).
-[ -f /newroot/etc/shadow ] && sed -i 's/^root:[^:]*:/root::/' /newroot/etc/shadow
-echo "initramfs: live session — root has an empty password"
-# (with persistence a root password set in the session is overwritten at every boot)
+# impossible on the ISO) and add an ordinary user, `live`, so the system can be tried
+# without installing: log in as `live` (no password), `doas` needs none either. All
+# of it lives in the overlay — the squashfs is untouched, and the disk installer removes
+# it again from the installed system (bootstrap/install.sh). Not run for disk boots.
+make_live_user() {   # make_live_user <root-dir>
+    r="$1"
+    [ -f "$r/etc/shadow" ] && sed -i 's/^root:[^:]*:/root::/' "$r/etc/shadow"
+    if ! grep -q '^live:' "$r/etc/passwd" 2>/dev/null; then
+        echo 'live:x:1000:1000:Faseela live:/home/live:/bin/bash' >> "$r/etc/passwd"
+        grep -q '^live:' "$r/etc/group" || echo 'live:x:1000:' >> "$r/etc/group"
+    fi
+    if grep -q '^live:' "$r/etc/shadow" 2>/dev/null; then
+        sed -i 's/^live:[^:]*:/live::/' "$r/etc/shadow"
+    else
+        echo 'live::19980:0:99999:7:::' >> "$r/etc/shadow"
+    fi
+    # the groups the desktop session and storage/audio need — only those that exist
+    for g in wheel seat video render input audio cdrom; do
+        grep -q "^$g:" "$r/etc/group" || continue
+        grep -q "^$g:[^:]*:[^:]*:\(.*,\)\{0,1\}live\(,.*\)\{0,1\}$" "$r/etc/group" && continue
+        sed -i "/^$g:/{s/:\$/:live/;t;s/\$/,live/}" "$r/etc/group"
+    done
+    if [ ! -d "$r/home/live" ]; then
+        mkdir -p "$r/home/live"
+        [ -d "$r/etc/skel" ] && cp -a "$r/etc/skel/." "$r/home/live/" 2>/dev/null
+        chown -R 1000:1000 "$r/home/live"
+        chmod 755 "$r/home/live"
+    fi
+    # no password prompt for doas in the live session (the account has no password)
+    if [ -f "$r/etc/doas.conf" ] && ! grep -q '^permit nopass live$' "$r/etc/doas.conf"; then
+        echo 'permit nopass live' >> "$r/etc/doas.conf"
+    fi
+    echo live > "$r/etc/faseela-live"
+    grep -q 'Faseela live session' "$r/etc/issue" 2>/dev/null || \
+        printf '\nFaseela live session: log in as "live" (no password).\nTo install to disk, log in and run: doas faseela-install\n\n' >> "$r/etc/issue"
+}
+# <<< live-user
+make_live_user /newroot
+echo "initramfs: live session — user 'live' and root have empty passwords"
+# (with persistence the changes above are re-applied at every boot)
 
 # hand the pseudo filesystems over to the real root; keep the boot media
 # mounted at /cdrom inside the live system (the disk installer reads the
@@ -314,6 +399,12 @@ mount --move /sys /newroot/sys
 mount --move /dev /newroot/dev
 mkdir -p /newroot/cdrom
 mount --move /cdrom /newroot/cdrom
+# ISO booted as a file (Ventoy): its partition backs the loop device, keep it mounted
+# (and visible to the installer, which never offers a disk with a mounted partition)
+if grep -q " /iso-host " /newroot/proc/mounts; then
+    mkdir -p /newroot/media/iso-host
+    mount --move /iso-host /newroot/media/iso-host
+fi
 
 echo "initramfs: switch_root -> runit"
 export PATH=/bin:/usr/bin:/usr/sbin:/sbin
