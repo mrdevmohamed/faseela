@@ -1,7 +1,7 @@
 # Telegram notifications
 
-Faseela sends one detailed Telegram report after each standalone CI run and
-after each complete Build ISO (CD) run.
+Faseela sends a short start notification, then one detailed Telegram report
+after each standalone CI run and each complete Build ISO (CD) run.
 
 ## What Telegram receives
 
