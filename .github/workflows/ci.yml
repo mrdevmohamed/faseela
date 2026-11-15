@@ -39,6 +39,25 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  telegram-start:
+    name: Telegram build started
+    if: ${{ github.workflow == 'CI' }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Notify Telegram that CI started
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_PHASE: started
+          BRANCH_NAME: ${{ github.head_ref || github.ref_name }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: python3 -I scripts/notify-telegram.py
+
   scripts:
     name: scripts and recipes
     runs-on: ubuntu-24.04
