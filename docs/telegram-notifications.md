@@ -1,15 +1,29 @@
 # Telegram notifications
 
-Faseela sends a Telegram message when its GitHub Actions workflows finish.
+Faseela sends one detailed Telegram report after each standalone CI run and
+after each complete Build ISO (CD) run.
 
-Notifications are enabled for:
-- CI: script and recipe checks.
-- Build ISO (CD): recipe selection, core build, flavor builds, QEMU boot tests,
-  container image and release publication.
+## What Telegram receives
 
-The message includes the overall result, workflow, repository, branch, short
-commit ID, triggering event and actor, run attempt, each relevant job result,
-and a link to the GitHub Actions run. Messages use Telegram HTML formatting.
+- Overall result, workflow, repository, branch, commit, run number, trigger,
+  actor, attempt, optional PR number, and every relevant job result.
+- The generated `run-report.md` file as a Telegram document. It contains job
+  durations, failed jobs and steps, direct log links, build facts, artifact
+  names, and extracted failure diagnostics.
+- A compressed archive of available build logs, including core and per-flavor
+  logs and QEMU boot logs. Common token, password, and authorization patterns
+  are redacted before the archive is sent.
+- On a successful release build, the produced ISO/rootfs and checksum/build
+  output files are sent individually when they fit Telegram's hosted Bot API
+  document-upload limit (49 MiB).
+- Larger build outputs are not silently discarded: Telegram receives their
+  names, sizes, and a link to the GitHub Actions run where the artifacts can
+  be downloaded. The complete build outputs remain available as Actions
+  artifacts for the configured retention period.
+
+A failed or cancelled build still sends the report and available diagnostic
+logs, but never sends partial build outputs as successful deliverables.
+Telegram delivery is best-effort and cannot change the workflow result.
 
 ## Configure the bot
 
@@ -30,12 +44,12 @@ Never commit the token or chat ID to the repository. The notifier skips safely
 when either secret is absent, which also allows fork pull-request CI to run
 without secrets.
 
-## Delivery and tests
+## Delivery limits and tests
 
-Notifications are best-effort. Telegram/network failures create a GitHub Actions
-warning but never change the build, CI, or release result. Optional skipped jobs
-(such as image publishing on a manual artifact-only build) do not turn a
-successful workflow into a failure.
+Telegram's hosted Bot API has a per-document upload limit; Faseela uses a
+conservative 49 MiB threshold. Larger files stay in GitHub Actions artifacts
+and are referenced from the run page. GitHub Actions logs are also retained
+there independently of Telegram delivery.
 
 Run the offline tests with:
 
