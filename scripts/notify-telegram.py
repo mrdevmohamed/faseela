@@ -171,11 +171,13 @@ def deliver_files(token: str, chat_id: str, environ: Mapping[str, str]) -> None:
     repository = environ.get("GITHUB_REPOSITORY", "")
     server = environ.get("GITHUB_SERVER_URL", "https://github.com").rstrip("/")
     run_url = f"{server}/{repository}/actions/runs/{run_id}" if repository and run_id else ""
-    report = Path(environ.get("TELEGRAM_REPORT_PATH", ""))
-    if report.is_file() and report.stat().st_size <= MAX_DOCUMENT_BYTES:
+    report_value = environ.get("TELEGRAM_REPORT_PATH", "").strip()
+    report = Path(report_value) if report_value else None
+    if report and report.is_file() and report.stat().st_size <= MAX_DOCUMENT_BYTES:
         send_document(token, chat_id, report, "تقرير التشغيل الكامل")
-    logs = Path(environ.get("TELEGRAM_LOGS_DIR", ""))
-    if logs.is_dir():
+    logs_value = environ.get("TELEGRAM_LOGS_DIR", "").strip()
+    logs = Path(logs_value) if logs_value else None
+    if logs and logs.is_dir():
         with tempfile.TemporaryDirectory(prefix="faseela-telegram-") as temp:
             archive = Path(temp) / "faseela-build-logs.tar.gz"
             if make_logs_archive(logs, archive):
@@ -184,9 +186,10 @@ def deliver_files(token: str, chat_id: str, environ: Mapping[str, str]) -> None:
                 else:
                     send_message(token, chat_id, "حجم أرشيف السجلات يتجاوز حد Telegram. يمكن تنزيله من صفحة التشغيل: " + run_url)
     if environ.get("TELEGRAM_SEND_BUILDS", "").lower() == "true":
-        build_dir = Path(environ.get("TELEGRAM_BUILD_DIR", ""))
+        build_value = environ.get("TELEGRAM_BUILD_DIR", "").strip()
+        build_dir = Path(build_value) if build_value else None
         too_large = []
-        for path in collect_build_files(build_dir) if build_dir.is_dir() else []:
+        for path in collect_build_files(build_dir) if build_dir and build_dir.is_dir() else []:
             if path.stat().st_size <= MAX_DOCUMENT_BYTES:
                 send_document(token, chat_id, path, f"Build artifact: {path.name}")
             else:
