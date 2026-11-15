@@ -155,6 +155,7 @@ def make_logs_archive(log_dir: Path, destination: Path) -> bool:
             try:
                 data = redact(path.read_bytes())
                 info = archive.gettarinfo(str(path), arcname=str(path.relative_to(log_dir)))
+                info.size = len(data)
                 import io
                 archive.addfile(info, io.BytesIO(data))
             except OSError:
