@@ -815,6 +815,8 @@ jobs:
 
   release:
     name: GitHub Release
+    outputs:
+      url: ${{ steps.publish.outputs.url }}
     needs: [plan, core, build, boot-test]
     # a `v*` tag, or a manual run with `release` ticked. build / boot-test may be
     # skipped (outputs=core), but a failure of either still blocks the release.
@@ -830,6 +832,7 @@ jobs:
           merge-multiple: true
 
       - name: Publish
+        id: publish
         env:
           GH_TOKEN: ${{ github.token }}
           SEED: ${{ needs.core.outputs.seed }}
@@ -896,7 +899,9 @@ jobs:
           } > notes.md
           gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
             --generate-notes --notes-file notes.md "${files[@]}"
-          echo "### Release \`$TAG\`: $(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json url --jq .url)" >> "$GITHUB_STEP_SUMMARY"
+          url="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json url --jq .url)"
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "### Release $TAG: $url" >> "$GITHUB_STEP_SUMMARY"
 
   # Always runs, last, whatever happened (also on failure and cancel): one page
   # that says what happened, so nobody has to open the jobs one by one.
@@ -967,12 +972,6 @@ jobs:
         with:
           pattern: qemu-boot-*
           path: telegram-payload/logs/qemu
-      - uses: actions/download-artifact@v4
-        if: ${{ needs.core.result == 'success' && contains(fromJSON('["success","skipped"]'), needs.build.result) && contains(fromJSON('["success","skipped"]'), needs.boot-test.result) }}
-        continue-on-error: true
-        with:
-          pattern: out-*
-          path: telegram-payload/builds
       - name: Send detailed report, logs, and successful build files to Telegram
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
@@ -982,6 +981,5 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           TELEGRAM_REPORT_PATH: telegram-payload/report/run-report.md
           TELEGRAM_LOGS_DIR: telegram-payload/logs
-          TELEGRAM_BUILD_DIR: telegram-payload/builds
-          TELEGRAM_SEND_BUILDS: ${{ needs.core.result == 'success' && contains(fromJSON('["success","skipped"]'), needs.build.result) && contains(fromJSON('["success","skipped"]'), needs.boot-test.result) }}
+          TELEGRAM_RELEASE_URL: ${{ needs.release.outputs.url }}
         run: python3 -I scripts/notify-telegram.py
