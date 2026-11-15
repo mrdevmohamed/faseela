@@ -1,15 +1,28 @@
 # Telegram notifications
 
-Faseela sends a Telegram message when its GitHub Actions workflows finish.
+Faseela sends a short start notification, then one detailed Telegram report
+after each standalone CI run and each complete Build ISO (CD) run.
 
-Notifications are enabled for:
-- CI: script and recipe checks.
-- Build ISO (CD): recipe selection, core build, flavor builds, QEMU boot tests,
-  container image and release publication.
+## What Telegram receives
 
-The message includes the overall result, workflow, repository, branch, short
-commit ID, triggering event and actor, run attempt, each relevant job result,
-and a link to the GitHub Actions run. Messages use Telegram HTML formatting.
+- Overall result, workflow, repository, branch, commit, run number, trigger,
+  actor, attempt, optional PR number, and every relevant job result.
+- The generated `run-report.md` file as a Telegram document. It contains job
+  durations, failed jobs and steps, direct log links, build facts, artifact
+  names, and extracted failure diagnostics.
+- A compressed archive of available build logs, including core and per-flavor
+  logs and QEMU boot logs. Common token, password, and authorization patterns
+  are redacted before the archive is sent.
+- Build outputs are not downloaded again by the notification job and are not
+  uploaded to Telegram. When a GitHub Release is published, Telegram includes
+  its URL so the original ISO/rootfs can be downloaded as a single file,
+  regardless of Telegram's upload limit.
+- When the run does not publish a Release, Telegram links to the Actions run
+  page where its workflow artifacts are available.
+
+A failed or cancelled build still sends the report and available diagnostic
+logs, but never sends partial build outputs as successful deliverables.
+Telegram delivery is best-effort and cannot change the workflow result.
 
 ## Configure the bot
 
@@ -30,12 +43,11 @@ Never commit the token or chat ID to the repository. The notifier skips safely
 when either secret is absent, which also allows fork pull-request CI to run
 without secrets.
 
-## Delivery and tests
+## Delivery limits and tests
 
-Notifications are best-effort. Telegram/network failures create a GitHub Actions
-warning but never change the build, CI, or release result. Optional skipped jobs
-(such as image publishing on a manual artifact-only build) do not turn a
-successful workflow into a failure.
+The notification job never downloads build outputs. It links to the published
+GitHub Release, or to the Actions run page when no Release was created. GitHub Actions logs are also retained
+there independently of Telegram delivery.
 
 Run the offline tests with:
 

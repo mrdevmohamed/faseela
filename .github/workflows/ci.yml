@@ -39,6 +39,25 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  telegram-start:
+    name: Telegram build started
+    if: ${{ github.workflow == 'CI' }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Notify Telegram that CI started
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_PHASE: started
+          BRANCH_NAME: ${{ github.head_ref || github.ref_name }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: python3 -I scripts/notify-telegram.py
+
   scripts:
     name: scripts and recipes
     runs-on: ubuntu-24.04
@@ -153,6 +172,13 @@ jobs:
           printf '%s' "$NEEDS" > needs.json
           python3 scripts/ci-report.py report --needs-json needs.json --exclude "CI passed" \
             | tee run-report.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: run-report
+          path: run-report.md
+          if-no-files-found: ignore
+          retention-days: 30
   # Only standalone CI runs send here; release.yml sends one combined report
   # after its full matrix, so a reusable CI call must not send a duplicate.
   telegram-notify:
@@ -163,14 +189,22 @@ jobs:
     continue-on-error: true
     permissions:
       contents: read
+      actions: read
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - name: Send workflow result to Telegram
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: run-report
+          path: telegram-payload/report
+      - name: Send workflow result and report to Telegram
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           JOB_RESULTS: scripts=${{ needs.scripts.result }},ci-ok=${{ needs.ci-ok.result }}
           BRANCH_NAME: ${{ github.head_ref || github.ref_name }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          TELEGRAM_REPORT_PATH: telegram-payload/report/run-report.md
         run: python3 -I scripts/notify-telegram.py
