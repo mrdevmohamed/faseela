@@ -153,6 +153,13 @@ jobs:
           printf '%s' "$NEEDS" > needs.json
           python3 scripts/ci-report.py report --needs-json needs.json --exclude "CI passed" \
             | tee run-report.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: run-report
+          path: run-report.md
+          if-no-files-found: ignore
+          retention-days: 30
   # Only standalone CI runs send here; release.yml sends one combined report
   # after its full matrix, so a reusable CI call must not send a duplicate.
   telegram-notify:
@@ -167,10 +174,17 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - name: Send workflow result to Telegram
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: run-report
+          path: telegram-payload/report
+      - name: Send workflow result and report to Telegram
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           JOB_RESULTS: scripts=${{ needs.scripts.result }},ci-ok=${{ needs.ci-ok.result }}
           BRANCH_NAME: ${{ github.head_ref || github.ref_name }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          TELEGRAM_REPORT_PATH: telegram-payload/report/run-report.md
         run: python3 -I scripts/notify-telegram.py
