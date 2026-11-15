@@ -41,6 +41,10 @@ class TelegramNotifierTests(unittest.TestCase):
     def test_running_status_is_reported(self):
         self.assertEqual(notify.overall_status([("core", "in_progress")]), "running")
 
+    def test_start_phase_reports_that_build_has_started(self):
+        message = notify.build_message({"TELEGRAM_PHASE": "started", "JOB_RESULTS": ""})
+        self.assertIn("بدأ البناء", message)
+
     def test_message_contains_detailed_metadata_and_escapes_html(self):
         message = notify.build_message({
             "GITHUB_REPOSITORY": "owner/repo", "GITHUB_SERVER_URL": "https://github.com",
