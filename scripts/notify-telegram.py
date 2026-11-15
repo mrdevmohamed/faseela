@@ -55,12 +55,13 @@ def _escape(value: str) -> str:
 
 def build_message(environ: Mapping[str, str]) -> str:
     results = parse_job_results(environ.get("JOB_RESULTS", ""))
-    status = overall_status(results)
+    phase = environ.get("TELEGRAM_PHASE", "").lower()
+    status = "running" if phase == "started" else overall_status(results)
     labels = {
         "success": ("✅", "نجح البناء"),
         "failure": ("❌", "فشل البناء"),
         "cancelled": ("🚫", "تم إلغاء التشغيل"),
-        "running": ("⏳", "التشغيل ما زال جارياً"),
+        "running": ("⏳", "بدأ البناء" if phase == "started" else "التشغيل ما زال جارياً"),
     }
     icon, title = labels[status]
     repository = environ.get("GITHUB_REPOSITORY", "")
