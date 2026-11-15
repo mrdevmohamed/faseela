@@ -115,6 +115,24 @@ env:
   ROOTFS_ASSET: faseela-x86_64-rootfs.tar.zst
 
 jobs:
+  telegram-start:
+    name: Telegram build started
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Notify Telegram that the build started
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_PHASE: started
+          BRANCH_NAME: ${{ github.head_ref || github.ref_name }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: python3 -I scripts/notify-telegram.py
+
   # The ONE place that decides which faseela-repo commit this whole run builds:
   # a branch that moves while the run is going must not split it in two.
   recipes:
