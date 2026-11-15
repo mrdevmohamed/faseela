@@ -169,10 +169,6 @@ def make_logs_archive(log_dir: Path, destination: Path) -> bool:
     return destination.exists() and destination.stat().st_size > 0
 
 
-def collect_build_files(directory: Path) -> list[Path]:
-    return sorted(p for p in directory.rglob("*") if p.is_file())
-
-
 def _try_send_document(token: str, chat_id: str, path: Path, caption: str) -> bool:
     try:
         send_document(token, chat_id, path, caption)
