@@ -3,7 +3,8 @@
 # (the script faseela-repo's packages.yml runs inside the build root) against a STUB nawa:
 # dependency order, "already published = up to date", installing published
 # dependencies instead of rebuilding them, failure isolation (dependents are
-# skipped, the rest still builds) and the time budget.
+# skipped, the rest still builds), the time budget and freeing the work trees
+# of finished builds (a run of Rust packages must not fill the runner's disk).
 #
 # Usage: tests/test-build-packages-inner.sh
 set -uo pipefail
@@ -43,6 +44,10 @@ while [[ $# -gt 0 && $1 == --* ]]; do shift 2; done   # global flags all take a 
 cmd="$1"; shift
 id_of() { awk -v n="$1" '/^version/{gsub(/[" ]/,"",$0); sub(/version=/,"",$0); v=$0}
          /^rel/{r=$3} END{print n "-" v "-" (r==""?1:r)}' "$W"/repo/recipes/*/"$1"/recipe.toml; }
+tree() { # leave <id>/{src,pkg} + a phase log behind, as nawa does
+    local id; id="$(id_of "$1")"
+    mkdir -p "$W/$id/src/target" "$W/$id/pkg"; echo big > "$W/$id/src/target/big"; echo log > "$W/$id/compile.log"
+}
 case "$cmd" in
   deps-all) cat "$W/order" ;;
   deps)
@@ -55,6 +60,7 @@ case "$cmd" in
     name="${@: -1}"; echo "build $name" >> "$W/calls"
     # real nawa: `build --install` verifies the fresh (unsigned) archive and has no --allow-unsigned
     [[ -e $W/trusted && " $* " == *" --install "* ]] && { echo "unsigned but a trusted key is configured" >&2; exit 1; }
+    tree "$name"
     grep -qxF "$name" "$W/fail" 2>/dev/null && exit 1
     touch "$W/out/$(id_of "$name").nawa.tar.zst"; echo "$name" >> "$W/installed" ;;
   install)
@@ -67,6 +73,7 @@ case "$cmd" in
         echo "install-build $t" >> "$W/calls"
         for d in $(grep "^$t:" "$W/deps" | cut -d: -f2) $t; do
             grep -qxF "$d" "$W/installed" 2>/dev/null && continue
+            tree "$d"
             touch "$W/out/$(id_of "$d").nawa.tar.zst"; echo "$d" >> "$W/installed"
         done
     fi ;;
@@ -78,7 +85,7 @@ run() { # PKGS [extra env...]  (fresh installed/calls/out unless the caller seed
     ( cd "$WORK" && env PKGS="$1" REPO="$WORK/repo" BUILD="$WORK" NAWA_BIN="$WORK/nawa" \
         ISOLATION=env NAWA_JOBS=1 "${@:2}" bash "$SRC" > "$WORK/log" 2>&1 )
 }
-reset() { rm -rf "$WORK/out" "$WORK/installed" "$WORK/calls" "$WORK/fail" "$WORK/status" "$WORK/report.txt" "$WORK/trusted"; mkdir -p "$WORK/out"; }
+reset() { rm -rf "$WORK"/*-[0-9]*-[0-9]*/ "$WORK/out" "$WORK/installed" "$WORK/calls" "$WORK/fail" "$WORK/status" "$WORK/report.txt" "$WORK/trusted"; mkdir -p "$WORK/out"; }
 
 # 1 ---------------------------------------------------------------------------
 echo "== TEST: builds in dependency order whatever order PKGS has"
@@ -148,6 +155,40 @@ echo "== TEST: unknown package name is rejected before anything is built"
 reset
 run "libz nope"; rc=$?
 check "exit 1, nothing built" "[[ $rc -eq 1 && ! -s $WORK/calls ]]"
+
+# 8 ---------------------------------------------------------------------------
+echo "== TEST: the work tree of a built package is deleted, nothing else is"
+reset
+run "app solo"; rc=$?
+check "exit 0" "[[ $rc -eq 0 ]]"
+check "no <id>/src or <id>/pkg is left (the app AND the dependencies built for it)" \
+    "[[ -z \$(ls -d $WORK/*/src $WORK/*/pkg 2>/dev/null) ]]"
+check "archives, report and status are untouched" \
+    "[[ -f $WORK/out/app-2.0-1.nawa.tar.zst && -f $WORK/out/solo-3.1-1.nawa.tar.zst && -s $WORK/report.txt && -s $WORK/status ]]"
+check "repo/ and other non-work directories are untouched" "[[ -d $WORK/repo/recipes && -d $WORK/out ]]"
+check "the report line says how much disk is free" "grep -Eq '^BUILT    app-2.0-1 .*disk free' $WORK/report.txt"
+
+# 9 ---------------------------------------------------------------------------
+echo "== TEST: the work tree of a FAILED build stays (the workflow collects its logs)"
+reset; echo bad > "$WORK/fail"
+run "bad solo"; rc=$?
+check "exit 1" "[[ $rc -eq 1 ]]"
+check "bad-1.0-1 keeps its tree and log" "[[ -f $WORK/bad-1.0-1/compile.log && -d $WORK/bad-1.0-1/src ]]"
+check "solo, built afterwards, is cleaned" "[[ ! -e $WORK/solo-3.1-1 ]]"
+reset; echo bad > "$WORK/fail"
+run "bad solo" KEEP_GOING=0; rc=$?
+check "a later success does not delete the failed tree" "[[ -f $WORK/bad-1.0-1/compile.log ]]"
+reset; echo bad > "$WORK/fail"
+run "solo bad needs-bad libz"; rc=$?
+check "trees of successes on both sides of a failure are gone, the failed one stays" \
+    "[[ ! -e $WORK/solo-3.1-1 && ! -e $WORK/libz-1.3-1 && -f $WORK/bad-1.0-1/compile.log ]]"
+
+# 10 --------------------------------------------------------------------------
+echo "== TEST: KEEP_WORK=1 keeps every work tree"
+reset
+run "libz solo" KEEP_WORK=1; rc=$?
+check "exit 0 and both trees are still there" \
+    "[[ $rc -eq 0 && -d $WORK/libz-1.3-1/src && -d $WORK/solo-3.1-1/src ]]"
 
 echo
 echo "build-packages-inner tests: $PASS passed, $FAIL failed"

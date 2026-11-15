@@ -15,13 +15,20 @@
 #     depend on it are skipped, everything else is still built and published;
 #   * BUDGET_MIN: after that many minutes no NEW package is started, so the
 #     workflow still has time to publish before the runner's 6 h limit. The
-#     next run continues where this one stopped (published = done).
+#     next run continues where this one stopped (published = done);
+#   * a package's work tree ($BUILD/<id>/{src,pkg}) is deleted as soon as a
+#     build succeeded. nawa only wipes a tree when it builds THAT package
+#     again, never afterwards, and a Rust package leaves several GB of
+#     cargo target/ behind: ~20 COSMIC components filled the runner's disk
+#     ("No space left on device") hours into a run. The trees of FAILED
+#     builds stay, because the workflow collects their *.log files.
 #
 # Env:  PKGS         space-separated recipe names (required)
 #       ISOLATION    none|env|sandbox|closure          (default sandbox)
 #       NAWA_JOBS     parallel jobs per build           (default 4)
 #       BUDGET_MIN   stop starting packages after N min (default 0 = no limit)
 #       KEEP_GOING   1 = continue after a failure       (default 1)
+#       KEEP_WORK    1 = keep every package's work tree (default 0: see below)
 #       REPO BUILD NAWA_BIN   overridable for tests (/faseela, /build, /usr/bin/nawa)
 #
 # Writes $BUILD/report.txt (human readable) and $BUILD/status (KEY=value:
@@ -66,6 +73,34 @@ mkdir -p "$OUT"
 START=$SECONDS
 : > "$BUILD/report.txt"
 note() { echo "$*" | tee -a "$BUILD/report.txt"; }
+
+# Work trees nawa left under $BUILD: <id>/ holding both src/ and pkg/ (out/,
+# logs/, fetch/ ... have no such pair and are never touched).
+declare -A keepwork=()     # trees of failed builds, kept for their logs
+work_trees() {
+    local d
+    for d in "$BUILD"/*/; do
+        d="${d%/}"
+        [[ -d $d/src && -d $d/pkg ]] && echo "${d##*/}"
+    done
+}
+prune_work() {             # after a success: free everything not kept
+    [[ ${KEEP_WORK:-0} == 1 ]] && return 0
+    local w
+    while IFS= read -r w; do
+        [[ -n ${keepwork[$w]:-} ]] && continue
+        rm -rf -- "${BUILD:?}/$w" || echo "-- warning: could not remove $BUILD/$w" >&2
+    done < <(work_trees)
+}
+keep_failed_work() {       # after a failure: what is there now stays
+    local w
+    while IFS= read -r w; do keepwork[$w]=1; done < <(work_trees)
+}
+disk_free() {
+    local f
+    f="$(df -h --output=avail "$BUILD" 2>/dev/null | tail -n1 | tr -d ' ')" || f=""
+    echo "${f:-unknown}"
+}
 
 # ---- what to build, in dependency order ----------------------------------
 ALL_ORDER="$(nawa deps-all --include-installed)"
@@ -146,9 +181,11 @@ for p in $ORDER; do
     echo "::endgroup::"
 
     if (( ok )); then
-        note "BUILT    $id  ($(( (SECONDS - START) / 60 )) min into the run)"
+        prune_work
+        note "BUILT    $id  ($(( (SECONDS - START) / 60 )) min into the run, $(disk_free) disk free)"
         built+=("$id")
     else
+        keep_failed_work
         note "FAILED   $id"
         failed_l+=("$id"); failed[$id]=1
         if [[ $KEEP_GOING != 1 ]]; then break; fi
