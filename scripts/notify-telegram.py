@@ -86,6 +86,11 @@ def build_message(environ: Mapping[str, str]) -> str:
         lines.append(f"<b>Pull request:</b> <code>#{_escape(environ['PR_NUMBER'])}</code>")
     lines.extend((f"<b>Jobs:</b>\n<code>{_escape(jobs)}</code>",
                   f'<a href="{_escape(run_url)}">فتح تفاصيل التشغيل وسجلات GitHub Actions</a>'))
+    release_url = environ.get("TELEGRAM_RELEASE_URL", "").strip()
+    if release_url:
+        lines.append('<a href="' + _escape(release_url) + '">تنزيل ملفات البناء من GitHub Release</a>')
+    else:
+        lines.append('<a href="' + _escape(run_url) + '">ملفات البناء (Artifacts) على GitHub Actions</a>')
     return "\n".join(lines)
 
 
@@ -196,18 +201,7 @@ def deliver_files(token: str, chat_id: str, environ: Mapping[str, str]) -> None:
                     _try_send_document(token, chat_id, archive, "سجلات البناء (بعد تنقية بيانات الاعتماد)")
                 else:
                     send_message(token, chat_id, "حجم أرشيف السجلات يتجاوز حد Telegram. يمكن تنزيله من صفحة التشغيل: " + run_url)
-    if environ.get("TELEGRAM_SEND_BUILDS", "").lower() == "true":
-        build_value = environ.get("TELEGRAM_BUILD_DIR", "").strip()
-        build_dir = Path(build_value) if build_value else None
-        too_large = []
-        for path in collect_build_files(build_dir) if build_dir and build_dir.is_dir() else []:
-            if path.stat().st_size <= MAX_DOCUMENT_BYTES:
-                _try_send_document(token, chat_id, path, f"Build artifact: {path.name}")
-            else:
-                too_large.append(f"{path.name} ({path.stat().st_size / (1024**2):.1f} MiB)")
-        if too_large:
-            lines = "\n".join(f"• {name}" for name in too_large)
-            send_message(token, chat_id, "ملفات أكبر من حد الإرسال المباشر في Telegram:\n" + lines + "\nرابط التنزيل من GitHub Actions: " + run_url)
+
 
 
 def main(environ: Mapping[str, str] | None = None) -> int:
