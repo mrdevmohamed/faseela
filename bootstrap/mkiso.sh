@@ -7,10 +7,13 @@
 #   /boot/initramfs.img      built by bootstrap/initramfs.sh (static busybox)
 #   /live/rootfs.squashfs    the entire target root, compressed
 #   /boot/grub/grub.cfg      live menu (BIOS+UEFI via grub-mkrescue)
+#   /boot/grub/loopback.cfg  the same menu for booting the ISO as a FILE (Ventoy, GRUB loopback)
 #
 # Boot flow: grub -> kernel + initramfs -> /init finds the media, loads
 # storage modules, mounts rootfs.squashfs read-only, stacks a tmpfs overlay
-# on top (overlayfs) and switch_roots into /usr/bin/runit.
+# on top (overlayfs) and switch_roots into /usr/bin/runit. The medium can also be an
+# ISO FILE on a partition (Ventoy): the initramfs then finds and loop-mounts it.
+# The live session has a `live` user without password (made by the initramfs).
 #
 # Host requirements:
 #   mksquashfs        (Debian: squashfs-tools)
@@ -157,25 +160,53 @@ fi
 
 GFX
 fi
-cat >> "$ISO/boot/grub/grub.cfg" <<EOF
+# The menu entries, shared by grub.cfg (boot from the medium) and loopback.cfg (boot this
+# ISO as a FILE: GRUB's loopback, and Ventoy's GRUB2 mode). $isoparam is empty on a
+# normal boot and `iso-scan/filename=<path>` when the ISO is a file, so the initramfs
+# knows where to look (it also scans for *.iso by itself when it is not told).
+menu_entries() {
+    cat <<ENTRIES
 set default=0
 set timeout=5
 
 menuentry "faseela (live)" {
-    linux /boot/$KVER quiet console=ttyS0,115200 console=tty0
+    linux /boot/$KVER quiet \${isoparam} console=ttyS0,115200 console=tty0
     initrd /boot/initramfs.img
 }
 
 menuentry "faseela (live, without persistence)" {
-    linux /boot/$KVER quiet nopersist console=ttyS0,115200 console=tty0
+    linux /boot/$KVER quiet nopersist \${isoparam} console=ttyS0,115200 console=tty0
     initrd /boot/initramfs.img
 }
 
 menuentry "faseela (live, verbose)" {
-    linux /boot/$KVER loglevel=7 console=ttyS0,115200 console=tty0
+    linux /boot/$KVER loglevel=7 \${isoparam} console=ttyS0,115200 console=tty0
     initrd /boot/initramfs.img
 }
-EOF
+ENTRIES
+}
+
+{
+    cat <<'ISOPARAM'
+# Ventoy (GRUB2 mode) sets iso_path to the ISO file it booted
+set isoparam=""
+if [ -n "${iso_path}" ]; then
+    set isoparam="iso-scan/filename=${iso_path}"
+fi
+
+ISOPARAM
+    menu_entries
+} >> "$ISO/boot/grub/grub.cfg"
+
+# loopback.cfg: the standard hook for booting an ISO file from GRUB —
+#   loopback loop /path/faseela.iso ; set iso_path=/path/faseela.iso
+#   set root=(loop) ; configfile /boot/grub/loopback.cfg
+{
+    echo '# boot the faseela ISO from a file (GRUB loopback); iso_path is set by the caller'
+    echo 'set isoparam="iso-scan/filename=${iso_path}"'
+    echo
+    menu_entries
+} > "$ISO/boot/grub/loopback.cfg"
 
 # 4) hybrid ISO (BIOS + UEFI when the efi grub modules are installed)
 echo "== stage4: grub-mkrescue"

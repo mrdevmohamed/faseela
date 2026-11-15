@@ -194,4 +194,15 @@ check "G9 the theme is set before the first entry"          "[[ \$(grep -n 'set 
 check "G10 entries and kernel arguments are unchanged"      "[[ \$(grep -c '^menuentry' $GCFG) -eq 3 ]] && grep -q 'linux /boot/$KVER' $GCFG && grep -q '^set timeout=' $GCFG"
 rm -rf "$ROOT/usr/share/grub"
 
+# ---- H. Ventoy / loopback: the ISO booted as a FILE ---------------------------
+LCFG="$CAPTURE/boot/grub/loopback.cfg"
+good_ls
+RC=$(RUN_MKISO)
+check "H1 loopback.cfg is on the image"                      "[[ $RC -eq 0 && -f $LCFG ]]"
+check "H2 loopback.cfg has the three entries"                "[[ \$(grep -c '^menuentry' $LCFG) -eq 3 ]]"
+check "H3 loopback.cfg passes iso-scan/filename"             "grep -q '^set isoparam=\"iso-scan/filename=\${iso_path}\"' $LCFG"
+check "H4 every kernel line carries \$isoparam"              "[[ \$(grep -c '^    linux .*\${isoparam}' $LCFG) -eq 3 && \$(grep -c '^    linux .*\${isoparam}' $GCFG) -eq 3 ]]"
+check "H5 grub.cfg picks up Ventoy's iso_path"               "grep -q 'if \[ -n \"\${iso_path}\" \]' $GCFG && grep -q 'isoparam=\"iso-scan/filename=\${iso_path}\"' $GCFG"
+check "H6 isoparam is defined before the first entry"        "[[ \$(grep -n 'set isoparam=\"\"' $GCFG | head -1 | cut -d: -f1) -lt \$(grep -n '^menuentry' $GCFG | head -1 | cut -d: -f1) ]]"
+
 echo; echo "  PASS: $PASS   FAIL: $FAIL"; [[ $FAIL -eq 0 ]]

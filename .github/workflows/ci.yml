@@ -80,6 +80,8 @@ jobs:
         run: bash tests/test-qemu-boot-test.sh
       - name: mkiso.sh tests (stubbed host tools)
         run: bash tests/test-mkiso.sh
+      - name: live session tests (initramfs live user, Ventoy media, installer cleanup)
+        run: bash tests/test-live-session.sh
       - name: stage set (flavors.toml -> what stages 2/3 build)
         run: bash tests/test-stage-set.sh
       - name: mkflavor tests (stubbed nawa)
