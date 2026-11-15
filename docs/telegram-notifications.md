@@ -13,13 +13,12 @@ after each standalone CI run and each complete Build ISO (CD) run.
 - A compressed archive of available build logs, including core and per-flavor
   logs and QEMU boot logs. Common token, password, and authorization patterns
   are redacted before the archive is sent.
-- On a successful release build, the produced ISO/rootfs and checksum/build
-  output files are sent individually when they fit Telegram's hosted Bot API
-  document-upload limit (49 MiB).
-- Larger build outputs are not silently discarded: Telegram receives their
-  names, sizes, and a link to the GitHub Actions run where the artifacts can
-  be downloaded. The complete build outputs remain available as Actions
-  artifacts for the configured retention period.
+- Build outputs are not downloaded again by the notification job and are not
+  uploaded to Telegram. When a GitHub Release is published, Telegram includes
+  its URL so the original ISO/rootfs can be downloaded as a single file,
+  regardless of Telegram's upload limit.
+- When the run does not publish a Release, Telegram links to the Actions run
+  page where its workflow artifacts are available.
 
 A failed or cancelled build still sends the report and available diagnostic
 logs, but never sends partial build outputs as successful deliverables.
@@ -46,9 +45,8 @@ without secrets.
 
 ## Delivery limits and tests
 
-Telegram's hosted Bot API has a per-document upload limit; Faseela uses a
-conservative 49 MiB threshold. Larger files stay in GitHub Actions artifacts
-and are referenced from the run page. GitHub Actions logs are also retained
+The notification job never downloads build outputs. It links to the published
+GitHub Release, or to the Actions run page when no Release was created. GitHub Actions logs are also retained
 there independently of Telegram delivery.
 
 Run the offline tests with:
