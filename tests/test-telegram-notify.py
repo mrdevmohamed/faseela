@@ -63,6 +63,21 @@ class TelegramNotifierTests(unittest.TestCase):
         self.assertIn("Pull request:</b> <code>#188", message)
         self.assertIn("https://github.com/owner/repo/actions/runs/123", message)
 
+    def test_message_links_to_release_when_available(self):
+        message = notify.build_message({
+            "GITHUB_REPOSITORY": "owner/repo", "GITHUB_RUN_ID": "123",
+            "TELEGRAM_RELEASE_URL": "https://github.com/owner/repo/releases/tag/v1",
+        })
+        self.assertIn("https://github.com/owner/repo/releases/tag/v1", message)
+        self.assertIn("تنزيل ملفات البناء", message)
+
+    def test_message_falls_back_to_actions_artifacts_without_release(self):
+        message = notify.build_message({
+            "GITHUB_REPOSITORY": "owner/repo", "GITHUB_RUN_ID": "123",
+        })
+        self.assertIn("ملفات البناء (Artifacts)", message)
+        self.assertIn("https://github.com/owner/repo/actions/runs/123", message)
+
     def test_sends_html_message_and_disables_link_previews(self):
         with patch.object(notify, "urlopen", return_value=FakeResponse()) as opener:
             notify.send_message("123:token", "-100123", "<b>Faseela</b>")
