@@ -9,6 +9,7 @@ set -euo pipefail
 export PATH=/usr/bin:/bin:/usr/sbin:/sbin
 NAWA_BIN="${NAWA_BIN:-/usr/bin/nawa}"
 ORDER="${FLAVOR_ORDER:-/faseela-flavor.order}"
+SERVICES="${FLAVOR_SERVICES:-/faseela-flavor.services}"
 KEY="${FLAVOR_KEY:-/faseela-nawa.pub}"
 FROM="${FLAVOR_FROM:-repo}"
 # overridable so tests can run this against a throwaway tree with a stub nawa
@@ -18,6 +19,7 @@ FASEELA="${FASEELA:-/faseela}"
 . "$FASEELA/bootstrap/final-root.sh"
 final_root_enabled || { echo "mkflavor-inner: FINAL_ROOT is not set" >&2; exit 1; }
 [[ -s $ORDER ]] || { echo "mkflavor-inner: $ORDER is missing or empty" >&2; exit 1; }
+[[ -f $SERVICES ]] || { echo "mkflavor-inner: $SERVICES is missing" >&2; exit 1; }
 
 repo=()
 [[ -n ${FLAVOR_REPO:-} ]] && repo=(--repo "$FLAVOR_REPO")
@@ -52,6 +54,34 @@ if (( ${#missing[@]} )); then
     echo "mkflavor-inner: or retry with --from auto to build what is missing from the recipes (slow)." >&2
     exit 1
 fi
+
+# Apply the flavor runit policy only after all selected service packages are
+# present. Disable conflicting links first; absent services are harmless,
+# while a requested service that cannot be enabled must fail the image build.
+while read -r action service extra; do
+    [[ -n ${action:-} ]] || continue
+    [[ -z ${extra:-} ]] || {
+        echo "mkflavor-inner: malformed service action: $action $service $extra" >&2
+        exit 1
+    }
+    case "$action" in
+        disable)
+            link="$FINAL_ROOT/etc/runit/runsvdir/default/$service"
+            if [[ -L $link ]]; then
+                echo "== flavor: disable service $service"
+                "$NAWA_BIN" --root "$FINAL_ROOT" service disable "$service"
+            fi
+            ;;
+        enable)
+            echo "== flavor: enable service $service"
+            "$NAWA_BIN" --root "$FINAL_ROOT" service enable "$service"
+            ;;
+        *)
+            echo "mkflavor-inner: unknown service action '$action' for '$service'" >&2
+            exit 1
+            ;;
+    esac
+done < "$SERVICES"
 
 finalize_final_root
 
