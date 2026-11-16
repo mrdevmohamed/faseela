@@ -81,10 +81,10 @@ grep -q 'depends.run' "$W/out3.log"             || fail "no pointer to depends.r
 # Flavor service policy: disable the console getty/old display manager before
 # enabling the greeter selected by the image profile.
 : > "$STUB_LOG"; rm -rf "$FINAL"; mkdir -p "$FINAL/etc/sv/cosmic-greeter" "$FINAL/etc/sv/lightdm" "$FINAL/etc/sv/getty-tty1" "$FINAL/etc/runit/runsvdir/default"
-for svc in cosmic-greeter lightdm getty-tty1; do printf '#!/bin/sh\\nexit 0\\n' > "$FINAL/etc/sv/$svc/run"; chmod +x "$FINAL/etc/sv/$svc/run"; done
+for svc in cosmic-greeter lightdm getty-tty1; do printf '%s\n' '#!/bin/sh' 'exit 0' > "$FINAL/etc/sv/$svc/run"; chmod +x "$FINAL/etc/sv/$svc/run"; done
 ln -s /etc/sv/lightdm "$FINAL/etc/runit/runsvdir/default/lightdm"
 ln -s /etc/sv/getty-tty1 "$FINAL/etc/runit/runsvdir/default/getty-tty1"
-printf 'disable getty-tty1\\ndisable lightdm\\nenable cosmic-greeter\\n' > "$W/services"
+printf '%s\n' 'disable getty-tty1' 'disable lightdm' 'enable cosmic-greeter' > "$W/services"
 run "$W/order" > "$W/out4.log" 2>&1 || { cat "$W/out4.log"; fail "service policy failed"; }
 [[ ! -L "$FINAL/etc/runit/runsvdir/default/getty-tty1" ]] || fail "getty-tty1 remained enabled"
 [[ ! -L "$FINAL/etc/runit/runsvdir/default/lightdm" ]] || fail "LightDM remained enabled"
