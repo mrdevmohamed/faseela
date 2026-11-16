@@ -18,8 +18,8 @@ sed -n '/^cat > "\$TREE\/init"/,/^INIT_EOF/p' "$INITRAMFS" | sed '1d;$d' > "$W/i
 # ---- A. /init -------------------------------------------------------------------
 check "A1 /init is valid sh"                         "sh -n $W/init"
 check "A2 initramfs.sh is valid bash"                "bash -n $INITRAMFS"
-check "A3 exfat and ntfs3 are staged (build side)"   "grep -q '^MODLIST=.* exfat ntfs3\"' $INITRAMFS"
-check "A4 exfat and ntfs3 are loaded (/init)"        "grep -q ' dm_mod ext4 exfat ntfs3\"' $INITRAMFS"
+check "A3 exfat and ntfs3 are staged (build side)"   "grep -q '^MODLIST=.* exfat ntfs3 isofs\"' $INITRAMFS"
+check "A4 exfat and ntfs3 are loaded (/init)"        "grep -q ' dm_mod ext4 exfat ntfs3 isofs\"' $INITRAMFS"
 check "A5 device-mapper devices are scanned"         "grep -q '/dev/mapper/\*' $W/init && grep -q '/dev/dm-' $W/init"
 check "A6 iso-scan/filename and findiso are read"    "grep -q 'iso-scan/filename=\*' $W/init && grep -q 'findiso=\*' $W/init"
 check "A7 an ISO file is loop-mounted"               "grep -q 'mount -t iso9660 -o ro,loop' $W/init"

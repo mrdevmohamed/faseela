@@ -118,7 +118,7 @@ done
 # assignment would kill the script silently (exit 2) before the warning
 # below could run
 KVER="$(ls "$ROOT/lib/modules" 2>/dev/null | sort -V | tail -1 || true)"
-MODLIST="scsi_mod cdrom sr_mod sd_mod sg ahci ata_piix nvme virtio virtio_ring virtio_pci virtio_blk virtio_scsi usb_common usbcore usb_storage uas xhci_pci ehci_pci uhci_hcd hid usbhid hid_generic iso9660 squashfs overlay loop fat vfat nls_cp437 dm_mod ext4 exfat ntfs3"
+MODLIST="scsi_mod cdrom sr_mod sd_mod sg ahci ata_piix nvme virtio virtio_ring virtio_pci virtio_blk virtio_scsi usb_common usbcore usb_storage uas xhci_pci ehci_pci uhci_hcd hid usbhid hid_generic iso9660 squashfs overlay loop fat vfat nls_cp437 dm_mod ext4 exfat ntfs3 isofs"
 if [[ -z $KVER ]]; then
     echo "initramfs: WARNING no modules in $ROOT/lib/modules — CD/DVD boot may" \
          "need sr_mod built into the kernel" >&2
@@ -213,7 +213,7 @@ MODLIST="scsi_mod cdrom sr_mod sd_mod sg ahci ata_piix nvme \
     virtio virtio_ring virtio_pci virtio_blk virtio_scsi \
     usb_common usbcore usb_storage uas \
     xhci_pci ehci_pci uhci_hcd hid usbhid hid_generic \
-    iso9660 squashfs overlay loop fat vfat nls_cp437 dm_mod ext4 exfat ntfs3"
+    iso9660 squashfs overlay loop fat vfat nls_cp437 dm_mod ext4 exfat ntfs3 isofs"
 kv="$(uname -r)"
 if [ -f "/lib/modules/$kv/modules.dep" ]; then
     for m in $MODLIST; do modprobe "$m" 2>/dev/null; done
