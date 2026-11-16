@@ -647,6 +647,14 @@ jobs:
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
           sudo sysctl -w kernel.core_pattern='|/bin/false' || true
 
+      # The initramfs builds static busybox from source; keep the tarball so a run does
+      # not depend on busybox.net being reachable every time (initramfs.sh also has mirrors).
+      - name: Cache the busybox source
+        uses: actions/cache@v4
+        with:
+          path: srccache
+          key: busybox-src-${{ hashFiles('recipes/boot/busybox/recipe.toml') }}
+
       # The flavor = the packages flavors.toml lists for it, INSTALLED from the
       # package repository into an empty root next to the core's (nothing is
       # compiled). A package the repository lacks stops this step with a list.

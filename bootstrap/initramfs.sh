@@ -70,10 +70,32 @@ if [[ -z $SRC ]]; then
     done
 fi
 if [[ -z $SRC ]]; then
-    echo "initramfs: downloading busybox from $BUSYBOX_URL"
+    BB_VERSION="$(sed -n 's/^version *= *"\(.*\)".*/\1/p' "$REPO/recipes/boot/busybox/recipe.toml" | head -1)"
+    BB_FILE="$(basename "${BUSYBOX_URL//%\{version\}/$BB_VERSION}")"
+    # The recipe's URL first, then mirrors of the very same tarball (busybox.net is
+    # sometimes unreachable from CI runners: a run once died on four 135 s timeouts).
+    # Every candidate is verified against the recipe's sha256 before it is accepted, so
+    # a mirror can be wrong or stale but never trusted blindly. Override or extend the
+    # list with BUSYBOX_MIRRORS (space separated URLs).
+    CANDIDATES=("${BUSYBOX_URL//%\{version\}/$BB_VERSION}")
+    # shellcheck disable=SC2206 # a space separated list, on purpose
+    CANDIDATES+=(${BUSYBOX_MIRRORS:-"https://sources.buildroot.net/busybox/$BB_FILE" \
+        "https://deb.debian.org/debian/pool/main/b/busybox/busybox_$BB_VERSION.orig.tar.bz2"})
     mkdir -p "$SRCCACHE"
-    SRC="$SRCCACHE/$(basename "$BUSYBOX_URL")"
-    curl -fL --retry 3 -o "$SRC" "$(sed "s|%{version}|$(sed -n 's/^version *= *"\(.*\)".*/\1/p' "$REPO/recipes/boot/busybox/recipe.toml")|" <<< "$BUSYBOX_URL")"
+    SRC="$SRCCACHE/$BB_FILE"
+    got=0
+    for url in "${CANDIDATES[@]}"; do
+        echo "initramfs: downloading busybox from $url"
+        if curl -fL --connect-timeout 20 --max-time 600 --retry 2 --retry-connrefused -o "$SRC.part" "$url" \
+            && { [[ -z $BUSYBOX_SHA256 ]] || echo "$BUSYBOX_SHA256  $SRC.part" | sha256sum -c --quiet; }; then
+            mv -f "$SRC.part" "$SRC"
+            got=1
+            break
+        fi
+        echo "initramfs: $url did not work, trying the next source" >&2
+        rm -f "$SRC.part"
+    done
+    [[ $got == 1 ]] || { echo "initramfs: could not download busybox from any of: ${CANDIDATES[*]}" >&2; echo "initramfs: pass --src busybox-$BB_VERSION.tar.bz2 or put it in $SRCCACHE" >&2; exit 1; }
 fi
 echo "initramfs: source $SRC"
 if [[ -n $BUSYBOX_SHA256 ]]; then
