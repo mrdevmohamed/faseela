@@ -10,6 +10,12 @@ Faseela has two different boot-image use cases, and they must remain separate:
   for installed kernels. It is packaged by the `saq` recipe (in `faseela-repo`)
   and invoked by the Linux package hooks.
 
+- `saq-live-iso`, a script shipped with `saq`, turns *any* root filesystem into a
+  live ISO (BIOS+UEFI, bootable as a file from Ventoy, with a passwordless `live`
+  user) using `saq --live` for the live initramfs. It is for other distros and
+  for trying a rootfs quickly; the Faseela ISO is still built by `bootstrap/mkiso.sh`
+  (see `docs/boot-and-install.md`). Examples: `docs/live-iso-examples.md` in the saq repository.
+
 The installed system must not depend on a package manager such as dracut or
 mkinitcpio merely to regenerate its own boot image.
 
