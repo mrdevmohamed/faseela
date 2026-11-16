@@ -50,7 +50,9 @@ bash "$HERE/fetch-recipes.sh"
     || { echo "mkflavor: this faseela-repo revision has no flavors.toml" >&2; exit 1; }
 python3 -I "$REPO/scripts/flavor.py" --flavors "$REPO/flavors.toml" resolve "$FLAVOR" \
     --recipes "$REPO/recipes" > "$TARGET/faseela-flavor.order"
-echo "== flavor $FLAVOR: $(wc -l < "$TARGET/faseela-flavor.order") packages from ${FLAVOR_REPO:-the default repository} (--from $FROM)"
+python3 -I "$REPO/scripts/flavor.py" --flavors "$REPO/flavors.toml" services "$FLAVOR" \
+    > "$TARGET/faseela-flavor.services"
+echo "== flavor $FLAVOR: $(wc -l < "$TARGET/faseela-flavor.order") packages, $(wc -l < "$TARGET/faseela-flavor.services") runit service actions from ${FLAVOR_REPO:-the default repository} (--from $FROM)"
 
 bash "$HERE/sync-repo.sh" "$TARGET"
 bash "$HERE/ensure-chroot-mounts.sh" "$TARGET"
@@ -66,5 +68,5 @@ bash "$HERE/enter-root.sh" "$TARGET" /usr/bin/env -i \
     FLAVOR_REPO="$FLAVOR_REPO" FLAVOR_FROM="$FROM" \
     bash /faseela/bootstrap/mkflavor-inner.sh
 
-rm -f "$TARGET/faseela-flavor.order" "$TARGET/faseela-nawa.pub"
+rm -f "$TARGET/faseela-flavor.order" "$TARGET/faseela-flavor.services" "$TARGET/faseela-nawa.pub"
 echo "== flavor $FLAVOR: $TARGET/$ROOT_NAME ($(du -sh "$TARGET/$ROOT_NAME" | cut -f1))"
