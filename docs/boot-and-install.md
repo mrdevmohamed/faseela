@@ -60,6 +60,9 @@ Persistence: Ventoy's own persistence files are not used; a partition labelled
 Verify a new image the first time on your hardware (BIOS and UEFI, secure boot off — Ventoy
 needs its own key enrolled with secure boot on).
 
+Other distros: the saq repository's `saq-live-iso` builds the same kind of ISO (Ventoy,
+`live` user) from any root filesystem — see `docs/kernel-initramfs.md`.
+
 ### Persistence
 
 Label an ext4 partition `FASEELA_PERSIST` (e.g. on the USB stick, after the ISO
