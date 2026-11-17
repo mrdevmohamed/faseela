@@ -12,7 +12,7 @@
 # Usage:
 #   sudo ./rebuild.sh [--iso OUT.iso] TARGET pkg [pkg...]
 # Examples:
-#   sudo ./rebuild.sh --iso out/test.iso /mnt/faseela runit-services shadow
+#   sudo ./rebuild.sh --iso out/test.iso /mnt/faseela systemd-units shadow
 #
 # Dependents are not rebuilt (e.g. after changing a library, name the
 # programs linked against it too). Env: NAWA_JOBS, SINGLE_ROOT=1 (legacy

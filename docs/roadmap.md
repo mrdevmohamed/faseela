@@ -39,7 +39,7 @@
       stage3 world rebuilds)
 - [x] Single-file source support (pinned Mozilla CA bundle via curl.se)
 - [x] base-files recipe — FHS skeleton, merged-usr symlinks, /etc population
-- [x] runit-services recipe — /etc/runit stages + supervised services
+- [x] runit-services recipe — /etc/runit stages + supervised services (replaced by systemd + systemd-units)
 - [x] Live-boot initramfs (static busybox, squashfs + overlayfs, runit)
 - [x] Stage 4 — real hybrid ISO: squashfs + grub (BIOS+UEFI)
 - [x] Package signing (ed25519): keygen / sign / verify / trust store,
@@ -59,7 +59,7 @@
       tar crate with in-process gzip/xz/bzip2/zstd decoders, pure-Rust
       `cp -a` for `local:` sources, `chroot(2)` hooks — nawa needs no
       external curl/tar/cp/chroot binaries
-- [x] `nawa service` — runit enable/disable/list/status UX
+- [x] `nawa service` — runit enable/disable/list/status UX (needs a systemd backend)
 - [x] initramfs: USB3/HID (USB keyboards), virtio, and filesystem modules
       staged for live boot
 - [x] NAWA v0.7 UX overhaul: `nawa.toml` config file + `NAWA_*` env vars,

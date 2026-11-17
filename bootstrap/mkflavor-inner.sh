@@ -55,26 +55,39 @@ if (( ${#missing[@]} )); then
     exit 1
 fi
 
-# Apply the flavor runit policy only after all selected service packages are
-# present. Disable conflicting links first; absent services are harmless,
-# while a requested service that cannot be enabled must fail the image build.
+# Apply the flavor service policy only after all selected service packages are
+# present. Disable conflicting units first; absent units are harmless, while a
+# requested unit that cannot be enabled must fail the image build.
+# systemctl works offline on a root directory: it only manages the unit
+# symlinks. FLAVOR_SYSTEMCTL overrides it (the tests use a stub); otherwise the
+# host's systemctl is used, or the image's own through chroot.
+systemctl_root() {
+    if [[ -n ${FLAVOR_SYSTEMCTL:-} ]]; then
+        "$FLAVOR_SYSTEMCTL" --root "$FINAL_ROOT" "$@"
+    elif command -v systemctl >/dev/null 2>&1; then
+        systemctl --root="$FINAL_ROOT" "$@"
+    else
+        chroot "$FINAL_ROOT" /usr/bin/env PATH=/usr/sbin:/usr/bin:/sbin:/bin systemctl "$@"
+    fi
+}
 while read -r action service extra; do
     [[ -n ${action:-} ]] || continue
     [[ -z ${extra:-} ]] || {
         echo "mkflavor-inner: malformed service action: $action $service $extra" >&2
         exit 1
     }
+    unit="$service"
+    [[ $unit == *.* ]] || unit="$unit.service"
     case "$action" in
         disable)
-            link="$FINAL_ROOT/etc/runit/runsvdir/default/$service"
-            if [[ -L $link ]]; then
+            if systemctl_root is-enabled "$unit" >/dev/null 2>&1; then
                 echo "== flavor: disable service $service"
-                "$NAWA_BIN" --root "$FINAL_ROOT" service disable "$service"
+                systemctl_root disable "$unit"
             fi
             ;;
         enable)
             echo "== flavor: enable service $service"
-            "$NAWA_BIN" --root "$FINAL_ROOT" service enable "$service"
+            systemctl_root enable "$unit"
             ;;
         *)
             echo "mkflavor-inner: unknown service action '$action' for '$service'" >&2

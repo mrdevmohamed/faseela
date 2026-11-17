@@ -2,7 +2,7 @@
 
 ![Faseela logo](assets/logo.svg){ width="96" align="left" }
 
-*Grown from seed.* Faseela is a source-based Linux distribution built around **glibc**, **GCC**, **runit**, and **Nawa**, its package manager written in Rust.
+*Grown from seed.* Faseela is a source-based Linux distribution built around **glibc**, **GCC**, **systemd**, and **Nawa**, its package manager written in Rust.
 
 This repository contains the distribution build system: the bootstrap pipeline, root filesystem and ISO assembly, installer, and release automation. Package recipes and package publishing live in separate repositories.
 
@@ -20,7 +20,7 @@ The repositories are separate on purpose. A package recipe belongs in `faseela-r
 
 - **Source-based packages:** recipes describe how software is built; published binary archives can also be installed from the signed package repository.
 - **glibc and GCC:** the current x86_64 toolchain profile uses the GNU C Library and GCC.
-- **runit:** Faseela uses runit for system initialization and service supervision.
+- **systemd:** Faseela uses systemd for system initialization, service supervision, device management (udev) and login sessions.
 - **Nawa:** package operations and package lifecycle hooks are managed by Faseela's package manager.
 - **Rebuildable images:** the build pipeline produces a full root filesystem and bootable live ISO images.
 

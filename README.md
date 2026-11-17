@@ -6,7 +6,7 @@
 
 <p align="center"><em>Grown from seed.</em></p>
 
-A from-scratch, source-based Linux distribution (Gentoo-style): glibc, gcc, runit, and its
+A from-scratch, source-based Linux distribution (Gentoo-style): glibc, gcc, systemd, and its
 own package manager written in Rust. This repository is the **distribution build system**:
 it turns an empty directory into a bootable ISO and a self-hosting rootfs.
 
@@ -90,7 +90,7 @@ the failing step and the error lines from the failing build log, and the artifac
 | Language (PM)   | Rust                                          |
 | Model           | Source-based (Gentoo-style), binary cache     |
 | libc            | glibc                                         |
-| Init system     | runit                                         |
+| Init system     | systemd                                       |
 | Compiler        | gcc                                           |
 | Recipe format   | Declarative TOML with shell build sections    |
 | Package archive | `.nawa.tar.zst` (payload + .PKGINFO + file list) |

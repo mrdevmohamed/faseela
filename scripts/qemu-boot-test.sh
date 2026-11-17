@@ -4,9 +4,9 @@
 # serial console.
 #
 # It works because the live grub entries pass `console=ttyS0,115200` and
-# runit's stage 1 then starts a getty on ttyS0 (recipes/system/runit-services).
+# systemd's getty generator then starts serial-getty@ttyS0.
 # Nothing is logged in: reaching `login:` proves grub -> kernel -> initramfs ->
-# squashfs/overlay -> runit -> getty all worked.
+# squashfs/overlay -> systemd -> getty all worked.
 #
 # On failure the serial log is printed and a screenshot of the VGA console
 # (where the initramfs reports its errors) is saved next to it.
@@ -65,7 +65,7 @@ while (( SECONDS - start < TIMEOUT )); do
         tail -n 60 "$LOG" >&2 || true
         exit 1
     fi
-    # an initramfs failure drops to a rescue shell and never reaches runit
+    # an initramfs failure drops to a rescue shell and never reaches systemd
     if grep -aqE 'Kernel panic|initramfs: (no boot media|squashfs mount failed|overlayfs mount failed|switch_root failed)' "$LOG" 2>/dev/null; then
         echo "qemu-boot-test: FAIL - boot failed" >&2
         screenshot

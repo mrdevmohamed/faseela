@@ -4,7 +4,7 @@
 # Produces a minimal initramfs containing:
 #   /bin/busybox          static binary (CONFIG_STATIC=y) + applet links
 #   /init                 live-boot script: find media -> squashfs -> overlay
-#                         -> switch_root into /usr/bin/runit
+#                         -> switch_root into /usr/lib/systemd/systemd (PID 1)
 #   /modules/*.ko         storage + HID + filesystem modules copied from the
 #                         target root (flat, for the insmod fallback), so the
 #                         kernel can reach the CD/USB and mount the live image
@@ -269,9 +269,9 @@ if [ -n "$rootdev" ] && mount "$rootdev" /ro 2>/dev/null; then
     mount --move /proc /ro/proc
     mount --move /sys /ro/sys
     mount --move /dev /ro/dev
-    echo "initramfs: switch_root -> runit"
+    echo "initramfs: switch_root -> systemd"
     export PATH=/bin:/usr/bin:/usr/sbin:/sbin
-    exec switch_root /ro /usr/bin/runit
+    exec switch_root /ro /usr/lib/systemd/systemd
 fi
 [ -z "$rootdev" ] || echo "initramfs: WARNING root=$rootdev not mountable — trying live media"
 
@@ -428,9 +428,9 @@ if grep -q " /iso-host " /newroot/proc/mounts; then
     mount --move /iso-host /newroot/media/iso-host
 fi
 
-echo "initramfs: switch_root -> runit"
+echo "initramfs: switch_root -> systemd"
 export PATH=/bin:/usr/bin:/usr/sbin:/sbin
-exec switch_root /newroot /usr/bin/runit
+exec switch_root /newroot /usr/lib/systemd/systemd
 
 # never reached unless switch_root failed
 echo "initramfs: switch_root failed — dropping to rescue shell"

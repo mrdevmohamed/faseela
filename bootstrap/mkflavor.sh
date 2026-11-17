@@ -52,7 +52,7 @@ python3 -I "$REPO/scripts/flavor.py" --flavors "$REPO/flavors.toml" resolve "$FL
     --recipes "$REPO/recipes" > "$TARGET/faseela-flavor.order"
 python3 -I "$REPO/scripts/flavor.py" --flavors "$REPO/flavors.toml" services "$FLAVOR" \
     > "$TARGET/faseela-flavor.services"
-echo "== flavor $FLAVOR: $(wc -l < "$TARGET/faseela-flavor.order") packages, $(wc -l < "$TARGET/faseela-flavor.services") runit service actions from ${FLAVOR_REPO:-the default repository} (--from $FROM)"
+echo "== flavor $FLAVOR: $(wc -l < "$TARGET/faseela-flavor.order") packages, $(wc -l < "$TARGET/faseela-flavor.services") service actions from ${FLAVOR_REPO:-the default repository} (--from $FROM)"
 
 bash "$HERE/sync-repo.sh" "$TARGET"
 bash "$HERE/ensure-chroot-mounts.sh" "$TARGET"

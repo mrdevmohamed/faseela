@@ -128,7 +128,9 @@ check_absent "no i386-pc on UEFI" "grub-install --target=i386-pc"
 
 grep -q "UUID=bbbb-2222  /      ext4" "$WORK/mnt/etc/fstab" && echo "  ok: fstab root UUID" || { echo "  FAIL: fstab root"; cat "$WORK/mnt/etc/fstab"; exit 1; }
 grep -q "UUID=aaaa-1111  /boot/efi vfat" "$WORK/mnt/etc/fstab" && echo "  ok: fstab ESP UUID" || { echo "  FAIL: fstab ESP"; exit 1; }
-grep -q "tmpfs            /run   tmpfs" "$WORK/mnt/etc/fstab" && echo "  ok: fstab /run tmpfs" || { echo "  FAIL: fstab /run row"; exit 1; }
+# systemd mounts /run itself, so fstab must not carry a /run row; /tmp stays a tmpfs
+! grep -q " /run " "$WORK/mnt/etc/fstab" && echo "  ok: fstab has no /run row (systemd mounts it)" || { echo "  FAIL: fstab has a /run row"; exit 1; }
+grep -q "tmpfs            /tmp   tmpfs" "$WORK/mnt/etc/fstab" && echo "  ok: fstab /tmp tmpfs" || { echo "  FAIL: fstab /tmp row"; exit 1; }
 grep -q "root=UUID=bbbb-2222" "$WORK/mnt/boot/grub/grub.cfg" && echo "  ok: grub.cfg root=UUID" || { echo "  FAIL: grub.cfg"; exit 1; }
 grep -q "initrd /boot/initramfs.img" "$WORK/mnt/boot/grub/grub.cfg" && echo "  ok: grub.cfg initrd" || { echo "  FAIL: initrd"; exit 1; }
 grep -q "linux /boot/vmlinuz root=UUID=bbbb-2222" "$WORK/mnt/boot/grub/grub.cfg" && echo "  ok: grub.cfg uses stable kernel alias" || { echo "  FAIL: kernel alias"; exit 1; }
