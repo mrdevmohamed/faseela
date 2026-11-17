@@ -92,6 +92,12 @@ if [[ -x $SR/usr/bin/clean ]]; then
     mkdir -p "$SR/cleanonly/usr/bin"
     cp "$SR/usr/bin/clean" "$SR/usr/bin/a-script" "$SR/cleanonly/usr/bin/"
     check "clean tree (script ignored) passes"  "verify_final_root_no_seed_refs $SR/cleanonly"
+    # Go's debug/elf testdata contains genuine ELF fixtures. This one points
+    # at a deliberately absent seed path but is data for tests, not a runtime
+    # executable, so it must not invalidate a shipped root.
+    mkdir -p "$SR/cleanonly/usr/lib/go/src/debug/elf/testdata"
+    cp "$SR/usr/bin/poisoned-rpath" "$SR/cleanonly/usr/lib/go/src/debug/elf/testdata/libfixture.so_"
+    check "ELF testdata fixture is ignored by seed scan" "verify_final_root_no_seed_refs $SR/cleanonly"
     out=$(verify_final_root_no_seed_refs "$SR" 2>&1); rc=$?
     check "poisoned tree fails the scan"        "[[ $rc -ne 0 ]]"
     check "rpath poison is named"               "printf '%s' \"\$out\" | grep -q poisoned-rpath"
@@ -119,6 +125,16 @@ if command -v gcc >/dev/null 2>&1; then
     out=$(verify_final_root_needed_resolved "$NR/bad" 2>&1); rc=$?
     check "missing libfl.so.2 fails the scan"   "[[ $rc -ne 0 ]]"
     check "offender and soname are named"       "printf '%s' \"\$out\" | grep -q 'usr/bin/tool needs libfl.so.2'"
+    # A real ELF under Go's testdata/ is a fixture, not part of the runtime
+    # dependency closure. The same missing DT_NEEDED outside testdata still
+    # fails above, proving the exception is path-scoped.
+    mkdir -p "$NR/testdata/usr/lib/go/src/debug/elf/testdata"
+    cp "$NR/bad/usr/bin/tool" "$NR/testdata/usr/lib/go/src/debug/elf/testdata/libtiffxx.so_"
+    : > "$NR/testdata/usr/lib/libc.so.6"
+    for l in $(readelf -d "$NR/bad/usr/bin/tool" | sed -n 's/.*Shared library: \[\(.*\)\]/\1/p' | grep -v '^libfl'); do
+        : > "$NR/testdata/usr/lib/$l"
+    done
+    check "ELF testdata fixture is ignored by NEEDED scan" "verify_final_root_needed_resolved $NR/testdata"
     # firmware blobs (Qualcomm .mbn = Hexagon ELF, NEEDED CORE_USER.so) are not host binaries
     mkdir -p "$NR/fw/usr/lib/firmware/ath10k"; cp "$NR/bad/usr/bin/tool" "$NR/fw/usr/lib/firmware/ath10k/wlanmdsp.mbn"
     : > "$NR/fw/usr/lib/libc.so.6"
