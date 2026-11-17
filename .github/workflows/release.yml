@@ -428,11 +428,23 @@ jobs:
           # a crash loop must not spend ~1 s per crash writing cores
           sudo sysctl -w kernel.core_pattern='|/bin/false' || true
 
-      # Minutes, not hours: an unreachable source host fails here instead of
-      # at package 102 of stage 2. Needs only python3 (preinstalled).
-      - name: Check that every recipe source is reachable
+      # Check the exact dependency-closed bootstrap flavor that stages 2/3
+      # will build. Checking every recipe here also probes GUI packages that
+      # this core job never downloads (they are installed from published packages
+      # by the later flavor jobs), so an unrelated source host outage must not
+      # block the bootstrap build.
+      - name: Check the core build sources
         if: ${{ steps.coremode.outputs.mode == 'build' }}
-        run: python3 scripts/check-sources.py
+        run: |
+          if [[ -f flavors.toml && -f scripts/flavor.py ]]; then
+            python3 -I scripts/flavor.py --flavors flavors.toml resolve bootstrap \
+              --recipes recipes > "$RUNNER_TEMP/core-build-packages.txt"
+            python3 scripts/check-sources.py --packages-file "$RUNNER_TEMP/core-build-packages.txt"
+          else
+            # Matches stage-set.sh: an older recipes revision without flavor
+            # metadata builds the whole recipe graph, so check that whole graph.
+            python3 scripts/check-sources.py
+          fi
 
       - name: Make the core (from the package repository, or compile it)
         id: build
