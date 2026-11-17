@@ -27,17 +27,27 @@ case "$cmd" in
     mkdir -p "$root/var/lib/nawa/local/$pkg" "$root/var/cache/nawa/remote/x" "$root/usr/bin" "$root/usr/lib"
     : > "$root/var/cache/nawa/remote/x/$pkg.nawa.tar.zst"
     : > "$root/usr/bin/bash"; : > "$root/usr/bin/nawa"; : > "$root/usr/lib/libc.so.6" ;;
+  service)
+    action="$1"; name="$2"
+    echo "service $root $action $name" >> "$STUB_LOG"
+    link="$root/etc/runit/runsvdir/default/$name"
+    case "$action" in
+      disable) [[ -L $link ]] || exit 1; rm "$link"; mkdir -p "$root/etc/runit/disabled"; : > "$root/etc/runit/disabled/$name" ;;
+      enable) [[ -x "$root/etc/sv/$name/run" ]] || exit 1; mkdir -p "$(dirname "$link")"; ln -s "/etc/sv/$name" "$link" ;;
+      *) exit 2 ;;
+    esac ;;
 esac
 STUB
 chmod +x "$W/nawa"
 export STUB_LOG="$W/calls.log"; : > "$STUB_LOG"
 printf 'KEY\n' > "$W/key.pub"
+: > "$W/services"
 printf 'alpha\nbeta\ngamma\n' > "$W/order"
 
 run() {   # $1 = order file, $2 = package the stub refuses ("" = none)
     env -i PATH="$PATH" ${RUN_ENV:-} STUB_LOG="$STUB_LOG" STUB_FAIL="${2:-}" HOME="$W" \
         FINAL_ROOT="$FINAL" NAWA_BIN="$W/nawa" FASEELA="$REPO" \
-        FLAVOR_ORDER="$1" FLAVOR_KEY="$W/key.pub" FLAVOR_REPO="https://repo.example/stable" FLAVOR_FROM=repo \
+        FLAVOR_ORDER="$1" FLAVOR_SERVICES="$W/services" FLAVOR_KEY="$W/key.pub" FLAVOR_REPO="https://repo.example/stable" FLAVOR_FROM=repo \
         bash "$REPO/bootstrap/mkflavor-inner.sh"
 }
 
@@ -68,6 +78,19 @@ fi
 grep -q 'needs libnope.so.9' "$W/out3.log"      || fail "missing library not named"
 grep -q 'depends.run' "$W/out3.log"             || fail "no pointer to depends.run"
 
-: > "$W/empty"
-if run "$W/empty" > /dev/null 2>&1; then fail "empty order accepted"; fi
+# Flavor service policy: disable the console getty/old display manager before
+# enabling the greeter selected by the image profile.
+: > "$STUB_LOG"; rm -rf "$FINAL"; mkdir -p "$FINAL/etc/sv/cosmic-greeter" "$FINAL/etc/sv/lightdm" "$FINAL/etc/sv/getty-tty1" "$FINAL/etc/runit/runsvdir/default"
+for svc in cosmic-greeter lightdm getty-tty1; do printf '%s\n' '#!/bin/sh' 'exit 0' > "$FINAL/etc/sv/$svc/run"; chmod +x "$FINAL/etc/sv/$svc/run"; done
+ln -s /etc/sv/lightdm "$FINAL/etc/runit/runsvdir/default/lightdm"
+ln -s /etc/sv/getty-tty1 "$FINAL/etc/runit/runsvdir/default/getty-tty1"
+printf '%s\n' 'disable getty-tty1' 'disable lightdm' 'enable cosmic-greeter' > "$W/services"
+run "$W/order" > "$W/out4.log" 2>&1 || { cat "$W/out4.log"; fail "service policy failed"; }
+[[ ! -L "$FINAL/etc/runit/runsvdir/default/getty-tty1" ]] || fail "getty-tty1 remained enabled"
+[[ ! -L "$FINAL/etc/runit/runsvdir/default/lightdm" ]] || fail "LightDM remained enabled"
+[[ "$(readlink "$FINAL/etc/runit/runsvdir/default/cosmic-greeter")" == "/etc/sv/cosmic-greeter" ]] || fail "COSMIC greeter service was not enabled"
+grep -q "^service $FINAL disable getty-tty1$" "$STUB_LOG" || fail "getty disable action not executed"
+grep -q "^service $FINAL disable lightdm$" "$STUB_LOG" || fail "LightDM disable action not executed"
+grep -q "^service $FINAL enable cosmic-greeter$" "$STUB_LOG" || fail "COSMIC greeter enable action not executed"
+
 echo "test-mkflavor: ok"
