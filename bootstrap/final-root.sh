@@ -203,7 +203,15 @@ verify_final_root_no_seed_refs() {
         found=$((found+1))
     done < <(
         # shellcheck disable=SC2086  # FINAL_ROOT_ELF_DIRS is a word list by design
-        for d in $dirs; do find "$root/$d" -path '*/firmware' -prune -o -type f -print0 2>/dev/null; done
+        for d in $dirs; do
+            # Test fixtures may be valid ELF files (Go's debug/elf testdata
+            # includes shared objects that intentionally depend on host-only
+            # libraries). They are data consumed by tests, not runtime
+            # executables, so they must not impose image runtime dependencies.
+            find "$root/$d" \\
+                \\( -path '*/firmware' -o -path '*/testdata' \\) -prune -o \\
+                -type f -print0 2>/dev/null
+        done
     )
     [ "$bad" -eq 0 ] || return 1
     echo "== final-root: no seed references in $found ELF file(s) under $root"
@@ -253,7 +261,15 @@ verify_final_root_needed_resolved() {
         done < <(printf '%s\n' "$out" | sed -n 's/.*(NEEDED).*Shared library: \[\(.*\)\]/\1/p')
     done < <(
         # shellcheck disable=SC2086
-        for d in $dirs; do find "$root/$d" -path '*/firmware' -prune -o -type f -print0 2>/dev/null; done
+        for d in $dirs; do
+            # Test fixtures may be valid ELF files (Go's debug/elf testdata
+            # includes shared objects that intentionally depend on host-only
+            # libraries). They are data consumed by tests, not runtime
+            # executables, so they must not impose image runtime dependencies.
+            find "$root/$d" \\
+                \\( -path '*/firmware' -o -path '*/testdata' \\) -prune -o \\
+                -type f -print0 2>/dev/null
+        done
     )
     [ "$bad" -eq 0 ] || return 1
     echo "== final-root: all NEEDED sonames resolve inside $root ($found ELF file(s))"
