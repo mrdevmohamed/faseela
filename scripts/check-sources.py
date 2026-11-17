@@ -173,14 +173,39 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("recipes", nargs="?", default="recipes")
     parser.add_argument("--jobs", type=int, default=16)
+    parser.add_argument(
+        "--packages-file",
+        help="check only package names listed in this file (one name per line)",
+    )
     parser.add_argument("--dry-run", action="store_true", help="only parse recipes, no network")
     args = parser.parse_args()
 
+    requested = None
+    if args.packages_file:
+        with open(args.packages_file, encoding="utf-8") as stream:
+            requested = {
+                line.split("#", 1)[0].strip()
+                for line in stream
+                if line.split("#", 1)[0].strip()
+            }
+        if not requested:
+            parser.error("--packages-file contains no package names")
+
     items = []
+    found = set()
     for recipe_path in sorted(glob.glob(os.path.join(args.recipes, "*", "*", "recipe.toml"))):
         name, groups = urls(recipe_path)
-        if name:
+        if not name:
+            continue
+        found.add(name)
+        if requested is None or name in requested:
             items.append((name, groups))
+
+    missing = sorted(requested - found) if requested is not None else []
+    if missing:
+        for name in missing:
+            print(f"::error::{name}: requested package has no recipe")
+        return 1
 
     if args.dry_run:
         artifact_count = sum(len(groups) for _, groups in items)
