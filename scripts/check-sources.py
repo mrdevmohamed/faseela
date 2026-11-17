@@ -57,9 +57,19 @@ def urls(path):
 
     name = package.get("name")
     version = str(package.get("version", ""))
+    rel = str(package.get("rel", 1))
+    arches = package.get("arch", [])
+    arch = arches[0] if isinstance(arches, list) and arches else "x86_64"
 
     def expand(value):
-        return value.replace("%{version}", version)
+        for key, replacement in (
+            ("%{name}", str(name)),
+            ("%{version}", version),
+            ("%{rel}", rel),
+            ("%{arch}", str(arch)),
+        ):
+            value = value.replace(key, replacement)
+        return value
 
     def group(label, primary, mirrors=()):
         # An absent/blank URL is represented explicitly. It must not reach
