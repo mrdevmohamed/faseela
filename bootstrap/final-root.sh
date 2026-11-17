@@ -266,8 +266,8 @@ verify_final_root_needed_resolved() {
             # includes shared objects that intentionally depend on host-only
             # libraries). They are data consumed by tests, not runtime
             # executables, so they must not impose image runtime dependencies.
-            find "$root/$d" \\
-                \\( -path '*/firmware' -o -path '*/testdata' \\) -prune -o \\
+            find "$root/$d" \
+                \( -path '*/firmware' -o -path '*/testdata' \) -prune -o \
                 -type f -print0 2>/dev/null
         done
     )
