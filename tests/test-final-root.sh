@@ -89,13 +89,14 @@ gcc -o "$SR/usr/bin/clean" "$W/t.c" 2>/dev/null || echo "WARN: gcc unavailable â
 if [[ -x $SR/usr/bin/clean ]]; then
     gcc -Wl,-rpath,/opt/seed/lib -o "$SR/usr/bin/poisoned-rpath" "$W/t.c"
     gcc -Wl,--dynamic-linker=/opt/cargo/lib/ld.so -o "$SR/usr/bin/poisoned-interp" "$W/t.c"
-    mkdir -p "$SR/cleanonly/usr/bin" "$SR/cleanonly/usr/lib/go/src/debug/elf/testdata"
+    mkdir -p "$SR/cleanonly/usr/bin"
     cp "$SR/usr/bin/clean" "$SR/usr/bin/a-script" "$SR/cleanonly/usr/bin/"
+    check "clean tree (script ignored) passes"  "verify_final_root_no_seed_refs $SR/cleanonly"
     # Go's debug/elf testdata contains genuine ELF fixtures. This one points
     # at a deliberately absent seed path but is data for tests, not a runtime
     # executable, so it must not invalidate a shipped root.
+    mkdir -p "$SR/cleanonly/usr/lib/go/src/debug/elf/testdata"
     cp "$SR/usr/bin/poisoned-rpath" "$SR/cleanonly/usr/lib/go/src/debug/elf/testdata/libfixture.so_"
-    check "clean tree (script ignored) passes"  "verify_final_root_no_seed_refs $SR/cleanonly"
     check "ELF testdata fixture is ignored by seed scan" "verify_final_root_no_seed_refs $SR/cleanonly"
     out=$(verify_final_root_no_seed_refs "$SR" 2>&1); rc=$?
     check "poisoned tree fails the scan"        "[[ $rc -ne 0 ]]"
