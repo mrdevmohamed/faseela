@@ -63,7 +63,7 @@ installs="$(grep '^install ' "$STUB_LOG" | sed 's/.* //' | tr '\n' ' ')"
 [[ $installs == "alpha beta gamma " ]] || fail "install order: $installs"
 grep -q "^trust / $W/key.pub" "$STUB_LOG"      || fail "key not trusted in the build root"
 grep -q "^trust $FINAL $W/key.pub" "$STUB_LOG" || fail "key not trusted in the image"
-[[ "$(grep -c -- '--no-deps --from repo --repo https://repo.example/stable' "$STUB_LOG")" == 3 ]] \
+[[ "$(grep -c -- '--from repo --no-deps --repo https://repo.example/stable' "$STUB_LOG")" == 3 ]] \
     || fail "every install must be --no-deps --from repo --repo URL: $(cat "$STUB_LOG")"
 [[ -z "$(ls -A "$FINAL/var/cache/nawa")" ]] || fail "var/cache/nawa not emptied"
 
