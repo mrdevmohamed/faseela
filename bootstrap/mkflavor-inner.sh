@@ -35,11 +35,20 @@ fi
 
 repair_final_layout
 n=0 missing=()
+# In repo mode every selected package must already exist as an archive, and
+# its runtime dependencies are already ordered in the flavor closure. In auto
+# mode, however, a missing package is compiled on demand: do NOT pass
+# --no-deps, because that also suppresses its [depends].build toolchain (e.g.
+# Meson for systemd), leaving configure to fail with "command not found".
+install_flags=(--yes --from "$FROM")
+if [[ $FROM != auto ]]; then
+    install_flags+=(--no-deps)
+fi
 while IFS= read -r pkg; do
     [[ -n $pkg ]] || continue
     echo "== flavor: $pkg"
     if "$NAWA_BIN" --recipes "$FASEELA/recipes" --root "$FINAL_ROOT" \
-            install --yes --no-deps --from "$FROM" "${repo[@]}" "$pkg"; then
+            install "${install_flags[@]}" "${repo[@]}" "$pkg"; then
         n=$((n+1))
     else
         missing+=("$pkg")
