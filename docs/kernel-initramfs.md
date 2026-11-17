@@ -116,7 +116,7 @@ can resolve them, so prefer `UUID=`. It honors `rootfstype`, `rootflags`,
 `ro`/`rw` (default `ro`), `rootdelay` (seconds to wait, default 30) and
 `rootwait`, and `init=`. `break` / `break=postmount` open a shell before or
 after mounting root. It then moves `/dev`, `/proc` and `/sys` and switches to
-`/usr/bin/runit`.
+`/usr/lib/systemd/systemd` (PID 1).
 
 The package uses a statically linked BusyBox and the host's cpio/gzip tools
 when generating the image; saq refuses to build if BusyBox is not static or

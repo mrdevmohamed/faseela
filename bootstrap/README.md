@@ -23,10 +23,9 @@ grub (hybrid BIOS+UEFI)
   └─ kernel + /boot/initramfs.img (static busybox, built by initramfs.sh)
        └─ /init: insmod storage modules → find the FASEELA media
                  (sr/sd/vd/nvme scan) → mount /live/rootfs.squashfs
-                 → overlayfs with tmpfs upper → switch_root → /usr/bin/runit
-                      └─ /etc/runit/1 (mount, udev coldplug)
-                         /etc/runit/2 (runsvdir: getty tty1-4, udevd,
-                         dhcpcd, sysklogd, crond) → login on tty1-4
+                 → overlayfs with tmpfs upper → switch_root → /usr/lib/systemd/systemd
+                      └─ systemd (udev + coldplug, journald, networkd,
+                         resolved, timesyncd, getty) → login on tty1
 ```
 
 ## Host requirements
@@ -107,7 +106,7 @@ reinstalls only the named recipes (build root + final root) and can repack
 the ISO:
 
 ```bash
-sudo ./rebuild.sh --iso out/test.iso /mnt/faseela runit-services shadow
+sudo ./rebuild.sh --iso out/test.iso /mnt/faseela systemd-units shadow
 ```
 
 Dependents are not rebuilt (name them too after changing a library). No
@@ -202,7 +201,7 @@ changed recipe tree, as a release build should.
 ## Status
 
 v0.4 — the target is a BOOTABLE system: base-files (FHS + /etc),
-runit-services (init stages + supervised services), a live-boot
+systemd + systemd-units (init and service defaults), a live-boot
 initramfs (squashfs + overlayfs) and a real stage-4 hybrid ISO.
 Remaining: atomic upgrades + rollback, ed25519 package signing,
 installer-to-disk (currently live-only).

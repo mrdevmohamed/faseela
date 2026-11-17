@@ -290,6 +290,7 @@ run rsync -aHX --numeric-ids \
     --exclude=/etc/faseela-live \
     --exclude="${MNT%/}" --exclude="${MNT%/}"/* \
     --exclude=/lost+found --exclude=/var/cache/nawa \
+    --exclude=/var/log/journal/* \
     --exclude=/build --exclude=/build3 --exclude=/sources --exclude=/.nawa \
     / "$MNT/"
 
@@ -297,6 +298,10 @@ run rsync -aHX --numeric-ids \
 # the contents (base-files normally provides the dirs; be safe anyway)
 run mkdir -p "$MNT"/{proc,sys,dev,run,tmp,cdrom,media,mnt,boot,var/cache/nawa}
 run chmod 1777 "$MNT/tmp"
+
+# The live session's machine-id was copied with the tree; an empty file makes
+# systemd generate a fresh one on the installed system's first boot.
+run truncate -s 0 "$MNT/etc/machine-id"
 
 # --- 3b) package cache (rollback support) --------------------------------------
 # nawa install keeps every installed archive in /var/cache/nawa so
@@ -387,9 +392,7 @@ log "root UUID: $ROOT_UUID"
         ESP_UUID="$(blkid -s UUID -o value "$PART_ESP" | head -1)"
         echo "UUID=$ESP_UUID  /boot/efi vfat defaults            0 2"
     fi
-    # /run must be tmpfs (udevd, runit service state, pidfiles); without these
-    # rows runtime state would persist on disk across boots
-    echo "tmpfs            /run   tmpfs defaults,mode=0755,nosuid,nodev 0 0"
+    # systemd mounts /run itself; /tmp is a tmpfs here so it starts clean every boot
     echo "tmpfs            /tmp   tmpfs defaults,nosuid            0 0"
     [ "$SWAP_ROW" != 1 ] || echo "/swapfile        none   swap  defaults                  0 0"
 } > "$MNT/etc/fstab"

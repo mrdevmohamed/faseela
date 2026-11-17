@@ -6,15 +6,15 @@
 grub (BIOS+UEFI)
   └─ kernel + initramfs (static busybox)
        └─ /init: root=UUID=<disk> ?  ── yes → mount disk → switch_root
-                 │                        → /usr/bin/runit (installed system)
+                 │                        → /usr/lib/systemd/systemd (installed system)
                  └─ no: load storage modules → find FASEELA media
                          → mount /live/rootfs.squashfs
                          → overlayfs (upper = tmpfs, or the
                            FASEELA_PERSIST partition if there is one)
-                         → switch_root → /usr/bin/runit (live system,
+                         → switch_root → /usr/lib/systemd/systemd (live system,
                            boot media stays at /cdrom)
-                              └─ /etc/runit/1 → runsvdir (getty, udevd,
-                                 dhcpcd, sysklogd, crond) → login on tty1-4
+                              └─ systemd (udev, journald, networkd, resolved,
+                                 timesyncd, getty) → login on tty1
 
 ### Trying it without installing: the `live` user
 

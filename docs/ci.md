@@ -64,8 +64,8 @@ recipes ─ ci ─ plan (read flavors.toml) ─ core ─┬─ build[each select
   stage 3 with stage 4 (`bootstrap/verify-reproducible.sh`), report only.
 * `boot-test` boots each ISO in QEMU through grub (KVM when the runner has it)
   and waits for `login:` on the serial console (`scripts/qemu-boot-test.sh`).
-  The live grub entries pass `console=ttyS0,115200 console=tty0` and runit's
-  stage 1 starts a getty on ttyS0 only when that argument is present, so real
+  The live grub entries pass `console=ttyS0,115200 console=tty0` and systemd's
+  getty generator starts a getty on ttyS0 only when that argument is present, so real
   hardware behaves as before. On failure the serial log and a VGA screenshot
   are uploaded as `qemu-boot-<variant>`. Remove `boot-test` from the `needs`
   of the `release` job if you do not want it to gate releases.

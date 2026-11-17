@@ -2,7 +2,7 @@
 # test-mkiso.sh — unit test of bootstrap/mkiso.sh (stage 4) with stub host
 # tools. Covers:
 #   * the host-tool fail-fast gate (xorriso is new — validated here)
-#   * the preconditions (kernel, runit) before any work happens
+#   * the preconditions (kernel, systemd) before any work happens
 #   * the STRUCTURAL validation of the produced image: a listing without a
 #     boot-critical member must fail the stage instead of shipping an ISO
 #     that cannot boot
@@ -62,10 +62,10 @@ export CAPTURE="$W/iso-tree"
 
 # ---- root fixture ------------------------------------------------------------
 ROOT="$W/root"
-mkdir -p "$ROOT/boot" "$ROOT/usr/bin" "$ROOT/etc/runit"
+mkdir -p "$ROOT/boot" "$ROOT/usr/lib/systemd/system-preset"
 echo fake-kernel > "$ROOT/boot/vmlinuz-6.1.0-fake"
-printf '#!/bin/sh\n' > "$ROOT/usr/bin/runit"; chmod +x "$ROOT/usr/bin/runit"
-echo 'stage 1' > "$ROOT/etc/runit/1"
+printf '#!/bin/sh\n' > "$ROOT/usr/lib/systemd/systemd"; chmod +x "$ROOT/usr/lib/systemd/systemd"
+echo 'enable getty@tty1.service' > "$ROOT/usr/lib/systemd/system-preset/80-faseela.preset"
 KVER="vmlinuz-6.1.0-fake"
 
 XORRISO_LS="$W/ls.txt"; export XORRISO_LS
@@ -102,11 +102,11 @@ check "B1 no kernel exits 1"                    "[[ $RC -eq 1 ]]"
 check "B2 message says no kernel"               "ERR | grep -q 'no kernel'"
 check "B3 nothing was built"                    "[[ ! -s $W/out/my.iso ]]"
 mv "$W/kernel.hidden" "$ROOT/boot/$KVER"
-mv "$ROOT/usr/bin/runit" "$W/runit.hidden"
+mv "$ROOT/usr/lib/systemd/systemd" "$W/systemd.hidden"
 RC=$(RUN_MKISO)
-check "B4 missing runit exits 1"                "[[ $RC -eq 1 ]]"
-check "B5 message names runit"                  "ERR | grep -q 'runit missing'"
-mv "$W/runit.hidden" "$ROOT/usr/bin/runit"
+check "B4 missing systemd exits 1"              "[[ $RC -eq 1 ]]"
+check "B5 message names systemd"                "ERR | grep -q 'systemd missing'"
+mv "$W/systemd.hidden" "$ROOT/usr/lib/systemd/systemd"
 
 # ---- C. happy path -----------------------------------------------------------
 good_ls

@@ -11,7 +11,7 @@
 #
 # Boot flow: grub -> kernel + initramfs -> /init finds the media, loads
 # storage modules, mounts rootfs.squashfs read-only, stacks a tmpfs overlay
-# on top (overlayfs) and switch_roots into /usr/bin/runit. The medium can also be an
+# on top (overlayfs) and switch_roots into /usr/lib/systemd/systemd. The medium can also be an
 # ISO FILE on a partition (Ventoy): the initramfs then finds and loop-mounts it.
 # The live session has a `live` user without password (made by the initramfs).
 #
@@ -66,8 +66,8 @@ INITRAMFS_BIN="${INITRAMFS_BIN:-$HERE/initramfs.sh}"
 KERNEL="$(ls "$ROOT"/boot/vmlinuz-* 2>/dev/null | sort -V | tail -1 || true)"
 [[ -n ${KERNEL:-} ]] || { echo "mkiso: no kernel in $ROOT/boot (install the linux recipe)" >&2; exit 1; }
 KVER="$(basename "$KERNEL")"
-[[ -x $ROOT/usr/bin/runit ]] || { echo "mkiso: $ROOT/usr/bin/runit missing (install runit)" >&2; exit 1; }
-[[ -f $ROOT/etc/runit/1 ]] || { echo "mkiso: $ROOT/etc/runit/1 missing (install runit-services)" >&2; exit 1; }
+[[ -x $ROOT/usr/lib/systemd/systemd ]] || { echo "mkiso: $ROOT/usr/lib/systemd/systemd missing (install systemd)" >&2; exit 1; }
+[[ -d $ROOT/usr/lib/systemd/system-preset ]] || { echo "mkiso: $ROOT/usr/lib/systemd/system-preset missing (install systemd-units)" >&2; exit 1; }
 
 echo "== stage4: kernel      = $KVER"
 echo "== stage4: compression = $SQUASH_COMP"

@@ -37,7 +37,7 @@ nawa remove --yes <name>                        # remove package (--yes skips th
 nawa repo-create <dir-of-archives> --out index.toml --sign  # signed repo index
 nawa upgrade --yes --repo <dir-or-url>          # upgrade from a repo (repo also comes from nawa.toml)
 nawa rollback <name>                            # restore previous version
-nawa service list                               # runit services
+systemctl list-unit-files --type=service            # services (nawa service: see below)
 nawa config show                                # effective config + where each value came from
 nawa init                                       # write a commented nawa.toml template
 nawa init --system                              # write /etc/nawa/nawa.toml (as root)
@@ -310,20 +310,26 @@ nawa --root / upgrade --repo https://mirror.example.com/faseela/stable
 * packages without a recipe in the local tree (third-party repo content)
   are applied in alphabetical order after the graph-ordered ones
 
-### Service management (runit)
+### Service management (systemd)
+
+Faseela's init system is systemd, so services are managed with `systemctl`:
 
 ```
-nawa service list                 # /etc/sv tree + enabled state
-nawa service enable sshd          # link into /etc/runit/runsvdir/default
-nawa service disable dhcpcd       # remove the link (runsvdir stops it live)
-nawa service status [name]        # static state + live `sv status` when supervised
+systemctl list-unit-files --type=service   # available units and their enabled state
+systemctl enable --now sshd                # enable at boot and start now
+systemctl disable --now sshd               # the reverse
+systemctl status sshd                      # live state, recent log lines
+journalctl -u sshd -b                      # the unit's log for this boot
 ```
 
-A service is *available* when `/etc/sv/<name>/run` exists and *enabled* when
-`/etc/runit/runsvdir/default/<name>` links to it — runsvdir rescans that
-directory every few seconds, so enable/disable take effect without a
-supervisor restart. `disable` refuses to remove anything that is not a
-symlink, and `enable` refuses services without a run script.
+Packages ship their units under `/usr/lib/systemd/system` and call
+`systemctl preset <unit>` from `post_install`; the default policy lives in
+`/usr/lib/systemd/system-preset/80-faseela.preset` (from `systemd-units`).
+
+The `nawa service` subcommand still implements the old runit layout
+(`/etc/sv`, `runsvdir`) and finds nothing on a systemd system. It is replaced
+by a systemctl backend in Nawa itself (a change to the `nawa` repository, not
+this one); until then use `systemctl` directly.
 
 ## Recipe format (example)
 

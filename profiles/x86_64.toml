@@ -13,7 +13,7 @@ jobs = 4
 [profile.toolchain]
 compiler = "gcc"
 libc = "glibc"
-init = "runit"
+init = "systemd"
 kernel = "linux-6.10"
 
 [profile.bootstrap]
