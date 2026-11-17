@@ -52,7 +52,12 @@ url = "$3"
 sha256 = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 EOF
 }
-run() { CHECK_SOURCES_DELAY=0.1 python3 -I scripts/check-sources.py "$T/r" 2>&1; }
+run() { CHECK_SOURCES_DELAY=0.1 python3 -I scripts/check-sources.py "$T/r" "$@" 2>&1; }
+
+mk_at() { # category, name, source
+    mkdir -p "$T/r/$1/$2"
+    printf '[package]\nname = "%s"\nversion = "1"\nsource = "%s"\n' "$2" "$3" > "$T/r/$1/$2/recipe.toml"
+}
 
 mk ok "$B/ok"
 mk flaky "$B/flaky"
@@ -103,6 +108,22 @@ mk localcopy "local:/path/to/local/source"
 out=$(run); rc=$?
 check "empty and local-only sources are skipped without URL exceptions" \
     "[[ $rc -eq 0 ]] && ! grep -q 'ValueError' <<< \"\$out\""
+
+# Preflight can be restricted to the actual dependency-closed build set.
+rm -rf "$T/r"; mkdir -p "$T/r"
+mk wanted "$B/ok"
+mk_at gui gui_only "$B/missing"
+printf 'wanted\n' > "$T/packages"
+out=$(run --packages-file "$T/packages"); rc=$?
+check "package scope ignores unrelated GUI recipes" "[[ $rc -eq 0 ]] && grep -q 'checked 1 recipes: 0 unreachable, 0 on mirror only' <<< \"\$out\" && ! grep -q 'gui_only' <<< \"\$out\""
+
+printf 'wanted\ngui_only\n' > "$T/packages"
+out=$(run --packages-file "$T/packages"); rc=$?
+check "a selected GUI recipe is still checked and can fail" "[[ $rc -eq 1 ]] && grep -q 'gui_only: no source url reachable' <<< \"\$out\""
+
+printf 'not-in-recipes\n' > "$T/packages"
+out=$(run --packages-file "$T/packages"); rc=$?
+check "a requested package without a recipe fails clearly" "[[ $rc -eq 1 ]] && grep -q 'not-in-recipes: requested package has no recipe' <<< \"\$out\""
 
 echo "  PASS: $PASS   FAIL: $FAIL"
 [[ $FAIL -eq 0 ]]
