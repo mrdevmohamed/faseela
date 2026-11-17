@@ -427,7 +427,10 @@ check "X3 / refused"                       "[[ $RC -eq 2 ]]"
 RC=$(bash "$MOCK/build-all.sh" --wipe "$WORK" > "$WORK/last.out" 2> "$WORK/last.err"; echo $?)
 check "X4 repo ancestor refused"           "ERR | grep -q 'contains the repository'"
 check "X5 the work tree survived"          "[[ -d $WORK/repo ]]"
-RC=$(bash "$MOCK/build-all.sh" --wipe "$HOME" > "$WORK/last.out" 2> "$WORK/last.err"; echo $?)
+# Use a throw-away HOME: the real one may be /root or under /home, which the
+# "protected system path" rule refuses first, with a different message.
+FAKE_HOME="$WORK/fake-home"; mkdir -p "$FAKE_HOME"
+RC=$(HOME="$FAKE_HOME" bash "$MOCK/build-all.sh" --wipe "$FAKE_HOME" > "$WORK/last.out" 2> "$WORK/last.err"; echo $?)
 check "X6 HOME refused"                    "ERR | grep -q 'home directory'"
 
 say "Y. --dry-run changes nothing even when stamps are stale"
