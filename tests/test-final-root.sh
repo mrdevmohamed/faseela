@@ -130,7 +130,7 @@ if command -v gcc >/dev/null 2>&1; then
     mkdir -p "$NR/testdata/usr/lib/go/src/debug/elf/testdata"
     cp "$NR/bad/usr/bin/tool" "$NR/testdata/usr/lib/go/src/debug/elf/testdata/libtiffxx.so_"
     : > "$NR/testdata/usr/lib/libc.so.6"
-    for l in $(readelf -d "$NR/bad/usr/bin/tool" | sed -n 's/.*Shared library: \\[\\(.*\\)\\]/\\1/p' | grep -v '^libfl'); do
+    for l in $(readelf -d "$NR/bad/usr/bin/tool" | sed -n 's/.*Shared library: \[\(.*\)\]/\1/p' | grep -v '^libfl'); do
         : > "$NR/testdata/usr/lib/$l"
     done
     check "ELF testdata fixture is ignored by NEEDED scan" "verify_final_root_needed_resolved $NR/testdata"
