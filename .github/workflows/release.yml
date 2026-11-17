@@ -466,7 +466,7 @@ jobs:
           [[ "$STAGE3_WORLD" == "true" ]] && args+=(--stage3-world)
           # self-hosting: the previous release's rootfs replaces the Debian seed
           [[ -n "$ROOTFS_SEED" ]]         && args+=(--seed-rootfs "$ROOTFS_SEED")
-          sudo -E ./bootstrap/build-all.sh "${args[@]}" "$TARGET"
+          sudo -E bash ./bootstrap/build-all.sh "${args[@]}" "$TARGET"
 
       # stage 2 (seed compiler) and stage 3 (our compiler) differ by design; the
       # fixed-point check is stage 3 against stage 4. Report only.
