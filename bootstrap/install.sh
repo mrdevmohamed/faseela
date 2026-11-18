@@ -102,6 +102,13 @@ while [ $# -gt 0 ]; do
     esac
 done
 
+# Reject an incomplete QEMU test opt-in before root checks or any disk mutation.
+# The paired flag is required because NAWA_INSTALL_TEST is the existing guard
+# that confines this path to controlled disposable-disk testing.
+if [ "${FASEELA_QEMU_BOOT_TEST:-0}" = 1 ] && [ "${NAWA_INSTALL_TEST:-0}" != 1 ]; then
+    die "FASEELA_QEMU_BOOT_TEST requires NAWA_INSTALL_TEST=1"
+fi
+
 # NAWA_INSTALL_TEST=1 relaxes the root + block-device checks for stub-based validation
 # no disk and nobody to ask (no terminal): the usage text, and it comes BEFORE the
 # root check — reading the usage needs no privileges, and a script that wrongly
@@ -441,7 +448,6 @@ fi
 # It is never written to ordinary installations or release images.
 QEMU_TEST_ARGS=""
 if [ "${FASEELA_QEMU_BOOT_TEST:-0}" = 1 ]; then
-    [ "${NAWA_INSTALL_TEST:-0}" = 1 ] || die "FASEELA_QEMU_BOOT_TEST requires NAWA_INSTALL_TEST=1"
     QEMU_TEST_ARGS="console=tty0 console=ttyS0,115200"
     log "installing the temporary QEMU PID 1 acceptance probe"
     run mkdir -p "$MNT/usr/libexec" "$MNT/etc/systemd/system/multi-user.target.wants"
