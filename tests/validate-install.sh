@@ -229,7 +229,9 @@ echo "== QEMU installed-disk probe mode =="
 : > "$CMDLOG"
 rm -rf "$WORK/mnt"
 mkdir -p "$WORK/mnt/etc" "$WORK/mnt/usr/sbin" "$WORK/mnt/usr/libexec" \
-    "$WORK/mnt/etc/systemd/system/multi-user.target.wants"
+    "$WORK/mnt/usr/share/nawa" "$WORK/mnt/etc/systemd/system/multi-user.target.wants"
+printf 'schema = 1\ndistribution = "faseela"\narchitecture = "x86_64"\n\n[providers]\ninit-system = "systemd"\n' \
+    > "$WORK/mnt/usr/share/nawa/system-profile.toml"
 printf '127.0.0.1 localhost faseela\n' > "$WORK/mnt/etc/hosts"
 printf 'root::19980:0:::::\n' > "$WORK/mnt/etc/shadow"
 printf '#!/bin/sh\nexit 0\n' > "$WORK/mnt/usr/sbin/saq"
@@ -248,8 +250,14 @@ grep -q 'IFS= read -r init_comm < /proc/1/comm' "$WORK/mnt/usr/libexec/faseela-b
     && echo "  ok: probe reads the real PID 1 comm" \
     || { echo "  FAIL: PID 1 probe missing"; exit 1; }
 grep -q 'FASEELA_BOOT_ACCEPTANCE pid1=%s' "$WORK/mnt/usr/libexec/faseela-boot-acceptance" \
-    && echo "  ok: probe emits the acceptance marker" \
-    || { echo "  FAIL: acceptance marker missing"; exit 1; }
+    && echo "  ok: probe emits the PID 1 marker" \
+    || { echo "  FAIL: PID 1 marker missing"; exit 1; }
+grep -q 'FASEELA_BOOT_ACCEPTANCE system-profile=systemd' "$WORK/mnt/usr/libexec/faseela-boot-acceptance" \
+    && echo "  ok: probe verifies the installed distribution profile" \
+    || { echo "  FAIL: system profile marker missing"; exit 1; }
+grep -q 'init-system = "systemd"' "$WORK/mnt/usr/share/nawa/system-profile.toml" \
+    && echo "  ok: Faseela base-files profile is present in the target root" \
+    || { echo "  FAIL: system profile is missing from the target root"; exit 1; }
 grep -q '^root:\*:' "$WORK/mnt/etc/shadow" \
     && echo "  ok: test root remains locked" \
     || { echo "  FAIL: test root was not locked"; exit 1; }
