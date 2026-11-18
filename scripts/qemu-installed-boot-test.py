@@ -249,17 +249,18 @@ def run_one(args: argparse.Namespace, firmware: str, ovmf_code: str | None) -> N
         print(f"[{firmware}] booting the Live ISO", flush=True)
         live_vm.start()
         live_vm.expect(b"login:", args.live_timeout, "the Live ISO login prompt")
-        # The Live ISO deliberately gives root an empty password. Sending an
-        # empty second line is harmless if this login path does not ask for it.
-        live_vm.send("root\n")
+        # The Live image creates the passwordless live user and a narrowly
+        # scoped nopass doas rule. Use that documented path rather than relying
+        # on root login being enabled on every serial getty configuration.
+        live_vm.send("live\n")
         time.sleep(0.5)
         live_vm.send("\n")
         time.sleep(0.5)
-        live_vm.send('test "$(id -u)" -eq 0 && echo FASEELA_ROOT_OK\n')
-        live_vm.expect(b"FASEELA_ROOT_OK", 60, "a root shell on the Live ISO")
+        live_vm.send("doas sh -c 'test \"$(id -u)\" -eq 0 && echo FASEELA_ROOT_OK'\n")
+        live_vm.expect(b"FASEELA_ROOT_OK", 60, "doas root access on the Live ISO")
 
         install = (
-            f"FASEELA_QEMU_BOOT_TEST=1 NAWA_INSTALL_TEST=1 FW_FORCE={firmware} "
+            f"doas /usr/bin/env FASEELA_QEMU_BOOT_TEST=1 NAWA_INSTALL_TEST=1 FW_FORCE={firmware} "
             "/usr/sbin/faseela-install /dev/vda --yes "
             "&& echo FASEELA_INSTALL_TEST_DONE\n"
         )
