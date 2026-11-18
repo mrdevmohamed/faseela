@@ -16,7 +16,7 @@ name: Build ISO (CD)
 #                   Names beginning iso- become ISOs; names beginning rootfs-
 #                   become rootfs archives. New flavors need no release.yml edits.
 #                   Other flavors can be selected explicitly and become rootfs archives.
-#   boot-test       boots each ISO in QEMU, waits for the login prompt (gates the release)
+#   boot-test       boots each ISO and installs/boots its disk through BIOS+UEFI;
 #   release         one GitHub Release with everything above (tags only)
 #   report          always last: ONE page (run summary + `run-report` artifact) with the
 #                   verdict, every job and its time, the failed step, the error lines
@@ -762,9 +762,9 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
-  # Boots every ISO in QEMU (BIOS, through grub) and waits for the login
-  # prompt on the serial console (scripts/qemu-boot-test.sh). On a tag this
-  # gates the release: an ISO that does not boot is never published.
+  # Boots every ISO in QEMU, then runs the real disk installer in disposable
+  # BIOS and UEFI machines. The installed-disk test requires the PID 1 marker
+  # from /proc/1/comm; a Live ISO login prompt alone is not release acceptance.
   boot-test:
     name: boot ${{ matrix.variant }} in QEMU
     needs: [plan, build]
@@ -772,7 +772,7 @@ jobs:
     # build from being booted; skipped only when nothing was built at all
     if: ${{ !cancelled() && needs.plan.outputs.has_iso == 'true' && needs.build.result != 'skipped' }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.plan.outputs.isos) }}
@@ -792,7 +792,7 @@ jobs:
       - name: Install QEMU
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends qemu-system-x86 socat
+          sudo apt-get install -y --no-install-recommends qemu-system-x86 qemu-utils ovmf socat
           # hosted Linux runners expose /dev/kvm, but only root may use it
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
             | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -807,6 +807,33 @@ jobs:
         env:
           ISO_NAME: ${{ matrix.iso }}
         run: bash scripts/qemu-boot-test.sh "iso/$ISO_NAME" qemu-boot
+      - name: Install to disk and verify systemd PID 1 (BIOS + UEFI)
+        env:
+          ISO_NAME: ${{ matrix.iso }}
+        run: python3 scripts/qemu-installed-boot-test.py "iso/$ISO_NAME" --firmware both --out-dir qemu-installed-boot
+      - name: Installed-disk serial tails
+        if: ${{ failure() }}
+        continue-on-error: true
+        run: |
+          mkdir -p report
+          {
+            echo "### Installed-disk BIOS/UEFI serial output"
+            for firmware in bios uefi; do
+              for log in "qemu-installed-boot/$firmware/live-serial.log" \
+                         "qemu-installed-boot/$firmware/disk-serial.log" \
+                         "qemu-installed-boot/$firmware/live-serial-qemu.log" \
+                         "qemu-installed-boot/$firmware/disk-serial-qemu.log"; do
+                [[ -f "$log" ]] || continue
+                echo
+                echo "<details open><summary>$log</summary>"
+                echo
+                echo '```'
+                tail -n 60 "$log" | sed 's/\\x1b\\[[0-9;]*[A-Za-z]//g'
+                echo '```'
+                echo "</details>"
+              done
+            done
+          } | tee report/installed-disk.md >> "$GITHUB_STEP_SUMMARY"
       - name: Serial console tail
         if: ${{ failure() }}
         continue-on-error: true
@@ -829,8 +856,9 @@ jobs:
         if: always()
         with:
           name: qemu-boot-${{ matrix.variant }}
-          path: qemu-boot
-          if-no-files-found: ignore
+          path: |
+            qemu-boot
+            qemu-installed-boot
           retention-days: 14
 
   release:
