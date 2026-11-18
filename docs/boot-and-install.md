@@ -149,7 +149,7 @@ scripts/qemu-run.sh faseela-sway-x86_64.iso --disk faseela.qcow2 --create-disk 2
 The ISO login-prompt test above verifies the Live system only. To test the actual
 installer, GRUB on the installed disk, SAQ's generated initramfs, and the selected
 PID 1, run this on a host with `qemu-system-x86_64`, `qemu-img`, and (for UEFI)
-OVMF installed:
+OVMF installed (both the code image and a writable variables template):
 
 ```sh
 python3 scripts/qemu-installed-boot-test.py faseela-sway-x86_64.iso --firmware both
@@ -169,7 +169,11 @@ Artifacts and full serial logs are kept under `qemu-installed-boot/`. Remove
 that directory when the test disks are no longer needed.
 
 Use `--firmware bios` or `--firmware uefi` to isolate one firmware path.
-`--dry-run` prints both QEMU command lines without launching a VM.
+The script locates OVMF_CODE and OVMF_VARS under `/usr/share/OVMF`; set
+`OVMF_CODE` and `OVMF_VARS`, or pass `--ovmf-code` and `--ovmf-vars`, when
+your host stores them elsewhere. It copies the writable variables template into
+the test artifact directory and reuses that isolated copy for the installed-disk
+boot. `--dry-run` prints both QEMU command lines without launching a VM.
 
 **If the GUI is slow**, it is almost always one of these (the script warns about the first):
 
