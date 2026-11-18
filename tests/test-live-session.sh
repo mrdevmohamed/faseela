@@ -62,4 +62,20 @@ check "C6 doas rule, banner and home removed"         "! grep -q 'nopass live' $
 check "C7 root is locked until its password is set"   "grep -q '^root:\*:' $R/etc/shadow"
 check "C8 the doas rule for wheel stays"              "grep -q 'persist :wheel' $R/etc/doas.conf"
 
+# ---- D. opt-in installed-disk PID 1 probe -------------------------------------
+check "D1 probe needs both explicit test flags" \
+    "grep -Fq 'FASEELA_QEMU_BOOT_TEST requires NAWA_INSTALL_TEST=1' $INSTALL"
+check "D2 the probe adds only a test serial console" \
+    "grep -Fq 'console=tty0 console=ttyS0,115200' $INSTALL"
+check "D3 the probe reads the real PID 1 comm" \
+    "grep -Fq 'IFS= read -r init_comm < /proc/1/comm' $INSTALL && grep -Fq 'FASEELA_BOOT_ACCEPTANCE pid1=' $INSTALL"
+check "D4 the probe checks the installed System Profile" \
+    "grep -Fq '/usr/share/nawa/system-profile.toml' $INSTALL && grep -Fq 'FASEELA_BOOT_ACCEPTANCE system-profile=systemd' $INSTALL"
+check "D5 the probe is a multi-user systemd unit" \
+    "grep -Fq 'faseela-boot-acceptance.service' $INSTALL && grep -Fq 'WantedBy=multi-user.target' $INSTALL"
+check "D6 test mode keeps root locked and skips passwords" \
+    "grep -Fq 'root remains locked; skipping interactive password setup' $INSTALL"
+check "D7 ordinary installs still ask for the root password" \
+    "grep -Fq '/usr/bin/passwd root' $INSTALL"
+
 echo; echo "  PASS: $PASS   FAIL: $FAIL"; [[ $FAIL -eq 0 ]]

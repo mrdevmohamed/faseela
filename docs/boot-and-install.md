@@ -144,6 +144,40 @@ scripts/qemu-run.sh --boot-disk --disk faseela.qcow2          # from the install
 scripts/qemu-run.sh faseela-sway-x86_64.iso --disk faseela.qcow2 --create-disk 20G --uefi   # UEFI path (OVMF)
 ```
 
+### Automated installed-disk PID 1 acceptance
+
+The ISO login-prompt test above verifies the Live system only. To test the actual
+installer, GRUB on the installed disk, SAQ's generated initramfs, and the selected
+PID 1, run this on a host with `qemu-system-x86_64`, `qemu-img`, and (for UEFI)
+OVMF installed (both the code image and a writable variables template):
+
+```sh
+python3 scripts/qemu-installed-boot-test.py faseela-sway-x86_64.iso --firmware both
+```
+
+The harness creates two disposable qcow2 disks, boots the ISO in BIOS and UEFI,
+logs in to the Live session, runs the real `faseela-install` command, reboots
+from each installed disk without the ISO, and requires both
+`FASEELA_BOOT_ACCEPTANCE pid1=systemd` and
+`FASEELA_BOOT_ACCEPTANCE system-profile=systemd`. The first marker is read
+from the running system's `/proc/1/comm`; the second confirms the installed
+Faseela distribution profile is present and selects systemd. Reaching a login
+prompt is not treated as acceptance.
+
+This test sets both `FASEELA_QEMU_BOOT_TEST=1` and `NAWA_INSTALL_TEST=1`.
+Only that explicit combination installs the temporary serial probe and skips
+interactive password setup; the disposable test installation keeps root locked.
+Normal installs do not create the probe, add a serial console, or skip passwords.
+Artifacts and full serial logs are kept under `qemu-installed-boot/`. Remove
+that directory when the test disks are no longer needed.
+
+Use `--firmware bios` or `--firmware uefi` to isolate one firmware path.
+The script locates OVMF_CODE and OVMF_VARS under `/usr/share/OVMF`; set
+`OVMF_CODE` and `OVMF_VARS`, or pass `--ovmf-code` and `--ovmf-vars`, when
+your host stores them elsewhere. It copies the writable variables template into
+the test artifact directory and reuses that isolated copy for the installed-disk
+boot. `--dry-run` prints both QEMU command lines without launching a VM.
+
 **If the GUI is slow**, it is almost always one of these (the script warns about the first):
 
 | cause | effect | fix |

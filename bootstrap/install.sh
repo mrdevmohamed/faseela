@@ -102,6 +102,13 @@ while [ $# -gt 0 ]; do
     esac
 done
 
+# Reject an incomplete QEMU test opt-in before root checks or any disk mutation.
+# The paired flag is required because NAWA_INSTALL_TEST is the existing guard
+# that confines this path to controlled disposable-disk testing.
+if [ "${FASEELA_QEMU_BOOT_TEST:-0}" = 1 ] && [ "${NAWA_INSTALL_TEST:-0}" != 1 ]; then
+    die "FASEELA_QEMU_BOOT_TEST requires NAWA_INSTALL_TEST=1"
+fi
+
 # NAWA_INSTALL_TEST=1 relaxes the root + block-device checks for stub-based validation
 # no disk and nobody to ask (no terminal): the usage text, and it comes BEFORE the
 # root check — reading the usage needs no privileges, and a script that wrongly
@@ -435,6 +442,44 @@ else
 fi
 
 : > "$MNT/boot/grub/grub.cfg"
+
+# The installed-disk QEMU acceptance path is opt-in and test-only. It adds a
+# serial console plus a one-shot unit that reports the actual /proc/1/comm.
+# It is never written to ordinary installations or release images.
+QEMU_TEST_ARGS=""
+if [ "${FASEELA_QEMU_BOOT_TEST:-0}" = 1 ]; then
+    QEMU_TEST_ARGS="console=tty0 console=ttyS0,115200"
+    log "installing the temporary QEMU PID 1 acceptance probe"
+    run mkdir -p "$MNT/usr/libexec" "$MNT/etc/systemd/system/multi-user.target.wants"
+    cat > "$MNT/usr/libexec/faseela-boot-acceptance" <<'PROBE'
+#!/bin/sh
+IFS= read -r init_comm < /proc/1/comm
+printf 'FASEELA_BOOT_ACCEPTANCE pid1=%s\n' "$init_comm" > /dev/console
+profile=/usr/share/nawa/system-profile.toml
+if [ -r "$profile" ] && grep -Eq '^[[:space:]]*init-system[[:space:]]*=[[:space:]]*"systemd"[[:space:]]*$' "$profile"; then
+    printf 'FASEELA_BOOT_ACCEPTANCE system-profile=systemd\n' > /dev/console
+else
+    printf 'FASEELA_BOOT_ACCEPTANCE system-profile=missing\n' > /dev/console
+fi
+PROBE
+    chmod 0755 "$MNT/usr/libexec/faseela-boot-acceptance"
+    cat > "$MNT/etc/systemd/system/faseela-boot-acceptance.service" <<'UNIT'
+[Unit]
+Description=Temporary Faseela installed-disk PID 1 acceptance probe
+After=local-fs.target
+Before=getty.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/faseela-boot-acceptance
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+    ln -sfn ../faseela-boot-acceptance.service \
+        "$MNT/etc/systemd/system/multi-user.target.wants/faseela-boot-acceptance.service"
+fi
+
 if [ "$GRUB_THEME" = 1 ]; then
     cat >> "$MNT/boot/grub/grub.cfg" <<'GFX'
 set menu_color_normal=white/black
@@ -457,12 +502,12 @@ set default=0
 set timeout=3
 
 menuentry "faseela" {
-    linux /boot/vmlinuz root=UUID=$ROOT_UUID init=/usr/lib/systemd/systemd quiet
+    linux /boot/vmlinuz root=UUID=$ROOT_UUID init=/usr/lib/systemd/systemd quiet $QEMU_TEST_ARGS
     initrd /boot/initramfs.img
 }
 
 menuentry "faseela (verbose)" {
-    linux /boot/vmlinuz root=UUID=$ROOT_UUID init=/usr/lib/systemd/systemd loglevel=7
+    linux /boot/vmlinuz root=UUID=$ROOT_UUID init=/usr/lib/systemd/systemd loglevel=7 $QEMU_TEST_ARGS
     initrd /boot/initramfs.img
 }
 EOF
@@ -515,20 +560,27 @@ run mount -t sysfs sysfs "$MNT/sys"
 # a normal user: wheel is what /etc/doas.conf allows; seat/video/input/audio are
 # what a sway session needs (gui-session creates those groups — only the ones
 # that exist on the target are used, useradd refuses unknown groups)
-if [ -n "$USER_ARG" ]; then
-    GROUPS_CSV=""
-    for g in wheel seat video render input audio; do
-        if grep -q "^$g:" "$MNT/etc/group" 2>/dev/null; then GROUPS_CSV="${GROUPS_CSV:+$GROUPS_CSV,}$g"; fi
-    done
-    log "creating user $USER_ARG (groups: ${GROUPS_CSV:-none})"
-    run chroot "$MNT" /usr/bin/env PATH=/usr/sbin:/usr/bin:/sbin:/bin \
-        useradd -m -s /bin/bash ${GROUPS_CSV:+-G "$GROUPS_CSV"} "$USER_ARG"
-    log "password for $USER_ARG (chroot)"
-    run chroot "$MNT" /usr/bin/passwd "$USER_ARG"
-fi
+if [ "${FASEELA_QEMU_BOOT_TEST:-0}" = 1 ] && [ "${NAWA_INSTALL_TEST:-0}" = 1 ]; then
+    # The disposable test disk intentionally keeps root locked; no reusable
+    # test password is introduced into an image or CI log. The acceptance
+    # service runs before getty and reports PID 1 without an interactive login.
+    log "QEMU acceptance mode: root remains locked; skipping interactive password setup"
+else
+    if [ -n "$USER_ARG" ]; then
+        GROUPS_CSV=""
+        for g in wheel seat video render input audio; do
+            if grep -q "^$g:" "$MNT/etc/group" 2>/dev/null; then GROUPS_CSV="${GROUPS_CSV:+$GROUPS_CSV,}$g"; fi
+        done
+        log "creating user $USER_ARG (groups: ${GROUPS_CSV:-none})"
+        run chroot "$MNT" /usr/bin/env PATH=/usr/sbin:/usr/bin:/sbin:/bin \
+            useradd -m -s /bin/bash ${GROUPS_CSV:+-G "$GROUPS_CSV"} "$USER_ARG"
+        log "password for $USER_ARG (chroot)"
+        run chroot "$MNT" /usr/bin/passwd "$USER_ARG"
+    fi
 
-log "setting the root password (chroot)"
-run chroot "$MNT" /usr/bin/passwd root
+    log "setting the root password (chroot)"
+    run chroot "$MNT" /usr/bin/passwd root
+fi
 
 # --- teardown -----------------------------------------------------------------------
 run sync

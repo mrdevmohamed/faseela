@@ -209,6 +209,63 @@ echo "== safety checks =="
   && { echo "  FAIL: partition accepted"; exit 1; } \
   || grep -q "looks like a partition" "$WORK/err.txt" && echo "  ok: partition refus[ed]"
 
+# The QEMU test flag without its companion flag must fail before root checks
+# and, critically, before wipefs/partitioning.
+: > "$CMDLOG"
+if ( cd "$WORK" && FASEELA_QEMU_BOOT_TEST=1 MNT="$WORK/mnt" \
+     bash "$HERE/bootstrap/install.sh" /dev/vda --yes ) >"$WORK/err.txt" 2>&1; then
+    echo "  FAIL: QEMU probe accepted without NAWA_INSTALL_TEST=1"; exit 1
+fi
+grep -Fq "FASEELA_QEMU_BOOT_TEST requires NAWA_INSTALL_TEST=1" "$WORK/err.txt" \
+    && echo "  ok: incomplete QEMU test opt-in refused early" \
+    || { echo "  FAIL: incomplete QEMU test opt-in was not diagnosed"; cat "$WORK/err.txt"; exit 1; }
+! grep -qE 'wipefs|parted|mkfs' "$CMDLOG" \
+    && echo "  ok: incomplete QEMU test opt-in touched no disk" \
+    || { echo "  FAIL: incomplete QEMU test opt-in reached disk mutation"; cat "$CMDLOG"; exit 1; }
+
+# Explicit QEMU boot-test mode writes a temporary PID 1 probe, adds the
+# serial console only to this disposable target, and never asks for passwords.
+echo "== QEMU installed-disk probe mode =="
+: > "$CMDLOG"
+rm -rf "$WORK/mnt"
+mkdir -p "$WORK/mnt/etc" "$WORK/mnt/usr/sbin" "$WORK/mnt/usr/libexec" \
+    "$WORK/mnt/usr/share/nawa" "$WORK/mnt/etc/systemd/system/multi-user.target.wants"
+printf 'schema = 1\ndistribution = "faseela"\narchitecture = "x86_64"\n\n[providers]\ninit-system = "systemd"\n' \
+    > "$WORK/mnt/usr/share/nawa/system-profile.toml"
+printf '127.0.0.1 localhost faseela\n' > "$WORK/mnt/etc/hosts"
+printf 'root::19980:0:::::\n' > "$WORK/mnt/etc/shadow"
+printf '#!/bin/sh\nexit 0\n' > "$WORK/mnt/usr/sbin/saq"
+chmod +x "$WORK/mnt/usr/sbin/saq"
+(
+    cd "$WORK" &&
+    FASEELA_QEMU_BOOT_TEST=1 NAWA_INSTALL_TEST=1 MNT="$WORK/mnt" \
+    KERNEL_SRC="$KSRC" FW_FORCE=bios \
+    bash "$HERE/bootstrap/install.sh" /dev/vda --yes
+)
+check_absent "probe mode skips all password changes" "/usr/bin/passwd"
+grep -q 'console=tty0 console=ttyS0,115200' "$WORK/mnt/boot/grub/grub.cfg" \
+    && echo "  ok: test serial console in installed GRUB" \
+    || { echo "  FAIL: missing test serial console"; exit 1; }
+grep -q 'IFS= read -r init_comm < /proc/1/comm' "$WORK/mnt/usr/libexec/faseela-boot-acceptance" \
+    && echo "  ok: probe reads the real PID 1 comm" \
+    || { echo "  FAIL: PID 1 probe missing"; exit 1; }
+grep -q 'FASEELA_BOOT_ACCEPTANCE pid1=%s' "$WORK/mnt/usr/libexec/faseela-boot-acceptance" \
+    && echo "  ok: probe emits the PID 1 marker" \
+    || { echo "  FAIL: PID 1 marker missing"; exit 1; }
+grep -q 'FASEELA_BOOT_ACCEPTANCE system-profile=systemd' "$WORK/mnt/usr/libexec/faseela-boot-acceptance" \
+    && echo "  ok: probe verifies the installed distribution profile" \
+    || { echo "  FAIL: system profile marker missing"; exit 1; }
+grep -q 'init-system = "systemd"' "$WORK/mnt/usr/share/nawa/system-profile.toml" \
+    && echo "  ok: Faseela base-files profile is present in the target root" \
+    || { echo "  FAIL: system profile is missing from the target root"; exit 1; }
+grep -q '^root:\*:' "$WORK/mnt/etc/shadow" \
+    && echo "  ok: test root remains locked" \
+    || { echo "  FAIL: test root was not locked"; exit 1; }
+[ -L "$WORK/mnt/etc/systemd/system/multi-user.target.wants/faseela-boot-acceptance.service" ] \
+    && [ "$(readlink "$WORK/mnt/etc/systemd/system/multi-user.target.wants/faseela-boot-acceptance.service")" = "../faseela-boot-acceptance.service" ] \
+    && echo "  ok: one-shot probe is enabled for multi-user.target" \
+    || { echo "  FAIL: probe unit was not enabled"; exit 1; }
+
 # ==================================================== --no-pkg-cache =======
 echo "== no-pkg-cache path =="
 : > "$CMDLOG"
