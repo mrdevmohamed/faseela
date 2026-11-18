@@ -10,7 +10,7 @@ stage 1  stage1.sh            chroot + verify the seed toolchain (it is the temp
 stage 2  stage2.sh            NAWA builds the BOOTSTRAP set (flavors.toml) into the target
 stage 3  stage3.sh            self-hosting rebuild (toolchain, or STAGE3_WORLD=1 for all)
 stage 4  mkrootfs.sh          final root -> faseela-x86_64-rootfs.tar.zst (+ .sha256, .packages)
-stage 5  mkiso.sh             squashfs + initramfs + grub -> bootable live ISO
+stage 5  mkiso.sh             apply offline vendor presets, then squashfs + initramfs + grub -> bootable live ISO
 ```
 
 The stage-4 rootfs is published next to the ISO and is the **seed of the next
@@ -28,12 +28,24 @@ grub (hybrid BIOS+UEFI)
                          resolved, timesyncd, getty) → login on tty1
 ```
 
+The installed-disk GRUB entries pass `init=/usr/lib/systemd/systemd`. SAQ
+uses this explicit kernel argument before its generic fallback init candidates;
+this ensures the installed Faseela system selects systemd even if an old
+runit binary remains in a migrated root.
+
 ## Host requirements
 
-* root for chroot + bind mounts (stages 1-3); stages 4-5 work as non-root
-  (the rootfs is best packed as root so ownership is recorded faithfully)
+* root for chroot + bind mounts (stages 1-3). Stage 4 can run as non-root,
+  though root is recommended to preserve ownership and read every file. Stage 5
+  can run as non-root only when the final root's `/etc` is writable by the
+  caller; for normal root-owned build roots, run ISO provisioning as root.
 * stage 5 (ISO) tools: `squashfs-tools`, `grub-pc-bin`, `grub-efi-amd64-bin`,
-  `xorriso`, `mtools` (Debian names) + gcc/make for the initramfs busybox
+  `xorriso`, `mtools` (Debian names), host `systemctl` (systemd) for offline
+  vendor-preset application, and gcc/make for the initramfs busybox.
+* Stage 5 needs write access to the final root's `/etc` (normally run as root):
+  it applies vendor presets once before making the read-only SquashFS. It does
+  not start services. Package hooks do not apply service policy; see the Faseela
+  Repo's `docs/service-policy.md`.
 * ~10 GB free disk, decent network
 * host `python3` 3.11+ (TOML parsing), `curl` or `wget`, `sha256sum` and `tar` for recipe-pinned Nawa source fetching
 

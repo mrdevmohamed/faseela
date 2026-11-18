@@ -30,6 +30,10 @@ cat > "$BIN/mksquashfs" <<'EOF'
 echo "mksquashfs $*" >> "$STUB_LOG"
 : > "$2"
 EOF
+cat > "$BIN/systemctl" <<'EOF'
+#!/bin/sh
+echo "systemctl $*" >> "$STUB_LOG"
+EOF
 cat > "$BIN/grub-mkrescue" <<'EOF'
 #!/bin/sh
 echo "grub-mkrescue $*" >> "$STUB_LOG"
@@ -62,7 +66,7 @@ export CAPTURE="$W/iso-tree"
 
 # ---- root fixture ------------------------------------------------------------
 ROOT="$W/root"
-mkdir -p "$ROOT/boot" "$ROOT/usr/lib/systemd/system-preset"
+mkdir -p "$ROOT/boot" "$ROOT/etc" "$ROOT/usr/lib/systemd/system-preset"
 echo fake-kernel > "$ROOT/boot/vmlinuz-6.1.0-fake"
 printf '#!/bin/sh\n' > "$ROOT/usr/lib/systemd/systemd"; chmod +x "$ROOT/usr/lib/systemd/systemd"
 echo 'enable getty@tty1.service' > "$ROOT/usr/lib/systemd/system-preset/80-faseela.preset"
@@ -116,6 +120,8 @@ check "C2 structure OK reported"                "OUT | grep -q 'ISO structure OK
 check "C3 ISO produced"                         "[[ -s $W/out/my.iso ]]"
 check "C4 initramfs got --root and --out"       "grep -q 'initramfs --root .* --out' $STUB_LOG"
 check "C5 mksquashfs got the compression"       "grep -q 'mksquashfs .* -comp xz' $STUB_LOG"
+check "C5a vendor presets target the final root" "grep -Fq 'systemctl --root=$ROOT preset-all' $STUB_LOG"
+check "C5b vendor presets run before squashfs"   "[[ \$(grep -n '^systemctl ' $STUB_LOG | cut -d: -f1) -lt \$(grep -n '^mksquashfs ' $STUB_LOG | cut -d: -f1) ]]"
 check "C6 grub-mkrescue got the volid"          "grep -q 'grub-mkrescue .* FASEELA' $STUB_LOG"
 RC=$(RUN_MKISO VOL_ID=CUSTOM SQUASH_COMP=zstd)
 check "C7 VOL_ID propagates to grub-mkrescue"   "grep -q 'grub-mkrescue .* CUSTOM' $STUB_LOG"

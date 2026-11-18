@@ -18,6 +18,7 @@
 # Host requirements:
 #   mksquashfs        (Debian: squashfs-tools)
 #   grub-mkrescue     (Debian: grub-pc-bin grub-efi-amd64-bin xorriso mtools)
+#   systemctl         (host systemd, for offline vendor preset application)
 #   gcc + make        (to compile the initramfs busybox)
 #
 # ROOT is the FINAL root: /mnt/faseela/sysroot in the default two-root layout
@@ -49,7 +50,7 @@ esac
 [[ $EUID -eq 0 ]] || echo "mkiso: WARNING: not root — squashfs will record the invoking user's ownership" >&2
 [[ -d $ROOT ]] || { echo "mkiso: $ROOT is not a directory"; exit 1; }
 
-for tool in mksquashfs grub-mkrescue xorriso; do
+for tool in mksquashfs grub-mkrescue xorriso systemctl; do
     command -v "$tool" >/dev/null 2>&1 || {
         echo "mkiso: missing host tool '$tool'" >&2
         echo "       Debian: apt install squashfs-tools grub-pc-bin grub-efi-amd64-bin xorriso mtools" >&2
@@ -100,6 +101,18 @@ if mountpoint -q "$ROOT/proc" || mountpoint -q "$ROOT/dev" \
     echo "== stage4: unmounting chroot pseudo-fs (must not enter the squashfs)"
     bash "$HERE/umount-chroot.sh" "$ROOT"
 fi
+
+# Presets describe the distribution's vendor defaults. Apply them once, after
+# every package (including flavor-specific preset files) is present and before
+# the read-only image is made. --root keeps this entirely offline: no service
+# is started and no host service manager is contacted. Package hooks must not
+# apply presets because package updates must preserve administrator choices.
+[[ -w "$ROOT/etc" ]] || {
+    echo "mkiso: '$ROOT/etc' is not writable; run ISO provisioning as root so vendor presets can be applied" >&2
+    exit 1
+}
+echo "== stage4: applying vendor service presets to $ROOT"
+systemctl --root="$ROOT" preset-all
 
 # The disk installer runs inside the live system (docs/boot-and-install.md), and no
 # package ships it: it is a faseela script, so the image build puts it in. Copied,

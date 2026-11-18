@@ -34,12 +34,21 @@ seed ─► stage 1 ─► stage 2 ─► stage 3 ─► stage 4 ─► stage 5 
 | 2 core | `stage2.sh` → `stage2-inner.sh` | host → chroot | nawa compiled with the seed, then the **bootstrap flavor** (`flavors.toml`) built into **two roots** (build root + clean `/sysroot`) |
 | 3 self-host | `stage3.sh` → `stage3-inner.sh` | host → chroot | toolchain (or world) rebuilt with the distro's own tools, seed removed, **self-hosting proof** |
 | 4 rootfs | `mkrootfs.sh` (`mkrootfs-min.sh`) | host | `faseela-x86_64-rootfs.tar.zst` (+ `.sha256`, `.packages`) — the seed of the next build |
-| 5 ISO | `mkiso.sh` + `initramfs.sh` | host | hybrid BIOS+UEFI live ISO, validated structurally |
+| 5 ISO | `mkiso.sh` + `initramfs.sh` | host | apply vendor service presets once to the completed offline root, then build and structurally validate the hybrid BIOS+UEFI live ISO |
 | 6 disk | `install.sh` | live system | an installed disk |
 
 Shared helpers: `sync-repo.sh` (copy the repo into the chroot), `enter-root.sh` (run a command in a root),
 `ensure-chroot-mounts.sh` / `umount-chroot.sh` (the bind mounts), `rebuild.sh` (incremental rebuild of some recipes),
 `final-root.sh` (the two-root functions and the checks below).
+
+## Image provisioning and service policy
+
+After the final root contains all package and flavor preset files, stage 5 runs
+`systemctl --root=<sysroot> preset-all` once before creating the SquashFS.
+This applies vendor defaults to the offline image; it does not start services
+or contact a running service manager. Package hooks never enable or disable
+services, so later package updates cannot overwrite administrator choices.
+See [service policy](https://github.com/mrdevmohamed/faseela-repo/blob/main/docs/service-policy.md).
 
 ## Two roots
 
