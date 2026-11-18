@@ -223,6 +223,41 @@ grep -Fq "FASEELA_QEMU_BOOT_TEST requires NAWA_INSTALL_TEST=1" "$WORK/err.txt" \
     && echo "  ok: incomplete QEMU test opt-in touched no disk" \
     || { echo "  FAIL: incomplete QEMU test opt-in reached disk mutation"; cat "$CMDLOG"; exit 1; }
 
+# Explicit QEMU boot-test mode writes a temporary PID 1 probe, adds the
+# serial console only to this disposable target, and never asks for passwords.
+echo "== QEMU installed-disk probe mode =="
+: > "$CMDLOG"
+rm -rf "$WORK/mnt"
+mkdir -p "$WORK/mnt/etc" "$WORK/mnt/usr/sbin" "$WORK/mnt/usr/libexec" \
+    "$WORK/mnt/etc/systemd/system/multi-user.target.wants"
+printf '127.0.0.1 localhost faseela\\n' > "$WORK/mnt/etc/hosts"
+printf 'root::19980:0:::::\\n' > "$WORK/mnt/etc/shadow"
+printf '#!/bin/sh\\nexit 0\\n' > "$WORK/mnt/usr/sbin/saq"
+chmod +x "$WORK/mnt/usr/sbin/saq"
+(
+    cd "$WORK" &&
+    FASEELA_QEMU_BOOT_TEST=1 NAWA_INSTALL_TEST=1 MNT="$WORK/mnt" \\
+    KERNEL_SRC="$KSRC" FW_FORCE=bios \\
+    bash "$HERE/bootstrap/install.sh" /dev/vda --yes
+)
+check "probe mode does not run chroot passwd" "/usr/bin/passwd"
+check_absent "probe mode skips all password changes" "/usr/bin/passwd"
+grep -q 'console=tty0 console=ttyS0,115200' "$WORK/mnt/boot/grub/grub.cfg" \\
+    && echo "  ok: test serial console in installed GRUB" \\
+    || { echo "  FAIL: missing test serial console"; exit 1; }
+grep -q 'IFS= read -r init_comm < /proc/1/comm' "$WORK/mnt/usr/libexec/faseela-boot-acceptance" \\
+    && echo "  ok: probe reads the real PID 1 comm" \\
+    || { echo "  FAIL: PID 1 probe missing"; exit 1; }
+grep -q 'FASEELA_BOOT_ACCEPTANCE pid1=%s' "$WORK/mnt/usr/libexec/faseela-boot-acceptance" \\
+    && echo "  ok: probe emits the acceptance marker" \\
+    || { echo "  FAIL: acceptance marker missing"; exit 1; }
+grep -q '^root:\\*:' "$WORK/mnt/etc/shadow" \\
+    && echo "  ok: test root remains locked" \\
+    || { echo "  FAIL: test root was not locked"; exit 1; }
+grep -q 'ln -sfn ../faseela-boot-acceptance.service' "$CMDLOG" \\
+    && echo "  ok: one-shot probe is enabled for multi-user.target" \\
+    || { echo "  FAIL: probe unit was not enabled"; exit 1; }
+
 # ==================================================== --no-pkg-cache =======
 echo "== no-pkg-cache path =="
 : > "$CMDLOG"
