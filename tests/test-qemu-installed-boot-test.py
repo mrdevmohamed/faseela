@@ -51,7 +51,6 @@ def main() -> int:
             "-boot order=c",
             "if=pflash,format=raw,readonly=on",
             "file=/usr/share/OVMF/OVMF_VARS.fd",
-            "--ovmf-vars",
             "live-serial.sock",
             "disk-serial.sock",
         ):
