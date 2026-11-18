@@ -43,12 +43,15 @@ def main() -> int:
         assert dry_run.returncode == 0, dry_run.stderr
         for expected in (
             "[bios] install command:",
+            "doas /usr/bin/env FASEELA_QEMU_BOOT_TEST=1",
             "FW_FORCE=bios",
             "[uefi] install command:",
             "FW_FORCE=uefi",
             "-boot order=dc",
             "-boot order=c",
             "if=pflash,format=raw,readonly=on",
+            "file=/usr/share/OVMF/OVMF_VARS.fd",
+            "--ovmf-vars",
             "live-serial.sock",
             "disk-serial.sock",
         ):
