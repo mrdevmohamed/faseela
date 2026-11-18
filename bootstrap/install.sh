@@ -455,6 +455,12 @@ if [ "${FASEELA_QEMU_BOOT_TEST:-0}" = 1 ]; then
 #!/bin/sh
 IFS= read -r init_comm < /proc/1/comm
 printf 'FASEELA_BOOT_ACCEPTANCE pid1=%s\n' "$init_comm" > /dev/console
+profile=/usr/share/nawa/system-profile.toml
+if [ -r "$profile" ] && grep -Eq '^[[:space:]]*init-system[[:space:]]*=[[:space:]]*"systemd"[[:space:]]*$' "$profile"; then
+    printf 'FASEELA_BOOT_ACCEPTANCE system-profile=systemd\n' > /dev/console
+else
+    printf 'FASEELA_BOOT_ACCEPTANCE system-profile=missing\n' > /dev/console
+fi
 PROBE
     chmod 0755 "$MNT/usr/libexec/faseela-boot-acceptance"
     cat > "$MNT/etc/systemd/system/faseela-boot-acceptance.service" <<'UNIT'
