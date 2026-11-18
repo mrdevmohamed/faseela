@@ -126,14 +126,17 @@ class SerialVM:
         if self.process is None:
             return
         try:
-            self.process.wait(timeout=timeout)
-        except subprocess.TimeoutExpired:
-            self.process.terminate()
-            try:
-                self.process.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                self.process.kill()
-                self.process.wait()
+            return_code = self.process.wait(timeout=timeout)
+        except subprocess.TimeoutExpired as error:
+            raise BootTestError(
+                f"the Live guest did not reset after the installer reboot command "
+                f"within {timeout}s; see {self.log_path}"
+            ) from error
+        if return_code != 0:
+            raise BootTestError(
+                f"QEMU exited with status {return_code} during the Live-to-disk reboot; "
+                f"see {self.qemu_log_path}"
+            )
         if self.log_file is not None:
             self.log_file.flush()
         if self.qemu_log_file is not None:
