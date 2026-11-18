@@ -240,7 +240,6 @@ chmod +x "$WORK/mnt/usr/sbin/saq"
     KERNEL_SRC="$KSRC" FW_FORCE=bios \\
     bash "$HERE/bootstrap/install.sh" /dev/vda --yes
 )
-check "probe mode does not run chroot passwd" "/usr/bin/passwd"
 check_absent "probe mode skips all password changes" "/usr/bin/passwd"
 grep -q 'console=tty0 console=ttyS0,115200' "$WORK/mnt/boot/grub/grub.cfg" \\
     && echo "  ok: test serial console in installed GRUB" \\
