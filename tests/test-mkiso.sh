@@ -66,7 +66,7 @@ export CAPTURE="$W/iso-tree"
 
 # ---- root fixture ------------------------------------------------------------
 ROOT="$W/root"
-mkdir -p "$ROOT/boot" "$ROOT/usr/lib/systemd/system-preset"
+mkdir -p "$ROOT/boot" "$ROOT/etc" "$ROOT/usr/lib/systemd/system-preset"
 echo fake-kernel > "$ROOT/boot/vmlinuz-6.1.0-fake"
 printf '#!/bin/sh\n' > "$ROOT/usr/lib/systemd/systemd"; chmod +x "$ROOT/usr/lib/systemd/systemd"
 echo 'enable getty@tty1.service' > "$ROOT/usr/lib/systemd/system-preset/80-faseela.preset"
