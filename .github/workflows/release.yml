@@ -16,7 +16,8 @@ name: Build ISO (CD)
 #                   Names beginning iso- become ISOs; names beginning rootfs-
 #                   become rootfs archives. New flavors need no release.yml edits.
 #                   Other flavors can be selected explicitly and become rootfs archives.
-#   boot-test       boots each ISO and installs/boots its disk through BIOS+UEFI;
+#   boot-test       boots each ISO and installs/boots its disk through BIOS+UEFI,
+#                   verifying systemd as PID 1 before release
 #   release         one GitHub Release with everything above (tags only)
 #   report          always last: ONE page (run summary + `run-report` artifact) with the
 #                   verdict, every job and its time, the failed step, the error lines
@@ -828,7 +829,7 @@ jobs:
                 echo "<details open><summary>$log</summary>"
                 echo
                 echo '```'
-                tail -n 60 "$log" | sed 's/\\x1b\\[[0-9;]*[A-Za-z]//g'
+                tail -n 60 "$log" | sed 's/\x1b\[[0-9;]*[A-Za-z]//g'
                 echo '```'
                 echo "</details>"
               done
