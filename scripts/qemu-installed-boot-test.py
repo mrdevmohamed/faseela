@@ -25,6 +25,12 @@ OVMF_CANDIDATES = (
     "/usr/share/edk2/ovmf/OVMF_CODE.fd",
     "/usr/share/qemu/OVMF_CODE.fd",
 )
+OVMF_VARS_CANDIDATES = (
+    "/usr/share/OVMF/OVMF_VARS_4M.fd",
+    "/usr/share/OVMF/OVMF_VARS.fd",
+    "/usr/share/edk2/ovmf/OVMF_VARS.fd",
+    "/usr/share/qemu/OVMF_VARS.fd",
+)
 
 
 class BootTestError(RuntimeError):
@@ -167,6 +173,21 @@ def resolve_ovmf(explicit: str | None) -> str:
     )
 
 
+def resolve_ovmf_vars(explicit: str | None) -> str:
+    if explicit:
+        candidate = Path(explicit)
+        if not candidate.is_file():
+            raise BootTestError(f"OVMF_VARS does not exist: {candidate}")
+        return str(candidate)
+    for item in OVMF_VARS_CANDIDATES:
+        if Path(item).is_file():
+            return item
+    raise BootTestError(
+        "UEFI test needs a writable OVMF variables template; install the ovmf package "
+        "or set OVMF_VARS"
+    )
+
+
 def acceleration_args(mode: str) -> list[str]:
     if mode == "auto":
         mode = "kvm" if os.access("/dev/kvm", os.R_OK | os.W_OK) else "tcg"
@@ -187,6 +208,7 @@ def qemu_command(
     cpus: int,
     iso: Path | None = None,
     ovmf_code: str | None = None,
+    ovmf_vars: Path | None = None,
 ) -> list[str]:
     command = [
         qemu,
@@ -201,10 +223,11 @@ def qemu_command(
         "-serial", f"unix:{serial_socket},server,nowait",
     ]
     if firmware == "uefi":
-        if not ovmf_code:
-            raise BootTestError("UEFI command needs an OVMF_CODE image")
+        if not ovmf_code or ovmf_vars is None:
+            raise BootTestError("UEFI command needs OVMF_CODE and a writable OVMF_VARS copy")
         command.extend([
             "-drive", f"if=pflash,format=raw,readonly=on,file={ovmf_code}",
+            "-drive", f"if=pflash,format=raw,file={ovmf_vars}",
         ])
     command.extend([
         "-drive", f"file={disk},if=virtio,format=qcow2",
@@ -216,7 +239,12 @@ def qemu_command(
     return command
 
 
-def run_one(args: argparse.Namespace, firmware: str, ovmf_code: str | None) -> None:
+def run_one(
+    args: argparse.Namespace,
+    firmware: str,
+    ovmf_code: str | None,
+    ovmf_vars_template: str | None,
+) -> None:
     out_dir = Path(args.out_dir).resolve() / firmware
     out_dir.mkdir(parents=True, exist_ok=True)
     disk = out_dir / "installed.qcow2"
@@ -231,6 +259,18 @@ def run_one(args: argparse.Namespace, firmware: str, ovmf_code: str | None) -> N
         raise BootTestError("qemu-img and qemu-system-x86_64 must be installed")
 
     accel = acceleration_args(args.accel)
+    vars_copy: Path | None = None
+    if firmware == "uefi":
+        if not ovmf_vars_template:
+            raise BootTestError("UEFI test needs an OVMF_VARS template")
+        vars_copy = out_dir / "OVMF_VARS.fd"
+        if vars_copy.exists():
+            raise BootTestError(
+                f"refusing to overwrite existing UEFI variables file {vars_copy}; "
+                "remove it or choose another --out-dir"
+            )
+        shutil.copyfile(ovmf_vars_template, vars_copy)
+
     subprocess.run(
         [qemu_img, "create", "-f", "qcow2", str(disk), args.disk_size],
         check=True,
@@ -240,7 +280,7 @@ def run_one(args: argparse.Namespace, firmware: str, ovmf_code: str | None) -> N
     live_vm = SerialVM(
         qemu_command(
             qemu, firmware, disk, live_socket, accel,
-            args.memory_mib, args.cpus, Path(args.iso).resolve(), ovmf_code,
+            args.memory_mib, args.cpus, Path(args.iso).resolve(), ovmf_code, vars_copy,
         ),
         live_socket,
         out_dir / "live-serial.log",
@@ -280,7 +320,7 @@ def run_one(args: argparse.Namespace, firmware: str, ovmf_code: str | None) -> N
     disk_vm = SerialVM(
         qemu_command(
             qemu, firmware, disk, disk_socket, accel,
-            args.memory_mib, args.cpus, None, ovmf_code,
+            args.memory_mib, args.cpus, None, ovmf_code, vars_copy,
         ),
         disk_socket,
         out_dir / "disk-serial.log",
@@ -326,6 +366,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--install-timeout", type=int, default=2400)
     parser.add_argument("--boot-timeout", type=int, default=600)
     parser.add_argument("--ovmf-code", default=os.environ.get("OVMF_CODE"))
+    parser.add_argument("--ovmf-vars", default=os.environ.get("OVMF_VARS"))
     parser.add_argument("--dry-run", action="store_true", help="print the QEMU commands without starting them")
     return parser.parse_args()
 
@@ -342,11 +383,14 @@ def main() -> int:
 
     firmwares = ("bios", "uefi") if args.firmware == "both" else (args.firmware,)
     ovmf_code = None
+    ovmf_vars = None
     if "uefi" in firmwares:
         if args.dry_run:
             ovmf_code = args.ovmf_code or "/usr/share/OVMF/OVMF_CODE.fd"
+            ovmf_vars = args.ovmf_vars or "/usr/share/OVMF/OVMF_VARS.fd"
         else:
             ovmf_code = resolve_ovmf(args.ovmf_code)
+            ovmf_vars = resolve_ovmf_vars(args.ovmf_vars)
 
     if args.dry_run:
         accel = ["-accel", "tcg", "-cpu", "max"] if args.accel != "kvm" else ["-accel", "kvm", "-cpu", "host"]
@@ -364,7 +408,7 @@ def main() -> int:
         return 0
 
     for firmware in firmwares:
-        run_one(args, firmware, ovmf_code)
+        run_one(args, firmware, ovmf_code, ovmf_vars)
     print("Installed-disk boot acceptance passed for: " + ", ".join(firmwares))
     return 0
 
