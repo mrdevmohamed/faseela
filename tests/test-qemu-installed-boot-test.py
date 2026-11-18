@@ -23,6 +23,13 @@ def run(*args: str) -> subprocess.CompletedProcess[str]:
 
 
 def main() -> int:
+    # The real harness must use the live user's doas rule for installation
+    # and for the reboot; an unprivileged reboot would strand the VM after
+    # a successful disk install and produce a false acceptance failure.
+    harness_source = SCRIPT.read_text(encoding="utf-8")
+    assert "doas /usr/bin/env FASEELA_QEMU_BOOT_TEST=1" in harness_source
+    assert "doas sync; doas reboot -f" in harness_source
+
     help_result = run("--help")
     assert help_result.returncode == 0, help_result.stderr
     assert "installed disk" in help_result.stdout.lower()
