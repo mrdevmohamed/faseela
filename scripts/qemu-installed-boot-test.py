@@ -333,6 +333,11 @@ def run_one(
         disk_vm.start()
         marker = b"FASEELA_BOOT_ACCEPTANCE pid1="
         disk_vm.expect(marker, args.boot_timeout, "the installed-disk PID 1 probe")
+        disk_vm.expect(
+            b"FASEELA_BOOT_ACCEPTANCE system-profile=systemd",
+            args.boot_timeout,
+            "the installed Faseela system profile",
+        )
         match = re.search(rb"FASEELA_BOOT_ACCEPTANCE pid1=([A-Za-z0-9_.-]+)", disk_vm.buffer)
         if match is None:
             raise BootTestError(
