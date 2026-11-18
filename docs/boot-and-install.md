@@ -157,9 +157,12 @@ python3 scripts/qemu-installed-boot-test.py faseela-sway-x86_64.iso --firmware b
 
 The harness creates two disposable qcow2 disks, boots the ISO in BIOS and UEFI,
 logs in to the Live session, runs the real `faseela-install` command, reboots
-from each installed disk without the ISO, and requires the marker
-`FASEELA_BOOT_ACCEPTANCE pid1=systemd`. The marker is read from the running
-system's `/proc/1/comm`; reaching a login prompt is not treated as acceptance.
+from each installed disk without the ISO, and requires both
+`FASEELA_BOOT_ACCEPTANCE pid1=systemd` and
+`FASEELA_BOOT_ACCEPTANCE system-profile=systemd`. The first marker is read
+from the running system's `/proc/1/comm`; the second confirms the installed
+Faseela distribution profile is present and selects systemd. Reaching a login
+prompt is not treated as acceptance.
 
 This test sets both `FASEELA_QEMU_BOOT_TEST=1` and `NAWA_INSTALL_TEST=1`.
 Only that explicit combination installs the temporary serial probe and skips
