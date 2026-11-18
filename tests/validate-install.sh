@@ -253,8 +253,9 @@ grep -q 'FASEELA_BOOT_ACCEPTANCE pid1=%s' "$WORK/mnt/usr/libexec/faseela-boot-ac
 grep -q '^root:\\*:' "$WORK/mnt/etc/shadow" \\
     && echo "  ok: test root remains locked" \\
     || { echo "  FAIL: test root was not locked"; exit 1; }
-grep -q 'ln -sfn ../faseela-boot-acceptance.service' "$CMDLOG" \\
-    && echo "  ok: one-shot probe is enabled for multi-user.target" \\
+[ -L "$WORK/mnt/etc/systemd/system/multi-user.target.wants/faseela-boot-acceptance.service" ] \
+    && [ "$(readlink "$WORK/mnt/etc/systemd/system/multi-user.target.wants/faseela-boot-acceptance.service")" = "../faseela-boot-acceptance.service" ] \
+    && echo "  ok: one-shot probe is enabled for multi-user.target" \
     || { echo "  FAIL: probe unit was not enabled"; exit 1; }
 
 # ==================================================== --no-pkg-cache =======
