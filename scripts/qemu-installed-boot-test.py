@@ -397,12 +397,13 @@ def main() -> int:
         for firmware in firmwares:
             disk = Path(args.out_dir).resolve() / firmware / "installed.qcow2"
             serial = Path(args.out_dir).resolve() / firmware / "live-serial.sock"
-            print(f"[{firmware}] install command: FASEELA_QEMU_BOOT_TEST=1 NAWA_INSTALL_TEST=1 FW_FORCE={firmware} /usr/sbin/faseela-install /dev/vda --yes")
+            print(f"[{firmware}] install command: doas /usr/bin/env FASEELA_QEMU_BOOT_TEST=1 NAWA_INSTALL_TEST=1 FW_FORCE={firmware} /usr/sbin/faseela-install /dev/vda --yes")
             for stage, image in (("install", iso), ("disk", None)):
                 sock = serial if stage == "install" else disk.parent / "disk-serial.sock"
                 cmd = qemu_command(
                     "qemu-system-x86_64", firmware, disk, sock, accel,
                     args.memory_mib, args.cpus, image, ovmf_code,
+                    Path(ovmf_vars) if ovmf_vars else None,
                 )
                 print(f"[{firmware}] {stage} QEMU: {' '.join(cmd)}")
         return 0
