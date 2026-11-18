@@ -314,7 +314,9 @@ def run_one(
             args.install_timeout,
             "the disk installer to finish",
         )
-        live_vm.send("sync; reboot -f\n")
+        # The Live shell belongs to the unprivileged live user. The test
+        # must explicitly elevate both sync and reboot, just like installation.
+        live_vm.send("doas sync; doas reboot -f\n")
         live_vm.wait_for_exit(120)
     finally:
         live_vm.close()
