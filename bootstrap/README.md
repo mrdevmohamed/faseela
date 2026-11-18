@@ -35,8 +35,10 @@ runit binary remains in a migrated root.
 
 ## Host requirements
 
-* root for chroot + bind mounts (stages 1-3); stages 4-5 work as non-root
-  (the rootfs is best packed as root so ownership is recorded faithfully)
+* root for chroot + bind mounts (stages 1-3). Stage 4 can run as non-root,
+  though root is recommended to preserve ownership and read every file. Stage 5
+  can run as non-root only when the final root's `/etc` is writable by the
+  caller; for normal root-owned build roots, run ISO provisioning as root.
 * stage 5 (ISO) tools: `squashfs-tools`, `grub-pc-bin`, `grub-efi-amd64-bin`,
   `xorriso`, `mtools` (Debian names), host `systemctl` (systemd) for offline
   vendor-preset application, and gcc/make for the initramfs busybox.

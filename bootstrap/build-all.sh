@@ -34,7 +34,7 @@
 #   sudo ./build-all.sh --isolation sandbox --stage3-world /mnt/faseela
 #   sudo ./build-all.sh --no-iso /mnt/faseela                  # no ISO (rootfs still built)
 #   sudo ./build-all.sh --no-iso --no-rootfs /mnt/faseela      # stop after stage3
-#   ./build-all.sh --from-stage iso /mnt/faseela out/my.iso     # stage 5: non-root
+#   ./build-all.sh --from-stage iso /mnt/faseela out/my.iso     # non-root only if TARGET/etc is writable
 #   ./build-all.sh --list-stages /mnt/faseela
 #   ./build-all.sh --dry-run /mnt/faseela
 #
@@ -132,7 +132,7 @@ Examples:
   sudo $PROG /mnt/faseela
   sudo $PROG --isolation closure --stage3-world --with-gui /mnt/faseela my.iso
   $PROG --seed-rootfs out/faseela-x86_64-rootfs.tar.zst /mnt/faseela   # self-hosting
-  $PROG --from-stage iso /mnt/faseela my.iso      # stage 5 runs fine as non-root
+  $PROG --from-stage iso /mnt/faseela my.iso      # non-root only with writable TARGET/etc
   $PROG --list-stages /mnt/faseela
 EOF
 }

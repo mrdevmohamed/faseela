@@ -18,6 +18,7 @@
 # Host requirements:
 #   mksquashfs        (Debian: squashfs-tools)
 #   grub-mkrescue     (Debian: grub-pc-bin grub-efi-amd64-bin xorriso mtools)
+#   systemctl         (host systemd, for offline vendor preset application)
 #   gcc + make        (to compile the initramfs busybox)
 #
 # ROOT is the FINAL root: /mnt/faseela/sysroot in the default two-root layout
