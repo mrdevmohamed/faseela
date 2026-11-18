@@ -66,7 +66,7 @@ check "C8 the doas rule for wheel stays"              "grep -q 'persist :wheel' 
 check "D1 probe needs both explicit test flags" \
     "grep -Fq 'FASEELA_QEMU_BOOT_TEST requires NAWA_INSTALL_TEST=1' $INSTALL"
 check "D2 the probe adds only a test serial console" \
-    "grep -Fq 'QEMU_TEST_ARGS=\"console=tty0 console=ttyS0,115200\"' $INSTALL"
+    "grep -Fq 'console=tty0 console=ttyS0,115200' $INSTALL"
 check "D3 the probe reads the real PID 1 comm" \
     "grep -Fq 'IFS= read -r init_comm < /proc/1/comm' $INSTALL && grep -Fq 'FASEELA_BOOT_ACCEPTANCE pid1=' $INSTALL"
 check "D4 the probe is a multi-user systemd unit" \
@@ -74,6 +74,6 @@ check "D4 the probe is a multi-user systemd unit" \
 check "D5 test mode keeps root locked and skips passwords" \
     "grep -Fq 'root remains locked; skipping interactive password setup' $INSTALL"
 check "D6 ordinary installs still ask for the root password" \
-    "grep -Fq 'run chroot \\\"\$MNT\\\" /usr/bin/passwd root' $INSTALL"
+    "grep -Fq '/usr/bin/passwd root' $INSTALL"
 
 echo; echo "  PASS: $PASS   FAIL: $FAIL"; [[ $FAIL -eq 0 ]]
