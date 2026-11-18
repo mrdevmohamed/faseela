@@ -36,19 +36,22 @@ class SerialVM:
         self.command = command
         self.socket_path = socket_path
         self.log_path = log_path
+        self.qemu_log_path = log_path.with_name(log_path.stem + "-qemu.log")
         self.process: subprocess.Popen[bytes] | None = None
         self.connection: socket.socket | None = None
         self.log_file = None
+        self.qemu_log_file = None
         self.buffer = bytearray()
 
     def start(self, connect_timeout: int = 30) -> None:
         self.socket_path.parent.mkdir(parents=True, exist_ok=True)
         self.socket_path.unlink(missing_ok=True)
         self.log_file = self.log_path.open("wb")
+        self.qemu_log_file = self.qemu_log_path.open("wb")
         self.process = subprocess.Popen(
             self.command,
             stdin=subprocess.DEVNULL,
-            stdout=self.log_file,
+            stdout=self.qemu_log_file,
             stderr=subprocess.STDOUT,
         )
         deadline = time.monotonic() + connect_timeout
@@ -57,7 +60,7 @@ class SerialVM:
             if self.process.poll() is not None:
                 raise BootTestError(
                     f"QEMU exited early with status {self.process.returncode}; "
-                    f"see {self.log_path}"
+                    f"see {self.qemu_log_path}"
                 )
             connection = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
             try:
@@ -127,6 +130,8 @@ class SerialVM:
                 self.process.wait()
         if self.log_file is not None:
             self.log_file.flush()
+        if self.qemu_log_file is not None:
+            self.qemu_log_file.flush()
 
     def close(self) -> None:
         if self.process is not None and self.process.poll() is None:
@@ -142,6 +147,9 @@ class SerialVM:
         if self.log_file is not None:
             self.log_file.close()
             self.log_file = None
+        if self.qemu_log_file is not None:
+            self.qemu_log_file.close()
+            self.qemu_log_file = None
         self.socket_path.unlink(missing_ok=True)
 
 
