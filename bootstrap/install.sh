@@ -457,12 +457,12 @@ set default=0
 set timeout=3
 
 menuentry "faseela" {
-    linux /boot/vmlinuz root=UUID=$ROOT_UUID quiet
+    linux /boot/vmlinuz root=UUID=$ROOT_UUID init=/usr/lib/systemd/systemd quiet
     initrd /boot/initramfs.img
 }
 
 menuentry "faseela (verbose)" {
-    linux /boot/vmlinuz root=UUID=$ROOT_UUID loglevel=7
+    linux /boot/vmlinuz root=UUID=$ROOT_UUID init=/usr/lib/systemd/systemd loglevel=7
     initrd /boot/initramfs.img
 }
 EOF
