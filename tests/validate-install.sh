@@ -209,6 +209,20 @@ echo "== safety checks =="
   && { echo "  FAIL: partition accepted"; exit 1; } \
   || grep -q "looks like a partition" "$WORK/err.txt" && echo "  ok: partition refus[ed]"
 
+# The QEMU test flag without its companion flag must fail before root checks
+# and, critically, before wipefs/partitioning.
+: > "$CMDLOG"
+if ( cd "$WORK" && FASEELA_QEMU_BOOT_TEST=1 MNT="$WORK/mnt" \
+     bash "$HERE/bootstrap/install.sh" /dev/vda --yes ) >"$WORK/err.txt" 2>&1; then
+    echo "  FAIL: QEMU probe accepted without NAWA_INSTALL_TEST=1"; exit 1
+fi
+grep -Fq "FASEELA_QEMU_BOOT_TEST requires NAWA_INSTALL_TEST=1" "$WORK/err.txt" \
+    && echo "  ok: incomplete QEMU test opt-in refused early" \
+    || { echo "  FAIL: incomplete QEMU test opt-in was not diagnosed"; cat "$WORK/err.txt"; exit 1; }
+! grep -qE 'wipefs|parted|mkfs' "$CMDLOG" \
+    && echo "  ok: incomplete QEMU test opt-in touched no disk" \
+    || { echo "  FAIL: incomplete QEMU test opt-in reached disk mutation"; cat "$CMDLOG"; exit 1; }
+
 # ==================================================== --no-pkg-cache =======
 echo "== no-pkg-cache path =="
 : > "$CMDLOG"
