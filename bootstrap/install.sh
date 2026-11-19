@@ -247,6 +247,14 @@ else
 fi
 log "firmware mode: $FW"
 
+# Validate mode-specific tools before confirming or changing the target disk.
+# In particular, UEFI needs dosfstools for the ESP; discovering that after
+# wipefs/partitioning would leave an incomplete installation target behind.
+if [ "$FW" = uefi ]; then
+    MKFS_VFAT="$(command -v mkfs.vfat || command -v mkfs.fat || true)"
+    [ -n "$MKFS_VFAT" ] || die "missing tool 'mkfs.vfat' or 'mkfs.fat' (dosfstools)"
+fi
+
 # --- final confirmation -----------------------------------------------------
 log "ABOUT TO ERASE $DISK and install faseela on it."
 if [ "$ASSUME_YES" != 1 ]; then
@@ -278,8 +286,7 @@ command -v udevadm >/dev/null 2>&1 && run udevadm settle || sleep 2
 log "creating filesystems"
 run mkfs.ext4 -F -q "$PART_ROOT"
 if [ "$FW" = uefi ]; then
-    command -v mkfs.vfat >/dev/null 2>&1 || die "missing tool 'mkfs.vfat' (dosfstools)"
-    run mkfs.vfat -F32 "$PART_ESP"
+    run "$MKFS_VFAT" -F32 "$PART_ESP"
 fi
 
 run mkdir -p "$MNT"
@@ -455,8 +462,9 @@ if [ "${FASEELA_QEMU_BOOT_TEST:-0}" = 1 ]; then
 #!/bin/sh
 IFS= read -r init_comm < /proc/1/comm
 printf 'FASEELA_BOOT_ACCEPTANCE pid1=%s\n' "$init_comm" > /dev/console
-profile=/usr/share/nawa/system-profile.toml
-if [ -r "$profile" ] && grep -Eq '^[[:space:]]*init-system[[:space:]]*=[[:space:]]*"systemd"[[:space:]]*$' "$profile"; then
+if profile_output="$(/usr/bin/nawa --root / system profile show 2>/dev/null)" \
+    && printf '%s\n' "$profile_output" \
+        | grep -Eq '^[[:space:]]+init-system = systemd([[:space:]]|$)'; then
     printf 'FASEELA_BOOT_ACCEPTANCE system-profile=systemd\n' > /dev/console
 else
     printf 'FASEELA_BOOT_ACCEPTANCE system-profile=missing\n' > /dev/console

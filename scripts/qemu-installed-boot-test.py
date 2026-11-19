@@ -87,19 +87,40 @@ class SerialVM:
             raise BootTestError("QEMU serial connection is not open")
         self.connection.sendall(value.encode("utf-8"))
 
-    def expect(self, needle: bytes, timeout: int, description: str) -> None:
+    def expect(self, needle: bytes, timeout: int, description: str) -> re.Match[bytes]:
+        return self.expect_pattern(re.escape(needle), timeout, description)
+
+    def expect_line(self, needle: bytes, timeout: int, description: str) -> re.Match[bytes]:
+        # Require a complete output line: a marker inside a terminal's echoed
+        # command is never evidence that the command actually ran. A serial
+        # terminal may emit an extra carriage return before command output, so
+        # accept CR as a line boundary. Interactive shells can also write OSC
+        # integration metadata immediately before command output (terminated
+        # by ESC-backslash) without emitting a CR; accept that boundary while
+        # still requiring the marker to occupy the complete line.
+        return self.expect_pattern(
+            rb"(?m)(?:^|\r|\x1b\\)" + re.escape(needle) + rb"\r?\n",
+            timeout,
+            description,
+        )
+
+    def expect_pattern(self, pattern: bytes, timeout: int, description: str) -> re.Match[bytes]:
         if self.connection is None or self.process is None or self.log_file is None:
             raise BootTestError("QEMU serial connection is not open")
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
-            if needle in self.buffer:
-                return
+            match = re.search(pattern, bytes(self.buffer))
+            if match is not None:
+                del self.buffer[:match.end()]
+                return match
             if self.process.poll() is not None:
                 raise BootTestError(
                     f"QEMU exited ({self.process.returncode}) before {description}; "
                     f"see {self.log_path}"
                 )
-            readable, _, _ = select.select([self.connection], [], [], 1.0)
+            readable, _, _ = select.select(
+                [self.connection], [], [], min(1.0, max(0, deadline - time.monotonic()))
+            )
             if not readable:
                 continue
             try:
@@ -296,28 +317,42 @@ def run_one(
         # scoped nopass doas rule. Use that documented path rather than relying
         # on root login being enabled on every serial getty configuration.
         live_vm.send("live\n")
-        time.sleep(0.5)
-        live_vm.send("\n")
-        time.sleep(0.5)
-        live_vm.send("doas sh -c 'test \"$(id -u)\" -eq 0 && echo FASEELA_ROOT_OK'\n")
-        live_vm.expect(b"FASEELA_ROOT_OK", 60, "doas root access on the Live ISO")
+        prompt = live_vm.expect_pattern(
+            rb"(?im)(password:[ \t]*|[^\r\n]*[#$] )", 60,
+            "the Live user's password or shell prompt",
+        )
+        if prompt.group(1).lower().startswith(b"password:"):
+            live_vm.send("\n")
+        # Split the output token so even an echoed, line-wrapped command cannot
+        # contain the complete success marker.
+        live_vm.send("doas sh -c 'test \"$(id -u)\" -eq 0' && printf '%s%s\\n' FASEELA_ ROOT_OK\n")
+        live_vm.expect_line(b"FASEELA_ROOT_OK", 60, "doas root access on the Live ISO")
 
         install = (
             f"doas /usr/bin/env FASEELA_QEMU_BOOT_TEST=1 NAWA_INSTALL_TEST=1 FW_FORCE={firmware} "
             "/usr/sbin/faseela-install /dev/vda --yes "
-            "&& echo FASEELA_INSTALL_TEST_DONE\n"
+            "; result=$?; printf '%s%s=%s\\n' FASEELA_ INSTALL_TEST_STATUS \"$result\"\n"
         )
         print(f"[{firmware}] installing onto the disposable /dev/vda disk", flush=True)
         live_vm.send(install)
-        live_vm.expect(
-            b"FASEELA_INSTALL_TEST_DONE",
+        result = live_vm.expect_pattern(
+            rb"(?m)(?:^|\r|\x1b\\)FASEELA_INSTALL_TEST_STATUS=([0-9]+)\r?\n",
             args.install_timeout,
             "the disk installer to finish",
         )
-        # The Live shell belongs to the unprivileged live user. The test
-        # must explicitly elevate both sync and reboot, just like installation.
-        live_vm.send("doas sync; doas reboot -f\n")
-        live_vm.wait_for_exit(120)
+        if result.group(1) != b"0":
+            raise BootTestError(
+                f"[{firmware}] installer exited with status {result.group(1).decode('ascii')}; "
+                f"see {live_vm.log_path}"
+            )
+        # Flush the disposable disk, then power off the Live VM from the host.
+        # Guest reboot is not needed for this test: a fresh QEMU process below
+        # independently boots the installed disk with the same firmware.
+        live_vm.send("doas sync && printf '%s\\n' FASEELA_INSTALL_TEST_SYNCED\n")
+        live_vm.expect_line(
+            b"FASEELA_INSTALL_TEST_SYNCED", 120,
+            "the installed disk to be synchronized before the Live VM is stopped",
+        )
     finally:
         live_vm.close()
 
@@ -333,17 +368,19 @@ def run_one(
     try:
         print(f"[{firmware}] booting the installed disk through {firmware.upper()}", flush=True)
         disk_vm.start()
-        marker = b"FASEELA_BOOT_ACCEPTANCE pid1="
-        disk_vm.expect(marker, args.boot_timeout, "the installed-disk PID 1 probe")
-        disk_vm.expect(
-            b"FASEELA_BOOT_ACCEPTANCE system-profile=systemd",
+        match = disk_vm.expect_pattern(
+            rb"(?m)(?:^|\r|\x1b\\)FASEELA_BOOT_ACCEPTANCE pid1=([A-Za-z0-9_.-]+)\r?\n",
+            args.boot_timeout, "the installed-disk PID 1 probe",
+        )
+        profile = disk_vm.expect_pattern(
+            rb"(?m)(?:^|\r|\x1b\\)FASEELA_BOOT_ACCEPTANCE system-profile=([A-Za-z0-9_.-]+)\r?\n",
             args.boot_timeout,
             "the installed Faseela system profile",
         )
-        match = re.search(rb"FASEELA_BOOT_ACCEPTANCE pid1=([A-Za-z0-9_.-]+)", disk_vm.buffer)
-        if match is None:
+        profile_name = profile.group(1).decode("ascii")
+        if profile_name != "systemd":
             raise BootTestError(
-                f"[{firmware}] PID 1 probe appeared but its value could not be parsed; "
+                f"[{firmware}] installed system profile={profile_name!r}, expected 'systemd'; "
                 f"see {disk_vm.log_path}"
             )
         pid1 = match.group(1).decode("ascii")
@@ -353,7 +390,7 @@ def run_one(
                 f"see {disk_vm.log_path}"
             )
         print(
-            f"[{firmware}] PASS: installed disk reached PID 1=systemd "
+            f"[{firmware}] PASS: installed disk reached PID 1=systemd and system profile=systemd "
             f"(serial log: {disk_vm.log_path})",
             flush=True,
         )

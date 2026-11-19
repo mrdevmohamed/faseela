@@ -22,7 +22,7 @@ exit 0
 EOF
     chmod +x "$STUBS/$name"
 }
-for t in parted mkfs.ext4 mkfs.vfat wipefs partprobe rsync grub-install chroot mount umount mkswap; do
+for t in parted mkfs.ext4 mkfs.fat wipefs partprobe rsync grub-install chroot mount umount mkswap; do
     mkstub "$t"
 done
 # fallocate: log, then create the file (the installer chmods it afterwards)
@@ -74,7 +74,7 @@ check_absent() {
     fi
 }
 
-export PATH="$STUBS:$PATH"
+export PATH="$STUBS:/usr/bin:/bin"
 
 run_install() {
     # NOTE: no NAWA_INSTALL_DRYRUN here — the stubs on PATH shadow every
@@ -106,7 +106,7 @@ run_install uefi
 check "GPT label"            "parted -s /dev/vda mklabel gpt"
 check "ESP 512MiB"           "mkpart ESP fat32 1MiB 513MiB"
 check "esp flag"             "set 1 esp on"
-check "mkfs.vfat on ESP"     "mkfs.vfat -F32 /dev/vda1"
+check "mkfs.fat fallback on ESP" "mkfs.fat -F32 /dev/vda1"
 check "mkfs.ext4 on root"    "mkfs.ext4 -F -q /dev/vda2"
 check "rsync onto /mnt"      "rsync -aHX --numeric-ids"
 check "recursive /dev bind for passwd prompts" "mount --rbind /dev .*/mnt/dev"
@@ -156,6 +156,25 @@ grep -q '^menuentry "faseela"' "$WORK/mnt/boot/grub/grub.cfg" && echo "  ok: boo
 check "pkg cache rsync"      "rsync -a --exclude=remote .*/pkgcache/ .*mnt/var/cache/nawa"
 ls "$WORK/mnt/var/cache/nawa" >/dev/null 2>&1 && echo "  ok: cache dir created on target" \
     || { echo "  FAIL: cache dir missing"; exit 1; }
+
+# UEFI must discover dosfstools before even the first disk mutation. Hide the
+# stub and keep /sbin out of PATH so the host's real formatter cannot mask it.
+echo "== UEFI prerequisite refusal is non-destructive =="
+: > "$CMDLOG"
+mv "$STUBS/mkfs.fat" "$WORK/mkfs.fat.hidden"
+if ( cd "$WORK" && PATH="$STUBS:/usr/bin:/bin" NAWA_INSTALL_TEST=1 \
+     MNT="$WORK/mnt" KERNEL_SRC="$KSRC" FW_FORCE=uefi \
+     bash "$HERE/bootstrap/install.sh" /dev/vda --yes ) >"$WORK/missing-vfat.out" 2>&1; then
+    mv "$WORK/mkfs.fat.hidden" "$STUBS/mkfs.fat"
+    echo "  FAIL: UEFI install continued without a FAT formatter"; exit 1
+fi
+mv "$WORK/mkfs.fat.hidden" "$STUBS/mkfs.fat"
+grep -Fq "missing tool 'mkfs.vfat' or 'mkfs.fat' (dosfstools)" "$WORK/missing-vfat.out" \
+    && echo "  ok: missing UEFI filesystem tool diagnosed" \
+    || { echo "  FAIL: missing FAT formatter was not diagnosed"; cat "$WORK/missing-vfat.out"; exit 1; }
+! grep -qE 'wipefs|parted|mkfs' "$CMDLOG" \
+    && echo "  ok: missing UEFI filesystem tool leaves disk untouched" \
+    || { echo "  FAIL: UEFI prerequisite check ran after disk mutation"; cat "$CMDLOG"; exit 1; }
 
 # ============================================================ BIOS path ====
 echo "== BIOS install =="
@@ -255,9 +274,9 @@ grep -q 'FASEELA_BOOT_ACCEPTANCE pid1=%s' "$WORK/mnt/usr/libexec/faseela-boot-ac
 grep -q 'FASEELA_BOOT_ACCEPTANCE system-profile=systemd' "$WORK/mnt/usr/libexec/faseela-boot-acceptance" \
     && echo "  ok: probe verifies the installed distribution profile" \
     || { echo "  FAIL: system profile marker missing"; exit 1; }
-grep -q 'init-system = "systemd"' "$WORK/mnt/usr/share/nawa/system-profile.toml" \
-    && echo "  ok: Faseela base-files profile is present in the target root" \
-    || { echo "  FAIL: system profile is missing from the target root"; exit 1; }
+grep -q 'nawa --root / system profile show' "$WORK/mnt/usr/libexec/faseela-boot-acceptance" \
+    && echo "  ok: probe uses the installed effective-profile parser" \
+    || { echo "  FAIL: installed-profile parser check is missing from the probe"; exit 1; }
 grep -q '^root:\*:' "$WORK/mnt/etc/shadow" \
     && echo "  ok: test root remains locked" \
     || { echo "  FAIL: test root was not locked"; exit 1; }

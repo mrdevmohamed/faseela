@@ -70,7 +70,7 @@ check "D2 the probe adds only a test serial console" \
 check "D3 the probe reads the real PID 1 comm" \
     "grep -Fq 'IFS= read -r init_comm < /proc/1/comm' $INSTALL && grep -Fq 'FASEELA_BOOT_ACCEPTANCE pid1=' $INSTALL"
 check "D4 the probe checks the installed System Profile" \
-    "grep -Fq '/usr/share/nawa/system-profile.toml' $INSTALL && grep -Fq 'FASEELA_BOOT_ACCEPTANCE system-profile=systemd' $INSTALL"
+    "grep -Fq '/usr/bin/nawa --root / system profile show' $INSTALL && grep -Fq 'FASEELA_BOOT_ACCEPTANCE system-profile=systemd' $INSTALL && ! grep -Eq 'grep -E.*system-profile.toml' $INSTALL"
 check "D5 the probe is a multi-user systemd unit" \
     "grep -Fq 'faseela-boot-acceptance.service' $INSTALL && grep -Fq 'WantedBy=multi-user.target' $INSTALL"
 check "D6 test mode keeps root locked and skips passwords" \
