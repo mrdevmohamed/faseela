@@ -64,10 +64,10 @@ class SerialVM:
         deadline = time.monotonic() + connect_timeout
         last_error: OSError | None = None
         while time.monotonic() < deadline:
-            if self.process.poll() is not None:
+            return_code = self.process.poll()
+            if return_code is not None:
                 raise BootTestError(
-                    f"QEMU exited early with status {self.process.returncode}; "
-                    f"see {self.qemu_log_path}"
+                    f"QEMU exited early with status {return_code};\n{self.diagnostics()}"
                 )
             connection = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
             try:
@@ -139,9 +139,10 @@ class SerialVM:
                 raise BootTestError(
                     f"guest kernel panicked before {description}\n{self.diagnostics()}"
                 )
-            if self.process.poll() is not None:
+            return_code = self.process.poll()
+            if return_code is not None:
                 raise BootTestError(
-                    f"QEMU exited ({self.process.returncode}) before {description}\n"
+                    f"QEMU exited ({return_code}) before {description}\n"
                     f"{self.diagnostics()}"
                 )
             readable, _, _ = select.select(
