@@ -28,10 +28,10 @@ grub (hybrid BIOS+UEFI)
                          resolved, timesyncd, getty) → login on tty1
 ```
 
-The installed-disk GRUB entries pass `init=/usr/lib/systemd/systemd`. SAQ
-uses this explicit kernel argument before its generic fallback init candidates;
-this ensures the installed Faseela system selects systemd even if an old
-runit binary remains in a migrated root.
+The installed-disk GRUB entries use the kernel's default init lookup. The
+merged-`/usr` `/sbin/init` entry points to systemd, and SAQ hands over directly
+to `/usr/lib/systemd/systemd`; no alternate-init argument or legacy fallback
+is supported.
 
 ## Host requirements
 
