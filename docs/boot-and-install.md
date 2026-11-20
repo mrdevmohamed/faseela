@@ -115,12 +115,11 @@ faseela-install /dev/vda --hostname mybox --timezone Africa/Cairo \
 The installer supports both UEFI (GPT + ESP, removable grub) and BIOS
 (MBR), copies the live system with rsync, generates fstab from real
 UUIDs, and writes a static grub.cfg using the stable `/boot/vmlinuz` and
-`/boot/initramfs.img` aliases. Both installed-disk kernel entries pass
-`init=/usr/lib/systemd/systemd`: SAQ honors the explicit `init=` argument
-before its generic fallback candidates, so the installed system selects
-systemd as PID 1 even when an older runit binary remains on disk. The aliases
-point to versioned kernel/initramfs files and are updated by the Linux
-package's Nawa hooks. See
+`/boot/initramfs.img` aliases. The kernel's normal init selection resolves
+`/sbin/init` through merged `/usr` to systemd's `/usr/bin/init` entry point;
+SAQ then hands off to `/usr/lib/systemd/systemd`. There is no alternate-init
+parameter or legacy init fallback. The aliases point to versioned
+kernel/initramfs files and are updated by the Linux package's Nawa hooks. See
 [Kernel and initramfs lifecycle](kernel-initramfs.md) for regeneration, hooks
 and the current initramfs limitations. Both grub platforms (`i386-pc` and
 `x86_64-efi`) are in the image: the `grub` recipe builds them (rel 2).
