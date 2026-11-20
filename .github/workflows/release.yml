@@ -120,6 +120,7 @@ jobs:
     name: Telegram build started
     runs-on: ubuntu-24.04
     timeout-minutes: 2
+    continue-on-error: true
     permissions:
       contents: read
     steps:
@@ -1024,7 +1025,7 @@ jobs:
         with:
           pattern: build-logs-*
           path: telegram-payload/logs
-      - name: Send detailed report, logs, and successful build files to Telegram
+      - name: Send report and bounded text logs to Telegram
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
