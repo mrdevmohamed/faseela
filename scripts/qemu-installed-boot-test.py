@@ -288,15 +288,15 @@ def qemu_command(
             "-drive", f"if=pflash,format=raw,readonly=on,file={ovmf_code}",
             "-drive", f"if=pflash,format=raw,file={ovmf_vars}",
         ])
-    # Give every bootable device an explicit firmware boot index. SeaBIOS
-    # does not necessarily initialize virtio-blk devices that are absent from
-    # its boot order; a disk can therefore appear successfully installed yet
-    # immediately reset when tested without the ISO. Keep the installer ISO
-    # first and the target disk second, then boot the disk first in the fresh VM.
+    # Use an emulated ATA disk for the firmware acceptance path. SeaBIOS and
+    # OVMF both support this controller without relying on firmware-specific
+    # virtio boot drivers. The installer therefore sees /dev/sda consistently
+    # in both firmware modes. This isolates partition/GRUB/installed-kernel
+    # bootability from optional virtio firmware support.
     command.extend([
         "-drive", f"file={disk},if=none,id=installed-disk,format=qcow2",
-        "-device", "virtio-blk-pci,drive=installed-disk,bootindex=2" if iso is not None
-        else "virtio-blk-pci,drive=installed-disk,bootindex=1",
+        "-device", "ide-hd,drive=installed-disk,bootindex=2" if iso is not None
+        else "ide-hd,drive=installed-disk,bootindex=1",
     ])
     if iso is not None:
         command.extend([
@@ -373,7 +373,7 @@ def run_one(
 
         install = (
             f"doas /usr/bin/env FASEELA_QEMU_BOOT_TEST=1 NAWA_INSTALL_TEST=1 FW_FORCE={firmware} "
-            "/usr/sbin/faseela-install /dev/vda --yes "
+            "/usr/sbin/faseela-install /dev/sda --yes "
             "; result=$?; printf '%s%s=%s\\n' FASEELA_ INSTALL_TEST_STATUS \"$result\"\n"
         )
         print(f"[{firmware}] installing onto the disposable /dev/vda disk", flush=True)
