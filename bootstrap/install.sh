@@ -510,12 +510,12 @@ set default=0
 set timeout=3
 
 menuentry "faseela" {
-    linux /boot/vmlinuz root=UUID=$ROOT_UUID init=/usr/lib/systemd/systemd quiet $QEMU_TEST_ARGS
+    linux /boot/vmlinuz root=UUID=$ROOT_UUID quiet $QEMU_TEST_ARGS
     initrd /boot/initramfs.img
 }
 
 menuentry "faseela (verbose)" {
-    linux /boot/vmlinuz root=UUID=$ROOT_UUID init=/usr/lib/systemd/systemd loglevel=7 $QEMU_TEST_ARGS
+    linux /boot/vmlinuz root=UUID=$ROOT_UUID loglevel=7 $QEMU_TEST_ARGS
     initrd /boot/initramfs.img
 }
 EOF
