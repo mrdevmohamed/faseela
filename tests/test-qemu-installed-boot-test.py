@@ -2,6 +2,9 @@
 """Fast CLI/dry-run tests for the real installed-disk QEMU acceptance harness."""
 from __future__ import annotations
 
+import importlib.util
+import io
+import socket
 import subprocess
 import sys
 import tempfile
@@ -10,6 +13,49 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 SCRIPT = REPO / "scripts" / "qemu-installed-boot-test.py"
+
+
+def check_serial_evidence() -> None:
+    spec = importlib.util.spec_from_file_location("installed_boot", SCRIPT)
+    harness = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(harness)
+    connection, guest = socket.socketpair()
+    vm = harness.SerialVM([], Path("unused.sock"), Path("unused.log"))
+    vm.connection = connection
+    vm.process = type("Running", (), {"poll": lambda self: None})()
+    vm.log_file = io.BytesIO()
+    try:
+        guest.sendall(b"doas echo FASEELA_ROOT_OK\r\n")
+        try:
+            vm.expect_line(b"FASEELA_ROOT_OK", 0.02, "root evidence")
+        except harness.BootTestError:
+            pass
+        else:
+            raise AssertionError("an echoed command was accepted as execution evidence")
+        guest.sendall(b"\x1b[?2004l\x1b]3008;end=test\x1b\\FASEELA_ROOT_")
+        guest.sendall(b"OK\r\n")
+        vm.expect_line(b"FASEELA_ROOT_OK", 1, "root evidence")
+        try:
+            vm.expect_line(b"FASEELA_ROOT_OK", 0.02, "fresh root evidence")
+        except harness.BootTestError:
+            pass
+        else:
+            raise AssertionError("an old marker was reused")
+        guest.sendall(b"\x1b]3008;end=test\x1b\\FASEELA_INSTALL_TEST_STATUS=1\r\n")
+        result = vm.expect_pattern(
+            rb"(?m)(?:^|\r|\x1b\\)FASEELA_INSTALL_TEST_STATUS=([0-9]+)\r?\n", 1, "installer result"
+        )
+        assert result.group(1) == b"1"
+        guest.sendall(b"\x1b]3008;end=test\x1b\\FASEELA_BOOT_ACCEPTANCE system-profile=missing\r\n")
+        profile = vm.expect_pattern(
+            rb"(?m)(?:^|\r|\x1b\\)FASEELA_BOOT_ACCEPTANCE system-profile=([A-Za-z0-9_.-]+)\r?\n",
+            1,
+            "system-profile result",
+        )
+        assert profile.group(1) == b"missing"
+    finally:
+        guest.close()
+        connection.close()
 
 
 def run(*args: str) -> subprocess.CompletedProcess[str]:
@@ -23,12 +69,16 @@ def run(*args: str) -> subprocess.CompletedProcess[str]:
 
 
 def main() -> int:
-    # The real harness must use the live user's doas rule for installation
-    # and for the reboot; an unprivileged reboot would strand the VM after
-    # a successful disk install and produce a false acceptance failure.
+    check_serial_evidence()
+    # The real harness must use the Live user's doas rule for installation
+    # and synchronization before the host stops the Live VM. The installed
+    # disk is then booted in a fresh QEMU process.
     harness_source = SCRIPT.read_text(encoding="utf-8")
     assert "doas /usr/bin/env FASEELA_QEMU_BOOT_TEST=1" in harness_source
-    assert "doas sync; doas reboot -f" in harness_source
+    assert "doas sync && printf" in harness_source
+    assert "system-profile=([A-Za-z0-9_.-]+)" in harness_source
+    run_one = harness_source[harness_source.index("def run_one"):harness_source.index("def parse_args")]
+    assert "wait_for_exit" not in run_one
 
     help_result = run("--help")
     assert help_result.returncode == 0, help_result.stderr

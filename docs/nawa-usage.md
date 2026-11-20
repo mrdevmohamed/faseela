@@ -37,8 +37,11 @@ nawa remove --yes <name>                        # remove package (--yes skips th
 nawa repo-create <dir-of-archives> --out index.toml --sign  # signed repo index
 nawa upgrade --yes --repo <dir-or-url>          # upgrade from a repo (repo also comes from nawa.toml)
 nawa rollback <name>                            # restore previous version
-systemctl list-unit-files --type=service            # services (nawa service: see below)
+systemctl list-unit-files --type=service            # services on Faseela (use systemctl)
 nawa config show                                # effective config + where each value came from
+nawa system status                              # inspect runtime/init candidates and target profile
+nawa system profile show                        # parse the effective target profile and overrides
+nawa system plan                                # unified read-only system and package assessment
 nawa init                                       # write a commented nawa.toml template
 nawa init --system                              # write /etc/nawa/nawa.toml (as root)
 nawa completions bash|zsh|fish                  # shell completion scripts
@@ -70,8 +73,10 @@ many packages already landed — re-running the same command continues, because
 installed packages are skipped. Packages you named are recorded as `explicit`,
 everything pulled in as `dependency`.
 
-* `-n/--dry-run` prints the plan and stops; `-y/--yes` is required when stdin
-  is not a terminal (same contract as `remove` and `upgrade`)
+* Nawa prints the resolved plan and asks for confirmation before building or
+  installing. `-n/--dry-run` prints the plan and stops; `-y/--yes` is required
+  when stdin is not a terminal (the same safety rule applies to `remove`,
+  `update`, and `upgrade`).
 * `--no-deps` builds only the named packages
 * `--isolation`, `--use-cache`, `--allow-degraded`, `--force`,
   `--allow-unsigned` work as for `nawa build` / `nawa install <archive>`
@@ -157,10 +162,10 @@ change its `repo` value to the `stable-v3` URL manually.
 
 ### Confirmations, colors, suggestions
 
-* `remove` and `upgrade` print exactly what they are about to do and ask
-  `y/N`. Non-interactive runs (scripts, CI) must pass `--yes`; without it a
-  piped stdin is **refused** rather than guessed at. `install` never asks —
-  the bootstrap depends on it.
+* Mutating package commands show their plan and ask before proceeding.
+  Non-interactive runs (scripts, CI) must pass `--yes`; without it a piped
+  stdin is **refused** rather than guessed at. Use `--dry-run` to inspect an
+  install or upgrade plan without changing the target.
 * Output is colored only on a real terminal; pipes and scripts get plain,
   byte-identical text. `NO_COLOR` disables colors, `NAWA_COLOR=always|never|auto`
   overrides the detection.
@@ -322,14 +327,16 @@ systemctl status sshd                      # live state, recent log lines
 journalctl -u sshd -b                      # the unit's log for this boot
 ```
 
-Packages ship their units under `/usr/lib/systemd/system` and call
-`systemctl preset <unit>` from `post_install`; the default policy lives in
-`/usr/lib/systemd/system-preset/80-faseela.preset` (from `systemd-units`).
+Packages ship their units under `/usr/lib/systemd/system`. Image provisioning
+applies the vendor presets once, after all packages are present; the default
+policy lives in `/usr/lib/systemd/system-preset/80-faseela.preset` (from
+`systemd-units`). Package updates preserve administrator service choices and
+must not apply presets from package hooks.
 
-The `nawa service` subcommand still implements the old runit layout
-(`/etc/sv`, `runsvdir`) and finds nothing on a systemd system. It is replaced
-by a systemctl backend in Nawa itself (a change to the `nawa` repository, not
-this one); until then use `systemctl` directly.
+Faseela is systemd-based. Do not use the legacy `nawa service` runit interface
+(`/etc/sv`, `runsvdir`) as a systemd service controller. Use `systemctl` and
+`journalctl` as shown above; package recipes must not rely on Nawa's legacy
+runit commands to start, enable, or inspect services.
 
 ## Recipe format (example)
 

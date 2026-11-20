@@ -73,7 +73,7 @@ KVER="$(basename "$KERNEL")"
 echo "== stage4: kernel      = $KVER"
 echo "== stage4: compression = $SQUASH_COMP"
 
-WORK="$(mktemp -d /tmp/mkiso.XXXXXX)"
+WORK="$(mktemp -d "${TMPDIR:-/tmp}/mkiso.XXXXXX")"
 trap 'rm -rf "$WORK"' EXIT
 ISO="$WORK/iso"
 mkdir -p "$ISO/boot/grub" "$ISO/live"
