@@ -42,6 +42,49 @@ jobs:
           echo "disk=$disk" >> "$GITHUB_OUTPUT"
           qemu-img info "$disk"
 
+      - name: Inspect MBR, partition table, and installed GRUB files
+        shell: bash
+        env:
+          INSTALLED_DISK: ${{ steps.disk.outputs.disk }}
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends grub-common grub-pc-bin gdisk fdisk e2fsprogs
+          sudo modprobe nbd max_part=16
+          sudo qemu-nbd --connect=/dev/nbd0 "$INSTALLED_DISK"
+          cleanup() { sudo umount /mnt/faseela-inspect 2>/dev/null || true; sudo qemu-nbd --disconnect /dev/nbd0 2>/dev/null || true; }
+          trap cleanup EXIT
+          sudo partprobe /dev/nbd0 || true
+          echo "### Image metadata"
+          qemu-img info "$INSTALLED_DISK"
+          echo "### Partition table"
+          sudo fdisk -l /dev/nbd0
+          sudo sfdisk -d /dev/nbd0 || true
+          echo "### Block devices"
+          lsblk -o NAME,SIZE,TYPE,FSTYPE,UUID,PARTUUID /dev/nbd0
+          echo "### MBR signature and partition table bytes"
+          sudo dd if=/dev/nbd0 bs=512 count=1 status=none | od -Ax -tx1z
+          echo "### First sectors after MBR (GRUB embedding area)"
+          sudo dd if=/dev/nbd0 bs=512 skip=1 count=32 status=none | strings -a | head -100 || true
+          echo "### Filesystem checks"
+          sudo blkid /dev/nbd0p1 || true
+          sudo e2fsck -fn /dev/nbd0p1 || true
+          sudo mkdir -p /mnt/faseela-inspect
+          sudo mount -o ro,noload /dev/nbd0p1 /mnt/faseela-inspect
+          echo "### GRUB directory"
+          sudo find /mnt/faseela-inspect/boot/grub -maxdepth 3 -type f -printf '%P (%s bytes)\\n' | sort
+          echo "### Core image inspection"
+          sudo file /mnt/faseela-inspect/boot/grub/i386-pc/core.img
+          sudo grub-file --is-i386-pc /mnt/faseela-inspect/boot/grub/i386-pc/core.img && echo "core.img: valid i386-pc image" || echo "core.img: INVALID i386-pc image"
+          sudo grub-script-check /mnt/faseela-inspect/boot/grub/grub.cfg
+          echo "### Installed GRUB config"
+          sudo cat /mnt/faseela-inspect/boot/grub/grub.cfg
+          echo "### Kernel links"
+          sudo ls -la /mnt/faseela-inspect/boot/vmlinuz /mnt/faseela-inspect/boot/initramfs.img
+          echo "### GRUB core image hashes and sizes"
+          sudo sha256sum /mnt/faseela-inspect/boot/grub/i386-pc/core.img
+          sudo du -h /mnt/faseela-inspect/boot/grub/i386-pc/core.img
+
       - name: Boot the same installed disk with VirtIO and IDE
         shell: bash
         env:
