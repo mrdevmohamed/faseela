@@ -505,6 +505,17 @@ fi
 
 GFX
 fi
+
+# Keep GRUB diagnostics visible to the installed-disk QEMU acceptance test.
+# This is opt-in and never changes normal installed systems.
+if [ "${FASEELA_QEMU_BOOT_TEST:-0}" = 1 ]; then
+    cat >> "$MNT/boot/grub/grub.cfg" <<'GRUB_SERIAL'
+serial --unit=0 --speed=115200 --word=8 --parity=no --stop=1
+terminal_input serial
+terminal_output serial
+GRUB_SERIAL
+fi
+
 cat >> "$MNT/boot/grub/grub.cfg" <<EOF
 set default=0
 set timeout=3
