@@ -455,7 +455,7 @@ fi
 # It is never written to ordinary installations or release images.
 QEMU_TEST_ARGS=""
 if [ "${FASEELA_QEMU_BOOT_TEST:-0}" = 1 ]; then
-    QEMU_TEST_ARGS="console=tty0 console=ttyS0,115200"
+    QEMU_TEST_ARGS="console=tty0 console=ttyS0,115200 loglevel=7 ignore_loglevel panic=60"
     log "installing the temporary QEMU PID 1 acceptance probe"
     run mkdir -p "$MNT/usr/libexec" "$MNT/etc/systemd/system/multi-user.target.wants"
     cat > "$MNT/usr/libexec/faseela-boot-acceptance" <<'PROBE'

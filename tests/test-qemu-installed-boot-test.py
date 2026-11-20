@@ -57,6 +57,29 @@ def check_serial_evidence() -> None:
         guest.close()
         connection.close()
 
+    # A guest reset closes the serial socket. The failure must include the
+    # process status and QEMU's debug trace rather than hiding them behind EOF.
+    with tempfile.TemporaryDirectory(prefix="faseela-qemu-eof-") as tmp:
+        root = Path(tmp)
+        host, peer = socket.socketpair()
+        vm = harness.SerialVM([], root / "disk-serial.sock", root / "disk-serial.log")
+        vm.connection = host
+        vm.process = type("Exited", (), {"poll": lambda self: 42})()
+        vm.log_file = io.BytesIO()
+        vm.debug_log_path.write_text("CPU reset: triple fault", encoding="utf-8")
+        peer.close()
+        try:
+            vm.expect(b"PID1_READY", 1, "installed PID 1")
+        except harness.BootTestError as error:
+            message = str(error)
+            assert "exit status: 42" in message
+            assert "CPU reset: triple fault" in message
+            assert str(vm.debug_log_path) in message
+        else:
+            raise AssertionError("a closed serial stream was accepted as a boot")
+        finally:
+            host.close()
+
 
 def run(*args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
@@ -77,6 +100,8 @@ def main() -> int:
     assert "doas /usr/bin/env FASEELA_QEMU_BOOT_TEST=1" in harness_source
     assert "doas sync && printf" in harness_source
     assert "system-profile=([A-Za-z0-9_.-]+)" in harness_source
+    assert 'panic=60' in Path(REPO / "bootstrap/install.sh").read_text(encoding="utf-8")
+    assert '"-d", "guest_errors,cpu_reset"' in harness_source
     run_one = harness_source[harness_source.index("def run_one"):harness_source.index("def parse_args")]
     assert "wait_for_exit" not in run_one
 
@@ -110,6 +135,9 @@ def main() -> int:
             "file=/usr/share/OVMF/OVMF_VARS.fd",
             "live-serial.sock",
             "disk-serial.sock",
+            "-d guest_errors,cpu_reset",
+            "live-serial-debug.log",
+            "disk-serial-debug.log",
         ):
             assert expected in dry_run.stdout, (expected, dry_run.stdout)
 

@@ -823,7 +823,9 @@ jobs:
               for log in "qemu-installed-boot/$firmware/live-serial.log" \
                          "qemu-installed-boot/$firmware/disk-serial.log" \
                          "qemu-installed-boot/$firmware/live-serial-qemu.log" \
-                         "qemu-installed-boot/$firmware/disk-serial-qemu.log"; do
+                         "qemu-installed-boot/$firmware/disk-serial-qemu.log" \
+                         "qemu-installed-boot/$firmware/live-serial-debug.log" \
+                         "qemu-installed-boot/$firmware/disk-serial-debug.log"; do
                 [[ -f "$log" ]] || continue
                 echo
                 echo "<details open><summary>$log</summary>"
