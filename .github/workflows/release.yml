@@ -1016,11 +1016,13 @@ jobs:
         with:
           persist-credentials: false
       - uses: actions/download-artifact@v4
+        timeout-minutes: 1
         continue-on-error: true
         with:
           name: run-report
           path: telegram-payload/report
       - uses: actions/download-artifact@v4
+        timeout-minutes: 2
         continue-on-error: true
         with:
           pattern: build-logs-*
