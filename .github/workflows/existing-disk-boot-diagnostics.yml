@@ -25,22 +25,22 @@ jobs:
           run-id: 44754248442
           github-token: ${{ github.token }}
 
+      - name: Install QEMU
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends qemu-system-x86 qemu-utils
+
       - name: Find and inspect the BIOS installed disk
         id: disk
         shell: bash
         run: |
           set -euo pipefail
           echo "Artifact contents:"
-          find previous-run -maxdepth 5 -type f -printf '%p (%s bytes)\n' | sort
+          find previous-run -maxdepth 5 -type f -printf '%p (%s bytes)\\n' | sort
           disk="$(find previous-run -type f -path '*/bios/installed.qcow2' -print -quit)"
           test -n "$disk" || { echo "BIOS installed qcow2 was not present in the artifact"; exit 1; }
           echo "disk=$disk" >> "$GITHUB_OUTPUT"
           qemu-img info "$disk"
-
-      - name: Install QEMU
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends qemu-system-x86 qemu-utils
 
       - name: Boot the same installed disk with VirtIO and IDE
         shell: bash
