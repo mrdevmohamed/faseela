@@ -130,8 +130,8 @@ class TelegramNotifierTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "logs"
             root.mkdir()
-            for index in range(3):
-                (root / f"{index}.log").write_bytes(b"x" * (notify.MAX_LOG_FILE_BYTES))
+            for index in range(11):
+                (root / f"{index:02d}.log").write_bytes(b"x" * notify.MAX_LOG_FILE_BYTES)
             archive_path = Path(tmp) / "logs.tar.gz"
             self.assertTrue(notify.make_logs_archive(root, archive_path))
             with tarfile.open(archive_path, "r:gz") as archive:
