@@ -15,6 +15,7 @@ import shutil
 import socket
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -44,6 +45,10 @@ class SerialVM:
         self.log_path = log_path
         self.qemu_log_path = log_path.with_name(log_path.stem + "-qemu.log")
         self.debug_log_path = socket_path.with_name(socket_path.stem + "-debug.log")
+        self.monitor_socket_path = socket_path.with_name(socket_path.stem + "-monitor.sock")
+        self.monitor_log_path = log_path.with_name(log_path.stem + "-monitor.log")
+        self.screen_prefix = log_path.with_name(log_path.stem + "-screen")
+        self.monitor_thread: threading.Thread | None = None
         self.process: subprocess.Popen[bytes] | None = None
         self.connection: socket.socket | None = None
         self.log_file = None
@@ -53,6 +58,7 @@ class SerialVM:
     def start(self, connect_timeout: int = 30) -> None:
         self.socket_path.parent.mkdir(parents=True, exist_ok=True)
         self.socket_path.unlink(missing_ok=True)
+        self.monitor_socket_path.unlink(missing_ok=True)
         self.log_file = self.log_path.open("wb")
         self.qemu_log_file = self.qemu_log_path.open("wb")
         self.process = subprocess.Popen(
@@ -74,6 +80,12 @@ class SerialVM:
                 connection.connect(str(self.socket_path))
                 connection.setblocking(False)
                 self.connection = connection
+                self.monitor_thread = threading.Thread(
+                    target=self._capture_monitor_loop,
+                    name=f"qemu-monitor-{self.log_path.stem}",
+                    daemon=True,
+                )
+                self.monitor_thread.start()
                 return
             except OSError as error:
                 last_error = error
@@ -82,6 +94,63 @@ class SerialVM:
         raise BootTestError(
             f"could not connect to QEMU serial socket {self.socket_path}: {last_error}"
         )
+
+    def _monitor_command(self, command: str) -> str:
+        connection = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        connection.settimeout(0.15)
+        try:
+            connection.connect(str(self.monitor_socket_path))
+            try:
+                connection.recv(4096)  # HMP greeting and prompt
+            except (BlockingIOError, OSError):
+                pass
+            connection.sendall((command + "\n").encode("utf-8"))
+            chunks: list[bytes] = []
+            deadline = time.monotonic() + 0.25
+            while time.monotonic() < deadline:
+                try:
+                    chunk = connection.recv(65536)
+                except (socket.timeout, BlockingIOError):
+                    break
+                if not chunk:
+                    break
+                chunks.append(chunk)
+            return b"".join(chunks).decode("utf-8", errors="replace")
+        finally:
+            connection.close()
+
+    def _capture_monitor_loop(self) -> None:
+        # Capture several frames while firmware/GRUB is active. A blank serial
+        # log alone cannot distinguish a firmware boot-selection problem from
+        # a bootloader failure on the VGA console.
+        frame = 0
+        deadline = time.monotonic() + 12
+        while (
+            self.process is not None
+            and self.process.poll() is None
+            and time.monotonic() < deadline
+            and frame < 12
+        ):
+            screen = Path(f"{self.screen_prefix}-{frame:02d}.ppm")
+            try:
+                output = self._monitor_command(f"screendump {screen}")
+                if output:
+                    with self.monitor_log_path.open("a", encoding="utf-8") as log:
+                        log.write(output)
+                        log.flush()
+            except OSError:
+                pass
+            if frame == 0:
+                for command in ("info block", "info pci", "info roms", "info bootorder"):
+                    try:
+                        output = self._monitor_command(command)
+                        with self.monitor_log_path.open("a", encoding="utf-8") as log:
+                            log.write(f"\n(qemu) {command}\n{output}\n")
+                    except OSError as error:
+                        with self.monitor_log_path.open("a", encoding="utf-8") as log:
+                            log.write(f"\n(qemu) {command}: {error}\n")
+            frame += 1
+            time.sleep(0.35)
 
     def diagnostics(self) -> str:
         status = self.process.poll() if self.process is not None else "not started"
@@ -97,6 +166,8 @@ class SerialVM:
             f"Serial log: {self.log_path}\n"
             f"QEMU stderr log: {self.qemu_log_path}\n"
             f"QEMU debug log: {self.debug_log_path}\n"
+            f"QEMU monitor log: {self.monitor_log_path}\n"
+            f"QEMU VGA screenshots: {self.screen_prefix}-*.ppm\n"
             f"Last serial output:\n{tail(self.log_path)}\n"
             f"Last QEMU stderr:\n{tail(self.qemu_log_path)}\n"
             f"Last QEMU debug output:\n{tail(self.debug_log_path)}"
@@ -213,7 +284,11 @@ class SerialVM:
         if self.qemu_log_file is not None:
             self.qemu_log_file.close()
             self.qemu_log_file = None
+        if self.monitor_thread is not None:
+            self.monitor_thread.join(timeout=1)
+            self.monitor_thread = None
         self.socket_path.unlink(missing_ok=True)
+        self.monitor_socket_path.unlink(missing_ok=True)
 
 
 def resolve_ovmf(explicit: str | None) -> str:
@@ -266,6 +341,7 @@ def qemu_command(
     iso: Path | None = None,
     ovmf_code: str | None = None,
     ovmf_vars: Path | None = None,
+    disk_interface: str = "virtio",
 ) -> list[str]:
     command = [
         qemu,
@@ -276,7 +352,7 @@ def qemu_command(
         "-vga", "std",
         "-nic", "none",
         "-no-reboot",
-        "-monitor", "none",
+        "-monitor", f"unix:{serial_socket.with_name(serial_socket.stem + '-monitor.sock')},server,nowait",
         "-serial", f"unix:{serial_socket},server,nowait",
         "-d", "int,guest_errors,cpu_reset",
         "-D", str(serial_socket.with_name(serial_socket.stem + "-debug.log")),
@@ -293,11 +369,14 @@ def qemu_command(
     # its boot order; a disk can therefore appear successfully installed yet
     # immediately reset when tested without the ISO. Keep the installer ISO
     # first and the target disk second, then boot the disk first in the fresh VM.
-    command.extend([
-        "-drive", f"file={disk},if=none,id=installed-disk,format=qcow2",
-        "-device", "virtio-blk-pci,drive=installed-disk,bootindex=2" if iso is not None
-        else "virtio-blk-pci,drive=installed-disk,bootindex=1",
-    ])
+    command.extend(["-drive", f"file={disk},if=none,id=installed-disk,format=qcow2"])
+    if iso is None and disk_interface == "ide":
+        command.extend(["-device", "ide-hd,drive=installed-disk,bus=ide.0,bootindex=1"])
+    else:
+        command.extend([
+            "-device", "virtio-blk-pci,drive=installed-disk,bootindex=2" if iso is not None
+            else "virtio-blk-pci,drive=installed-disk,bootindex=1",
+        ])
     if iso is not None:
         command.extend([
             "-drive", f"file={iso},media=cdrom,if=none,id=install-iso",
@@ -404,6 +483,7 @@ def run_one(
         qemu_command(
             qemu, firmware, disk, disk_socket, accel,
             args.memory_mib, args.cpus, None, ovmf_code, vars_copy,
+            args.disk_boot_interface,
         ),
         disk_socket,
         out_dir / "disk-serial.log",
@@ -451,6 +531,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--disk-size", default="16G", help="disposable qcow2 disk size (default: 16G)")
     parser.add_argument("--memory-mib", type=int, default=2048)
     parser.add_argument("--cpus", type=int, default=2)
+    parser.add_argument(
+        "--disk-boot-interface", choices=("virtio", "ide"), default="virtio",
+        help="controller used only when the freshly installed disk is booted",
+    )
     parser.add_argument("--accel", choices=("auto", "kvm", "tcg"), default="auto")
     parser.add_argument("--live-timeout", type=int, default=600)
     parser.add_argument("--install-timeout", type=int, default=2400)
@@ -494,6 +578,7 @@ def main() -> int:
                     "qemu-system-x86_64", firmware, disk, sock, accel,
                     args.memory_mib, args.cpus, image, ovmf_code,
                     Path(ovmf_vars) if ovmf_vars else None,
+                    args.disk_boot_interface if stage == "disk" else "virtio",
                 )
                 print(f"[{firmware}] {stage} QEMU: {' '.join(cmd)}")
         return 0
