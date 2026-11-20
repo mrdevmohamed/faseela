@@ -81,6 +81,46 @@ def check_serial_evidence() -> None:
             host.close()
 
 
+def check_early_death_helpers() -> None:
+    spec = importlib.util.spec_from_file_location("installed_boot_helpers", SCRIPT)
+    harness = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(harness)
+    with tempfile.TemporaryDirectory(prefix="faseela-installed-boot-helpers-") as tmp:
+        root = Path(tmp)
+        live = root / "live-serial.log"
+        live.write_bytes(
+            b"faseela-install: firmware mode: bios\r\n"
+            b"\x1b[32mInstalling for i386-pc platform.\x1b[0m\r\n"
+            b"unrelated kernel line\r\n"
+            b"FASEELA_INSTALL_TEST_STATUS=0\r\n"
+        )
+        text = harness.installer_transcript(live)
+        assert "firmware mode: bios" in text and "Installing for i386-pc platform." in text, text
+        assert "unrelated" not in text and "\x1b" not in text and "TEST_STATUS" not in text, text
+        assert "not available" in harness.installer_transcript(root / "missing.log")
+
+        fault = root / "debug.log"
+        fault.write_text(
+            "CPU Reset (CPU 0)\nEIP=0000fff0 EFL=00000002\n"
+            "Triple fault\n"
+            "EAX=00000000 EBX=00000000 ECX=00000000 EDX=00000000\n"
+            "ESI=00000000 EDI=00000000 EBP=00000000 ESP=00006f00\n"
+            "EIP=00008a2c EFL=00010046 [---Z-P-] CPL=0 II=0 A20=1 SMM=0 HLT=0\n"
+            "CS =0000 00000000 0000ffff 00009b00\n"
+            "CR0=00000010 CR2=00000000 CR3=00000000 CR4=00000000\n"
+            "Code=00 00 00 <ea> 00 00\n"
+            "CPU Reset (CPU 0)\n"
+            "EIP=0000fff0 EFL=00000002\n"
+        )
+        summary = harness.triple_fault_summary(fault)
+        assert "Triple fault" in summary and "EIP=00008a2c" in summary and "Code=" in summary, summary
+        assert "0000fff0" not in summary, summary
+        quiet = root / "quiet.log"
+        quiet.write_text("CPU Reset (CPU 0)\nEIP=0000fff0 EFL=00000002\n")
+        assert "no 'Triple fault'" in harness.triple_fault_summary(quiet)
+        assert "not available" in harness.triple_fault_summary(root / "missing.log")
+
+
 def run(*args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [sys.executable, str(SCRIPT), *args],
@@ -103,9 +143,15 @@ def main() -> int:
     installer_source = Path(REPO / "bootstrap/install.sh").read_text(encoding="utf-8")
     assert 'panic=60' in installer_source
     assert "terminal_output serial" in installer_source
-    assert '"-d", "int,guest_errors,cpu_reset"' in harness_source
+    assert 'debug_flags: str = "int,guest_errors,cpu_reset"' in harness_source
+    assert '"-d", debug_flags' in harness_source
     run_one = harness_source[harness_source.index("def run_one"):harness_source.index("def parse_args")]
     assert "wait_for_exit" not in run_one
+    # An early guest death under KVM is re-booted under TCG (which logs the triple fault),
+    # and one firmware failing must not hide the other's result.
+    assert "diagnose_early_death" in run_one
+    assert "failures.append" in harness_source
+    check_early_death_helpers()
 
     help_result = run("--help")
     assert help_result.returncode == 0, help_result.stderr

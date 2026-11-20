@@ -266,6 +266,7 @@ def qemu_command(
     iso: Path | None = None,
     ovmf_code: str | None = None,
     ovmf_vars: Path | None = None,
+    debug_flags: str = "int,guest_errors,cpu_reset",
 ) -> list[str]:
     command = [
         qemu,
@@ -278,7 +279,7 @@ def qemu_command(
         "-no-reboot",
         "-monitor", "none",
         "-serial", f"unix:{serial_socket},server,nowait",
-        "-d", "int,guest_errors,cpu_reset",
+        "-d", debug_flags,
         "-D", str(serial_socket.with_name(serial_socket.stem + "-debug.log")),
     ]
     if firmware == "uefi":
@@ -296,6 +297,145 @@ def qemu_command(
     else:
         command.extend(["-boot", "order=c"])
     return command
+
+
+ANSI_RE = re.compile(r"\x1b(?:\[[0-9;?]*[ -/]*[@-~]|\][^\x07\x1b]*(?:\x07|\x1b\\)|[@-Z\\-_])")
+# Lines of the installer transcript that say what happened to the bootloader.
+INSTALLER_GREP = re.compile(
+    r"(?i)grub|installing for|installation finished|firmware mode|partitioning|installing kernel|"
+    r"root UUID|test: |warning|error|fail|faseela-install|done "
+)
+EARLY_DEATH_MARKERS = ("serial connection closed", "QEMU exited")
+
+
+def installer_transcript(log_path: Path, limit: int = 60) -> str:
+    """The installer's own lines (grub-install output, firmware mode, warnings) from the
+    Live VM's serial log, so they appear in the job log and not only in an artifact."""
+    try:
+        text = log_path.read_bytes().decode("utf-8", errors="replace")
+    except OSError:
+        return "(live serial log not available)"
+    lines = [ANSI_RE.sub("", line).rstrip() for line in text.replace("\r", "\n").split("\n")]
+    wanted = [line for line in lines if line and INSTALLER_GREP.search(line)
+              and "FASEELA_INSTALL_TEST_STATUS" not in line]
+    return "\n".join(wanted[-limit:]) or "(no installer lines found)"
+
+
+def triple_fault_summary(debug_log: Path) -> str:
+    """Pull the last 'Triple fault' (or guest-error) register dump out of a QEMU -d log.
+
+    Only the TCG accelerator logs this: under KVM a guest triple fault just ends the VM,
+    which is why the KVM run shows nothing but the two power-on CPU resets."""
+    try:
+        text = debug_log.read_bytes().decode("utf-8", errors="replace")
+    except OSError:
+        return "(QEMU debug log not available)"
+    index = text.rfind("Triple fault")
+    if index < 0:
+        errors = [line for line in text.splitlines() if "guest_error" in line.lower() or "Invalid" in line]
+        return ("no 'Triple fault' in the TCG debug log"
+                + (":\n" + "\n".join(errors[-10:]) if errors else ""))
+    keep = ("EAX=", "EIP=", "CS =", "SS =", "DS =", "CR0=", "EFER=", "Code=")
+    out = ["Triple fault; register state at the fault:"]
+    for line in text[index:].splitlines()[1:40]:
+        if line.startswith("CPU Reset"):
+            break
+        if line.startswith(keep):
+            out.append("  " + line)
+    return "\n".join(out)
+
+
+def boot_installed_disk(
+    args: argparse.Namespace,
+    firmware: str,
+    disk: Path,
+    out_dir: Path,
+    qemu: str,
+    accel: list[str],
+    ovmf_code: str | None,
+    vars_copy: Path | None,
+    name: str = "disk",
+    debug_flags: str = "int,guest_errors,cpu_reset",
+    timeout: int | None = None,
+) -> None:
+    """Boot the installed disk in a fresh QEMU and require PID 1 = systemd."""
+    timeout = timeout or args.boot_timeout
+    disk_socket = out_dir / f"{name}-serial.sock"
+    disk_vm = SerialVM(
+        qemu_command(
+            qemu, firmware, disk, disk_socket, accel,
+            args.memory_mib, args.cpus, None, ovmf_code, vars_copy, debug_flags,
+        ),
+        disk_socket,
+        out_dir / f"{name}-serial.log",
+    )
+    try:
+        print(f"[{firmware}] booting the installed disk through {firmware.upper()} "
+              f"({'KVM' if 'kvm' in accel else 'TCG'})", flush=True)
+        disk_vm.start()
+        match = disk_vm.expect_pattern(
+            rb"(?m)(?:^|\r|\x1b\\)FASEELA_BOOT_ACCEPTANCE pid1=([A-Za-z0-9_.-]+)\r?\n",
+            timeout, "the installed-disk PID 1 probe",
+        )
+        profile = disk_vm.expect_pattern(
+            rb"(?m)(?:^|\r|\x1b\\)FASEELA_BOOT_ACCEPTANCE system-profile=([A-Za-z0-9_.-]+)\r?\n",
+            timeout,
+            "the installed Faseela system profile",
+        )
+        profile_name = profile.group(1).decode("ascii")
+        if profile_name != "systemd":
+            raise BootTestError(
+                f"[{firmware}] installed system profile={profile_name!r}, expected 'systemd'; "
+                f"see {disk_vm.log_path}"
+            )
+        pid1 = match.group(1).decode("ascii")
+        if pid1 != "systemd":
+            raise BootTestError(
+                f"[{firmware}] installed disk booted with PID 1={pid1!r}, expected 'systemd'; "
+                f"see {disk_vm.log_path}"
+            )
+        print(
+            f"[{firmware}] PASS: installed disk reached PID 1=systemd and system profile=systemd "
+            f"(serial log: {disk_vm.log_path})",
+            flush=True,
+        )
+    finally:
+        disk_vm.close()
+
+
+def diagnose_early_death(
+    args: argparse.Namespace,
+    firmware: str,
+    disk: Path,
+    out_dir: Path,
+    qemu: str,
+    ovmf_code: str | None,
+    vars_copy: Path | None,
+) -> None:
+    """The KVM boot ended in a second or two with no serial output at all (a guest triple
+    fault or reset before GRUB's menu). KVM hides where. Boot the same disk once more under
+    TCG, which logs the fault, and print the verdict where the job log shows it."""
+    print(f"[{firmware}] the installed disk died almost immediately under KVM; "
+          "re-booting it under TCG to learn why", flush=True)
+    debug_log = out_dir / "disk-tcg-serial-debug.log"
+    try:
+        boot_installed_disk(
+            args, firmware, disk, out_dir, qemu, ["-accel", "tcg", "-cpu", "max"],
+            ovmf_code, vars_copy, name="disk-tcg",
+            debug_flags="cpu_reset,guest_errors", timeout=min(args.boot_timeout, 300),
+        )
+    except BootTestError as error:
+        print(f"[{firmware}] TCG boot also failed: {str(error).splitlines()[0]}", flush=True)
+        print(f"[{firmware}] {triple_fault_summary(debug_log)}", flush=True)
+        serial = out_dir / "disk-tcg-serial.log"
+        try:
+            tail = serial.read_bytes().decode("utf-8", errors="replace")[-1500:]
+        except OSError:
+            tail = ""
+        print(f"[{firmware}] TCG serial output (tail):\n{ANSI_RE.sub('', tail) or '(empty)'}", flush=True)
+    else:
+        print(f"[{firmware}] the installed disk BOOTS under TCG but not under KVM: the guest "
+              "fault depends on the CPU the runner gives it, not on the disk contents", flush=True)
 
 
 def run_one(
@@ -391,46 +531,16 @@ def run_one(
     finally:
         live_vm.close()
 
-    disk_socket = out_dir / "disk-serial.sock"
-    disk_vm = SerialVM(
-        qemu_command(
-            qemu, firmware, disk, disk_socket, accel,
-            args.memory_mib, args.cpus, None, ovmf_code, vars_copy,
-        ),
-        disk_socket,
-        out_dir / "disk-serial.log",
-    )
+    # What the installer said about the bootloader, in the job log (not only in an artifact).
+    print(f"[{firmware}] installer transcript (grub/firmware lines):\n"
+          f"{installer_transcript(out_dir / 'live-serial.log')}", flush=True)
+
     try:
-        print(f"[{firmware}] booting the installed disk through {firmware.upper()}", flush=True)
-        disk_vm.start()
-        match = disk_vm.expect_pattern(
-            rb"(?m)(?:^|\r|\x1b\\)FASEELA_BOOT_ACCEPTANCE pid1=([A-Za-z0-9_.-]+)\r?\n",
-            args.boot_timeout, "the installed-disk PID 1 probe",
-        )
-        profile = disk_vm.expect_pattern(
-            rb"(?m)(?:^|\r|\x1b\\)FASEELA_BOOT_ACCEPTANCE system-profile=([A-Za-z0-9_.-]+)\r?\n",
-            args.boot_timeout,
-            "the installed Faseela system profile",
-        )
-        profile_name = profile.group(1).decode("ascii")
-        if profile_name != "systemd":
-            raise BootTestError(
-                f"[{firmware}] installed system profile={profile_name!r}, expected 'systemd'; "
-                f"see {disk_vm.log_path}"
-            )
-        pid1 = match.group(1).decode("ascii")
-        if pid1 != "systemd":
-            raise BootTestError(
-                f"[{firmware}] installed disk booted with PID 1={pid1!r}, expected 'systemd'; "
-                f"see {disk_vm.log_path}"
-            )
-        print(
-            f"[{firmware}] PASS: installed disk reached PID 1=systemd and system profile=systemd "
-            f"(serial log: {disk_vm.log_path})",
-            flush=True,
-        )
-    finally:
-        disk_vm.close()
+        boot_installed_disk(args, firmware, disk, out_dir, qemu, accel, ovmf_code, vars_copy)
+    except BootTestError as error:
+        if "kvm" in accel and any(marker in str(error) for marker in EARLY_DEATH_MARKERS):
+            diagnose_early_death(args, firmware, disk, out_dir, qemu, ovmf_code, vars_copy)
+        raise
 
 
 def parse_args() -> argparse.Namespace:
@@ -490,8 +600,21 @@ def main() -> int:
                 print(f"[{firmware}] {stage} QEMU: {' '.join(cmd)}")
         return 0
 
+    failures: list[tuple[str, BootTestError]] = []
     for firmware in firmwares:
-        run_one(args, firmware, ovmf_code, ovmf_vars)
+        try:
+            run_one(args, firmware, ovmf_code, ovmf_vars)
+        except BootTestError as error:
+            # One firmware failing must not hide the other one's result.
+            print(f"qemu-installed-boot-test: [{firmware}] FAILED: {error}", file=sys.stderr, flush=True)
+            failures.append((firmware, error))
+    passed = [fw for fw in firmwares if fw not in {name for name, _ in failures}]
+    if failures:
+        print("Installed-disk boot acceptance: "
+              + ", ".join(f"{fw} PASS" for fw in passed)
+              + (", " if passed else "")
+              + ", ".join(f"{fw} FAIL" for fw, _ in failures), file=sys.stderr)
+        return 1
     print("Installed-disk boot acceptance passed for: " + ", ".join(firmwares))
     return 0
 

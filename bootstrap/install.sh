@@ -421,6 +421,20 @@ else
     run grub-install --target=i386-pc --boot-directory="$MNT/boot" "$DISK"
 fi
 
+# QEMU acceptance runs only: say which GRUB wrote what. The harness copies these lines into
+# the CI job log, so a disk that resets before GRUB's menu can be judged without downloading
+# the artifacts. Never fatal and never run on a real installation.
+if [ "${FASEELA_QEMU_BOOT_TEST:-0}" = 1 ]; then
+    log "test: $(grub-install --version 2>&1 | head -1)"
+    log "test: grub files: $(ls -l "$MNT"/boot/grub/i386-pc/core.img "$MNT"/boot/grub/i386-pc/boot.img \
+        "$MNT"/boot/grub/x86_64-efi/core.efi 2>&1 | awk '{print $5, $NF}' | tr '\n' ';')" || true
+    log "test: grub modules on the target: $(ls "$MNT"/boot/grub/*/ 2>/dev/null | grep -c '\.mod$' || true)"
+    if [ "$FW" = bios ]; then
+        log "test: MBR boot code: $(dd if="$DISK" bs=512 count=1 2>/dev/null | od -An -tx1 -N16 | tr -s ' ' || true)"
+        log "test: root fs features: $( (dumpe2fs -h "$PART_ROOT" 2>/dev/null || true) | sed -n 's/^Filesystem features: *//p')"
+    fi
+fi
+
 KNAME="$(basename "$KERNEL")"
 mkdir -p "$MNT/boot/grub"
 
