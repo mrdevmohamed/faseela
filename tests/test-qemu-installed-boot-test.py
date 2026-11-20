@@ -101,7 +101,7 @@ def main() -> int:
     assert "doas sync && printf" in harness_source
     assert "system-profile=([A-Za-z0-9_.-]+)" in harness_source
     assert 'panic=60' in Path(REPO / "bootstrap/install.sh").read_text(encoding="utf-8")
-    assert '"-d", "guest_errors,cpu_reset"' in harness_source
+    assert '"-d", "int,guest_errors,cpu_reset"' in harness_source
     run_one = harness_source[harness_source.index("def run_one"):harness_source.index("def parse_args")]
     assert "wait_for_exit" not in run_one
 
@@ -135,7 +135,7 @@ def main() -> int:
             "file=/usr/share/OVMF/OVMF_VARS.fd",
             "live-serial.sock",
             "disk-serial.sock",
-            "-d guest_errors,cpu_reset",
+            "-d int,guest_errors,cpu_reset",
             "live-serial-debug.log",
             "disk-serial-debug.log",
         ):
