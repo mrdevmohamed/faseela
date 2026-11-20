@@ -1,0 +1,65 @@
+name: Installed disk boot diagnostics
+
+on:
+  push:
+    branches:
+      - debug/installed-boot-ide-probe
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  diagnose:
+    name: Compare installed-disk BIOS boot interfaces
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download the already-built no-GUI ISO
+        uses: actions/download-artifact@v4
+        with:
+          name: out-iso-nogui
+          path: iso
+          run-id: 44754248442
+          github-token: ${{ github.token }}
+
+      - name: Install QEMU and firmware
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends qemu-system-x86 qemu-utils ovmf
+
+      - name: Install once and compare VirtIO with IDE boot
+        shell: bash
+        run: |
+          set -uo pipefail
+          cd iso
+          sha256sum -c faseela-x86_64.iso.sha256
+          cd ..
+          mkdir -p diagnostic-results
+          for interface in virtio ide; do
+            set +e
+            python3 scripts/qemu-installed-boot-test.py iso/faseela-x86_64.iso \
+              --firmware bios \
+              --disk-boot-interface "$interface" \
+              --out-dir "diagnostic-$interface" \
+              --live-timeout 180 --install-timeout 1800 --boot-timeout 90 \
+              > "diagnostic-results/$interface-run.log" 2>&1
+            rc=$?
+            set -e
+            printf '%s\n' "$rc" > "diagnostic-results/$interface.exit-code"
+            find "diagnostic-$interface" -type f \
+              \( -name '*.log' -o -name '*.ppm' \) \
+              -exec cp --parents {} diagnostic-results/ \;
+            echo "$interface boot exit code: $rc"
+          done
+
+      - name: Upload firmware and VGA diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: installed-disk-firmware-diagnostics
+          path: diagnostic-results
+          if-no-files-found: warn
+          retention-days: 14
