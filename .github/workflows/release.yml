@@ -859,6 +859,8 @@ jobs:
           path: report
           if-no-files-found: ignore
           retention-days: 14
+      # Keep the large disposable qcow2 disks out of the downloadable artifact.
+      # Serial logs and VGA screenshots are the evidence needed to diagnose boot failures.
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -866,6 +868,9 @@ jobs:
           path: |
             qemu-boot
             qemu-installed-boot
+            !qemu-installed-boot/**/installed.qcow2
+            !qemu-installed-boot/**/OVMF_VARS.fd
+          if-no-files-found: ignore
           retention-days: 14
 
   release:
