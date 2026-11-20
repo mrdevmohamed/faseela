@@ -44,6 +44,7 @@ class SerialVM:
         self.log_path = log_path
         self.qemu_log_path = log_path.with_name(log_path.stem + "-qemu.log")
         self.debug_log_path = socket_path.with_name(socket_path.stem + "-debug.log")
+        self.monitor_socket_path = socket_path.with_name(socket_path.stem + "-monitor.sock")
         self.process: subprocess.Popen[bytes] | None = None
         self.connection: socket.socket | None = None
         self.log_file = None
@@ -99,8 +100,33 @@ class SerialVM:
             f"QEMU debug log: {self.debug_log_path}\n"
             f"Last serial output:\n{tail(self.log_path)}\n"
             f"Last QEMU stderr:\n{tail(self.qemu_log_path)}\n"
-            f"Last QEMU debug output:\n{tail(self.debug_log_path)}"
+            f"Last QEMU debug output:\n{tail(self.debug_log_path)}\n"
+            f"VGA screenshot (if captured): {self.log_path.with_name(self.log_path.stem + '-screen.ppm')}"
         )
+
+    def capture_screenshot(self) -> Path | None:
+        """Capture the guest VGA state through QEMU HMP before closing the VM."""
+        if self.process is None or self.process.poll() is not None:
+            return None
+        screenshot = self.log_path.with_name(self.log_path.stem + "-screen.ppm")
+        monitor = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        try:
+            monitor.settimeout(2)
+            monitor.connect(str(self.monitor_socket_path))
+            try:
+                monitor.recv(4096)
+            except OSError:
+                pass
+            monitor.sendall(f"screendump {screenshot}\\n".encode())
+            try:
+                monitor.recv(4096)
+            except OSError:
+                pass
+        except OSError:
+            return None
+        finally:
+            monitor.close()
+        return screenshot if screenshot.is_file() else None
 
     def send(self, value: str) -> None:
         if self.connection is None:
@@ -275,8 +301,9 @@ def qemu_command(
         "-display", "none",
         "-vga", "std",
         "-nic", "none",
-        "-no-reboot",
-        "-monitor", "none",
+        # Do not terminate QEMU on a guest reset: retain the firmware screen
+        # and capture it through the HMP monitor when the boot probe times out.
+        "-monitor", f"unix:{serial_socket.with_name(serial_socket.stem + '-monitor.sock')},server,nowait",
         "-serial", f"unix:{serial_socket},server,nowait",
         "-d", "int,guest_errors,cpu_reset",
         "-D", str(serial_socket.with_name(serial_socket.stem + "-debug.log")),
@@ -376,7 +403,7 @@ def run_one(
             "/usr/sbin/faseela-install /dev/sda --yes "
             "; result=$?; printf '%s%s=%s\\n' FASEELA_ INSTALL_TEST_STATUS \"$result\"\n"
         )
-        print(f"[{firmware}] installing onto the disposable /dev/vda disk", flush=True)
+        print(f"[{firmware}] installing onto the disposable /dev/sda disk", flush=True)
         live_vm.send(install)
         result = live_vm.expect_pattern(
             rb"(?m)(?:^|\r|\x1b\\)FASEELA_INSTALL_TEST_STATUS=([0-9]+)\r?\n",
@@ -411,10 +438,16 @@ def run_one(
     try:
         print(f"[{firmware}] booting the installed disk through {firmware.upper()}", flush=True)
         disk_vm.start()
-        match = disk_vm.expect_pattern(
-            rb"(?m)(?:^|\r|\x1b\\)FASEELA_BOOT_ACCEPTANCE pid1=([A-Za-z0-9_.-]+)\r?\n",
-            args.boot_timeout, "the installed-disk PID 1 probe",
-        )
+        try:
+            match = disk_vm.expect_pattern(
+                rb"(?m)(?:^|\r|\x1b\\)FASEELA_BOOT_ACCEPTANCE pid1=([A-Za-z0-9_.-]+)\r?\n",
+                args.boot_timeout, "the installed-disk PID 1 probe",
+            )
+        except BootTestError:
+            screenshot = disk_vm.capture_screenshot()
+            if screenshot is not None:
+                print(f"[{firmware}] captured VGA failure screen: {screenshot}", flush=True)
+            raise
         profile = disk_vm.expect_pattern(
             rb"(?m)(?:^|\r|\x1b\\)FASEELA_BOOT_ACCEPTANCE system-profile=([A-Za-z0-9_.-]+)\r?\n",
             args.boot_timeout,
@@ -454,7 +487,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--accel", choices=("auto", "kvm", "tcg"), default="auto")
     parser.add_argument("--live-timeout", type=int, default=600)
     parser.add_argument("--install-timeout", type=int, default=2400)
-    parser.add_argument("--boot-timeout", type=int, default=600)
+    parser.add_argument("--boot-timeout", type=int, default=120)
     parser.add_argument("--ovmf-code", default=os.environ.get("OVMF_CODE"))
     parser.add_argument("--ovmf-vars", default=os.environ.get("OVMF_VARS"))
     parser.add_argument("--dry-run", action="store_true", help="print the QEMU commands without starting them")
