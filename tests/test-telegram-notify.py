@@ -114,6 +114,32 @@ class TelegramNotifierTests(unittest.TestCase):
             self.assertNotIn(b"hunter2", content)
             self.assertNotIn(b"abcdefghijklmnop", content)
 
+    def test_log_archive_excludes_binary_qemu_images_and_oversized_logs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "logs"
+            root.mkdir()
+            (root / "serial.log").write_text("serial output")
+            (root / "disk.qcow2").write_bytes(b"\x00" * 128)
+            (root / "huge.log").write_bytes(b"x" * (notify.MAX_LOG_FILE_BYTES + 1))
+            archive_path = Path(tmp) / "logs.tar.gz"
+            self.assertTrue(notify.make_logs_archive(root, archive_path))
+            with tarfile.open(archive_path, "r:gz") as archive:
+                self.assertEqual(archive.getnames(), ["serial.log"])
+
+    def test_log_archive_respects_total_input_limit(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "logs"
+            root.mkdir()
+            for index in range(11):
+                (root / f"{index:02d}.log").write_bytes(b"x" * notify.MAX_LOG_FILE_BYTES)
+            archive_path = Path(tmp) / "logs.tar.gz"
+            self.assertTrue(notify.make_logs_archive(root, archive_path))
+            with tarfile.open(archive_path, "r:gz") as archive:
+                self.assertLessEqual(
+                    sum(member.size for member in archive.getmembers()),
+                    notify.MAX_LOG_ARCHIVE_INPUT_BYTES,
+                )
+
     def test_missing_secrets_skip_without_network_access(self):
         with patch.object(notify, "urlopen") as opener:
             self.assertEqual(notify.main({}), 0)

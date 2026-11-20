@@ -119,6 +119,8 @@ jobs:
   telegram-start:
     name: Telegram build started
     runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    continue-on-error: true
     permissions:
       contents: read
     steps:
@@ -132,13 +134,14 @@ jobs:
           TELEGRAM_PHASE: started
           BRANCH_NAME: ${{ github.head_ref || github.ref_name }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: python3 -I scripts/notify-telegram.py
+        run: timeout --signal=TERM --kill-after=5s 60s python3 -I scripts/notify-telegram.py
 
   # The ONE place that decides which faseela-repo commit this whole run builds:
   # a branch that moves while the run is going must not split it in two.
   recipes:
     name: recipes revision
     runs-on: ubuntu-24.04
+    timeout-minutes: 5
     outputs:
       rev: ${{ steps.r.outputs.rev }}
     steps:
@@ -168,6 +171,7 @@ jobs:
     name: plan
     needs: [recipes, ci]
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     outputs:
       recipes_rev: ${{ needs.recipes.outputs.rev }}
       matrix: ${{ steps.m.outputs.matrix }}
@@ -873,6 +877,7 @@ jobs:
     # skipped (outputs=core), but a failure of either still blocks the release.
     if: ${{ !cancelled() && (startsWith(github.ref, 'refs/tags/v') || inputs.release) && needs.core.result == 'success' && contains(fromJSON('["success","skipped"]'), needs.build.result) && contains(fromJSON('["success","skipped"]'), needs.boot-test.result) }}
     runs-on: ubuntu-24.04
+    timeout-minutes: 60
     permissions:
       contents: write
     steps:
@@ -962,6 +967,7 @@ jobs:
     if: ${{ always() }}
     needs: [recipes, ci, plan, core, build, boot-test, release]
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     permissions:
       contents: read
       actions: read   # list this run's jobs and artifacts
@@ -1000,6 +1006,7 @@ jobs:
     if: ${{ always() }}
     needs: [recipes, ci, plan, core, build, boot-test, release, report]
     runs-on: ubuntu-24.04
+    timeout-minutes: 6
     continue-on-error: true
     permissions:
       contents: read
@@ -1009,21 +1016,18 @@ jobs:
         with:
           persist-credentials: false
       - uses: actions/download-artifact@v4
+        timeout-minutes: 1
         continue-on-error: true
         with:
           name: run-report
           path: telegram-payload/report
       - uses: actions/download-artifact@v4
+        timeout-minutes: 2
         continue-on-error: true
         with:
           pattern: build-logs-*
           path: telegram-payload/logs
-      - uses: actions/download-artifact@v4
-        continue-on-error: true
-        with:
-          pattern: qemu-boot-*
-          path: telegram-payload/logs/qemu
-      - name: Send detailed report, logs, and successful build files to Telegram
+      - name: Send report and bounded text logs to Telegram
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
@@ -1033,4 +1037,4 @@ jobs:
           TELEGRAM_REPORT_PATH: telegram-payload/report/run-report.md
           TELEGRAM_LOGS_DIR: telegram-payload/logs
           TELEGRAM_RELEASE_URL: ${{ needs.release.outputs.url }}
-        run: python3 -I scripts/notify-telegram.py
+        run: timeout --signal=TERM --kill-after=10s 180s python3 -I scripts/notify-telegram.py

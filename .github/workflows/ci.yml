@@ -43,6 +43,8 @@ jobs:
     name: Telegram build started
     if: ${{ github.workflow == 'CI' }}
     runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    continue-on-error: true
     permissions:
       contents: read
     steps:
@@ -56,7 +58,7 @@ jobs:
           TELEGRAM_PHASE: started
           BRANCH_NAME: ${{ github.head_ref || github.ref_name }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: python3 -I scripts/notify-telegram.py
+        run: timeout --signal=TERM --kill-after=5s 60s python3 -I scripts/notify-telegram.py
 
   scripts:
     name: scripts and recipes
@@ -152,6 +154,7 @@ jobs:
     if: always()
     needs: [scripts]
     runs-on: ubuntu-24.04
+    timeout-minutes: 5
     permissions:
       contents: read
       actions: read
@@ -190,6 +193,7 @@ jobs:
     if: ${{ always() && github.workflow == 'CI' }}
     needs: [scripts, ci-ok]
     runs-on: ubuntu-24.04
+    timeout-minutes: 4
     continue-on-error: true
     permissions:
       contents: read
@@ -211,4 +215,4 @@ jobs:
           BRANCH_NAME: ${{ github.head_ref || github.ref_name }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           TELEGRAM_REPORT_PATH: telegram-payload/report/run-report.md
-        run: python3 -I scripts/notify-telegram.py
+        run: timeout --signal=TERM --kill-after=10s 120s python3 -I scripts/notify-telegram.py
