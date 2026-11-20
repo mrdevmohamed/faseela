@@ -43,6 +43,7 @@ class SerialVM:
         self.socket_path = socket_path
         self.log_path = log_path
         self.qemu_log_path = log_path.with_name(log_path.stem + "-qemu.log")
+        self.debug_log_path = socket_path.with_name(socket_path.stem + "-debug.log")
         self.process: subprocess.Popen[bytes] | None = None
         self.connection: socket.socket | None = None
         self.log_file = None
@@ -82,6 +83,25 @@ class SerialVM:
             f"could not connect to QEMU serial socket {self.socket_path}: {last_error}"
         )
 
+    def diagnostics(self) -> str:
+        status = self.process.poll() if self.process is not None else "not started"
+
+        def tail(path: Path, limit: int = 5000) -> str:
+            try:
+                return path.read_bytes()[-limit:].decode("utf-8", errors="replace")
+            except OSError:
+                return "(not available)"
+
+        return (
+            f"QEMU process exit status: {status}\n"
+            f"Serial log: {self.log_path}\n"
+            f"QEMU stderr log: {self.qemu_log_path}\n"
+            f"QEMU debug log: {self.debug_log_path}\n"
+            f"Last serial output:\n{tail(self.log_path)}\n"
+            f"Last QEMU stderr:\n{tail(self.qemu_log_path)}\n"
+            f"Last QEMU debug output:\n{tail(self.debug_log_path)}"
+        )
+
     def send(self, value: str) -> None:
         if self.connection is None:
             raise BootTestError("QEMU serial connection is not open")
@@ -109,14 +129,20 @@ class SerialVM:
             raise BootTestError("QEMU serial connection is not open")
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
-            match = re.search(pattern, bytes(self.buffer))
+            buffered = bytes(self.buffer)
+            match = re.search(pattern, buffered)
             if match is not None:
                 del self.buffer[:match.end()]
                 return match
+            panic = re.search(rb"(?m)Kernel panic - not syncing:.*", buffered)
+            if panic is not None:
+                raise BootTestError(
+                    f"guest kernel panicked before {description}\n{self.diagnostics()}"
+                )
             if self.process.poll() is not None:
                 raise BootTestError(
-                    f"QEMU exited ({self.process.returncode}) before {description}; "
-                    f"see {self.log_path}"
+                    f"QEMU exited ({self.process.returncode}) before {description}\n"
+                    f"{self.diagnostics()}"
                 )
             readable, _, _ = select.select(
                 [self.connection], [], [], min(1.0, max(0, deadline - time.monotonic()))
@@ -128,19 +154,21 @@ class SerialVM:
             except BlockingIOError:
                 continue
             if not data:
+                # QEMU can close the serial socket when the guest panics,
+                # resets, or powers off. Preserve both its exit status and
+                # firmware/CPU debug trace instead of reporting only EOF.
                 raise BootTestError(
-                    f"QEMU serial connection closed before {description}; "
-                    f"see {self.log_path}"
+                    f"QEMU serial connection closed before {description}\n"
+                    f"{self.diagnostics()}"
                 )
             self.log_file.write(data)
             self.log_file.flush()
             self.buffer.extend(data)
             if len(self.buffer) > 2 * 1024 * 1024:
                 del self.buffer[:-1024 * 1024]
-        tail = bytes(self.buffer[-5000:]).decode("utf-8", errors="replace")
         raise BootTestError(
-            f"timed out waiting for {description} after {timeout}s; "
-            f"see {self.log_path}\nLast serial output:\n{tail}"
+            f"timed out waiting for {description} after {timeout}s\n"
+            f"{self.diagnostics()}"
         )
 
     def wait_for_exit(self, timeout: int) -> None:
@@ -245,6 +273,8 @@ def qemu_command(
         "-no-reboot",
         "-monitor", "none",
         "-serial", f"unix:{serial_socket},server,nowait",
+        "-d", "guest_errors,cpu_reset",
+        "-D", str(serial_socket.with_name(serial_socket.stem + "-debug.log")),
     ]
     if firmware == "uefi":
         if not ovmf_code or ovmf_vars is None:
