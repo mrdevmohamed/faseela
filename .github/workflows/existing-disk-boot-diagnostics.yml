@@ -51,12 +51,10 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends grub-common grub-pc-bin gdisk fdisk e2fsprogs
           sudo modprobe nbd max_part=16
-          sudo qemu-nbd --connect=/dev/nbd0 "$INSTALLED_DISK"
+          sudo qemu-nbd --read-only --connect=/dev/nbd0 "$INSTALLED_DISK"
           cleanup() { sudo umount /mnt/faseela-inspect 2>/dev/null || true; sudo qemu-nbd --disconnect /dev/nbd0 2>/dev/null || true; }
           trap cleanup EXIT
           sudo partprobe /dev/nbd0 || true
-          echo "### Image metadata"
-          qemu-img info "$INSTALLED_DISK"
           echo "### Partition table"
           sudo fdisk -l /dev/nbd0
           sudo sfdisk -d /dev/nbd0 || true
