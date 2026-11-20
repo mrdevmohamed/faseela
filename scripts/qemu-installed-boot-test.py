@@ -533,8 +533,19 @@ def main() -> int:
                 print(f"[{firmware}] {stage} QEMU: {' '.join(cmd)}")
         return 0
 
+    failures: list[str] = []
     for firmware in firmwares:
-        run_one(args, firmware, ovmf_code, ovmf_vars)
+        try:
+            run_one(args, firmware, ovmf_code, ovmf_vars)
+        except (BootTestError, OSError, subprocess.CalledProcessError) as error:
+            failures.append(f"[{firmware}] {error}")
+            print(failures[-1], file=sys.stderr, flush=True)
+
+    if failures:
+        raise BootTestError(
+            "installed-disk acceptance failed for one or more firmware modes; "
+            "see the per-firmware diagnostics above"
+        )
     print("Installed-disk boot acceptance passed for: " + ", ".join(firmwares))
     return 0
 
