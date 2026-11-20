@@ -1,0 +1,74 @@
+name: Boot existing installed-disk artifact
+
+on:
+  push:
+    branches:
+      - debug/boot-existing-artifact
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  compare:
+    name: Boot the exact disk from the failed acceptance run
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download the failed run's installed-disk artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: qemu-boot-iso-nogui
+          path: previous-run
+          run-id: 44754248442
+          github-token: ${{ github.token }}
+
+      - name: Find and inspect the BIOS installed disk
+        id: disk
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Artifact contents:"
+          find previous-run -maxdepth 5 -type f -printf '%p (%s bytes)\n' | sort
+          disk="$(find previous-run -type f -path '*/bios/installed.qcow2' -print -quit)"
+          test -n "$disk" || { echo "BIOS installed qcow2 was not present in the artifact"; exit 1; }
+          echo "disk=$disk" >> "$GITHUB_OUTPUT"
+          qemu-img info "$disk"
+
+      - name: Install QEMU
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends qemu-system-x86 qemu-utils
+
+      - name: Boot the same installed disk with VirtIO and IDE
+        shell: bash
+        env:
+          INSTALLED_DISK: ${{ steps.disk.outputs.disk }}
+        run: |
+          set -euo pipefail
+          mkdir -p diagnostics
+          for interface in virtio ide; do
+            python3 scripts/qemu-boot-existing-disk.py "$INSTALLED_DISK" \
+              --interface "$interface" \
+              --outdir "diagnostics/$interface" \
+              --seconds 24
+          done
+          {
+            echo "## Exact failed disk boot comparison"
+            for interface in virtio ide; do
+              echo
+              echo "### $interface"
+              grep -E 'pid1_systemd|profile_systemd' "diagnostics/$interface/serial.log" || true
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload screenshots and boot logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: exact-installed-disk-boot-diagnostics
+          path: diagnostics
+          if-no-files-found: warn
+          retention-days: 14
