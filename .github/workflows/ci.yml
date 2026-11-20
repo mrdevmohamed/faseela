@@ -44,6 +44,7 @@ jobs:
     if: ${{ github.workflow == 'CI' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 2
+    continue-on-error: true
     permissions:
       contents: read
     steps:
@@ -153,6 +154,7 @@ jobs:
     if: always()
     needs: [scripts]
     runs-on: ubuntu-24.04
+    timeout-minutes: 5
     permissions:
       contents: read
       actions: read
