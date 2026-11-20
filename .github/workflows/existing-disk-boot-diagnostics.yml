@@ -108,12 +108,24 @@ jobs:
           sudo mount --make-rslave "$root/dev"
           sudo mount -t proc proc "$root/proc"
           sudo mount -t sysfs sysfs "$root/sys"
+          echo "### Locate the installed GRUB installer"
+          grub_install=""
+          for candidate in /usr/bin/grub-install /usr/sbin/grub-install /sbin/grub-install; do
+            if [[ -x "$root$candidate" ]]; then grub_install="$candidate"; break; fi
+          done
+          if [[ -z "$grub_install" ]]; then
+            sudo find "$root/usr" -maxdepth 5 \\
+              \\( -name grub-install -o -name grub-bios-setup -o -name grub-mkimage \\) \\
+              -printf '%p (%l)\\n' | sort
+            echo "The installed root does not contain grub-install; the Live ISO tool must be used." >&2
+            exit 1
+          fi
+          echo "Using $grub_install"
           echo "### Faseela GRUB toolchain"
-          sudo chroot "$root" /usr/bin/grub-install --version
-          test -x "$root/usr/bin/grub-install"
+          sudo chroot "$root" "$grub_install" --version
           echo "### Reinstall BIOS GRUB (fresh BIOS device map)"
-          sudo chroot "$root" /usr/bin/env PATH=/usr/bin:/usr/sbin:/bin:/sbin \
-            /usr/bin/grub-install --target=i386-pc --boot-directory=/boot --recheck --verbose /dev/nbd0
+          sudo chroot "$root" /usr/bin/env PATH=/usr/bin:/usr/sbin:/bin:/sbin \\
+            "$grub_install" --target=i386-pc --boot-directory=/boot --recheck --verbose /dev/nbd0
           echo "### New device map (if generated)"
           sudo cat "$root/boot/grub/device.map" 2>/dev/null || echo "(no persistent device.map)"
           echo "### Reinstalled GRUB core image"
