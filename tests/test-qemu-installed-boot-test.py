@@ -100,7 +100,9 @@ def main() -> int:
     assert "doas /usr/bin/env FASEELA_QEMU_BOOT_TEST=1" in harness_source
     assert "doas sync && printf" in harness_source
     assert "system-profile=([A-Za-z0-9_.-]+)" in harness_source
-    assert 'panic=60' in Path(REPO / "bootstrap/install.sh").read_text(encoding="utf-8")
+    installer_source = Path(REPO / "bootstrap/install.sh").read_text(encoding="utf-8")
+    assert 'panic=60' in installer_source
+    assert "terminal_output serial" in installer_source
     assert '"-d", "int,guest_errors,cpu_reset"' in harness_source
     run_one = harness_source[harness_source.index("def run_one"):harness_source.index("def parse_args")]
     assert "wait_for_exit" not in run_one
