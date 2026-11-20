@@ -117,7 +117,7 @@ class SerialVM:
                 monitor.recv(4096)
             except OSError:
                 pass
-            monitor.sendall(f"screendump {screenshot}\\n".encode())
+            monitor.sendall(f"screendump {screenshot}\n".encode())
             try:
                 monitor.recv(4096)
             except OSError:
