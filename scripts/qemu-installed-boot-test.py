@@ -54,6 +54,7 @@ class SerialVM:
     def start(self, connect_timeout: int = 30) -> None:
         self.socket_path.parent.mkdir(parents=True, exist_ok=True)
         self.socket_path.unlink(missing_ok=True)
+        self.monitor_socket_path.unlink(missing_ok=True)
         self.log_file = self.log_path.open("wb")
         self.qemu_log_file = self.qemu_log_path.open("wb")
         self.process = subprocess.Popen(
@@ -240,6 +241,7 @@ class SerialVM:
             self.qemu_log_file.close()
             self.qemu_log_file = None
         self.socket_path.unlink(missing_ok=True)
+        self.monitor_socket_path.unlink(missing_ok=True)
 
 
 def resolve_ovmf(explicit: str | None) -> str:
