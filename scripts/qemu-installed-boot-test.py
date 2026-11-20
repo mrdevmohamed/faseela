@@ -288,13 +288,21 @@ def qemu_command(
             "-drive", f"if=pflash,format=raw,readonly=on,file={ovmf_code}",
             "-drive", f"if=pflash,format=raw,file={ovmf_vars}",
         ])
+    # Give every bootable device an explicit firmware boot index. SeaBIOS
+    # does not necessarily initialize virtio-blk devices that are absent from
+    # its boot order; a disk can therefore appear successfully installed yet
+    # immediately reset when tested without the ISO. Keep the installer ISO
+    # first and the target disk second, then boot the disk first in the fresh VM.
     command.extend([
-        "-drive", f"file={disk},if=virtio,format=qcow2",
+        "-drive", f"file={disk},if=none,id=installed-disk,format=qcow2",
+        "-device", "virtio-blk-pci,drive=installed-disk,bootindex=2" if iso is not None
+        else "virtio-blk-pci,drive=installed-disk,bootindex=1",
     ])
     if iso is not None:
-        command.extend(["-cdrom", str(iso), "-boot", "order=dc"])
-    else:
-        command.extend(["-boot", "order=c"])
+        command.extend([
+            "-drive", f"file={iso},media=cdrom,if=none,id=install-iso",
+            "-device", "ide-cd,drive=install-iso,bootindex=1",
+        ])
     return command
 
 
