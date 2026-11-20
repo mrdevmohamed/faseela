@@ -83,10 +83,48 @@ jobs:
           sudo sha256sum /mnt/faseela-inspect/boot/grub/i386-pc/core.img
           sudo du -h /mnt/faseela-inspect/boot/grub/i386-pc/core.img
 
-      - name: Boot the same installed disk with VirtIO and IDE
+      - name: Reinstall BIOS GRUB with a fresh disk map on a disposable overlay
+        id: repair
         shell: bash
         env:
           INSTALLED_DISK: ${{ steps.disk.outputs.disk }}
+        run: |
+          set -euo pipefail
+          repair="$RUNNER_TEMP/faseela-grub-recheck.qcow2"
+          qemu-img create -f qcow2 -F qcow2 -b "$INSTALLED_DISK" "$repair"
+          sudo modprobe nbd max_part=16
+          sudo qemu-nbd --connect=/dev/nbd0 "$repair"
+          root=/mnt/faseela-grub-recheck
+          sudo mkdir -p "$root"
+          cleanup() {
+            sudo umount -R "$root" 2>/dev/null || true
+            sudo qemu-nbd --disconnect /dev/nbd0 2>/dev/null || true
+          }
+          trap cleanup EXIT
+          sudo partprobe /dev/nbd0 || true
+          sudo mount /dev/nbd0p1 "$root"
+          sudo mount --rbind /dev "$root/dev"
+          sudo mount --make-rslave "$root/dev"
+          sudo mount -t proc proc "$root/proc"
+          sudo mount -t sysfs sysfs "$root/sys"
+          echo "### Faseela GRUB toolchain"
+          sudo chroot "$root" /usr/bin/grub-install --version
+          test -x "$root/usr/bin/grub-install"
+          echo "### Reinstall BIOS GRUB (fresh BIOS device map)"
+          sudo chroot "$root" /usr/bin/env PATH=/usr/bin:/usr/sbin:/bin:/sbin \
+            /usr/bin/grub-install --target=i386-pc --boot-directory=/boot --recheck --verbose /dev/nbd0
+          echo "### New device map (if generated)"
+          sudo cat "$root/boot/grub/device.map" 2>/dev/null || echo "(no persistent device.map)"
+          echo "### Reinstalled GRUB core image"
+          sudo ls -l "$root/boot/grub/i386-pc/core.img"
+          sudo sha256sum "$root/boot/grub/i386-pc/core.img"
+          sudo sync
+          echo "disk=$repair" >> "$GITHUB_OUTPUT"
+
+      - name: Boot the repaired BIOS disk with VirtIO and IDE
+        shell: bash
+        env:
+          INSTALLED_DISK: ${{ steps.repair.outputs.disk }}
         run: |
           set -euo pipefail
           mkdir -p diagnostics
@@ -97,7 +135,7 @@ jobs:
               --seconds 24
           done
           {
-            echo "## Exact failed disk boot comparison"
+            echo "## BIOS disk boot after GRUB --recheck repair"
             for interface in virtio ide; do
               echo
               echo "### $interface"
