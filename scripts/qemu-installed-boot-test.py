@@ -155,9 +155,13 @@ class SerialVM:
             except BlockingIOError:
                 continue
             if not data:
-                # QEMU can close the serial socket when the guest panics,
-                # resets, or powers off. Preserve both its exit status and
-                # firmware/CPU debug trace instead of reporting only EOF.
+                # The serial chardev can close just before QEMU exits after a
+                # guest reset. Give the process a short grace period so the
+                # report captures its real exit status instead of racing poll().
+                try:
+                    self.process.wait(timeout=3)
+                except subprocess.TimeoutExpired:
+                    pass
                 raise BootTestError(
                     f"QEMU serial connection closed before {description}\n"
                     f"{self.diagnostics()}"
@@ -274,7 +278,7 @@ def qemu_command(
         "-no-reboot",
         "-monitor", "none",
         "-serial", f"unix:{serial_socket},server,nowait",
-        "-d", "guest_errors,cpu_reset",
+        "-d", "int,guest_errors,cpu_reset",
         "-D", str(serial_socket.with_name(serial_socket.stem + "-debug.log")),
     ]
     if firmware == "uefi":
