@@ -104,6 +104,10 @@ def main() -> int:
     assert 'panic=60' in installer_source
     assert "terminal_output serial" in installer_source
     assert '"-d", "int,guest_errors,cpu_reset"' in harness_source
+    assert '"-no-reboot"' not in harness_source
+    assert 'screendump {screenshot}' in harness_source
+    assert 'disk-serial-monitor.sock' in harness_source or 'serial_socket.stem + \'-monitor.sock\'' in harness_source
+    assert 'default=120' in harness_source
     run_one = harness_source[harness_source.index("def run_one"):harness_source.index("def parse_args")]
     assert "wait_for_exit" not in run_one
 
@@ -128,6 +132,7 @@ def main() -> int:
         for expected in (
             "[bios] install command:",
             "doas /usr/bin/env FASEELA_QEMU_BOOT_TEST=1",
+            "faseela-install /dev/sda --yes",
             "FW_FORCE=bios",
             "[uefi] install command:",
             "FW_FORCE=uefi",
