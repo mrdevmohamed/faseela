@@ -20,6 +20,10 @@ from urllib.request import Request, urlopen
 # Telegram's hosted Bot API currently limits sendDocument uploads to 50 MB.
 # Keep a margin for multipart overhead and future API-side changes.
 MAX_DOCUMENT_BYTES = 49 * 1024 * 1024
+MAX_LOG_FILES = 200
+MAX_LOG_FILE_BYTES = 2 * 1024 * 1024
+MAX_LOG_ARCHIVE_INPUT_BYTES = 20 * 1024 * 1024
+LOG_SUFFIXES = {".log", ".txt"}
 SECRET_PATTERNS = (
     re.compile(rb"\bgh[pousr]_[A-Za-z0-9_]{20,}\b"),
     re.compile(rb"\bgithub_pat_[A-Za-z0-9_]{20,}\b"),
@@ -114,11 +118,13 @@ def send_message(token: str, chat_id: str, message: str) -> None:
         headers={"Content-Type": "application/json"},
         method="POST",
     )
-    with urlopen(request, timeout=30) as response:
+    with urlopen(request, timeout=15) as response:
         _api_result(response)
 
 
 def send_document(token: str, chat_id: str, path: Path, caption: str = "") -> None:
+    if path.stat().st_size > MAX_DOCUMENT_BYTES:
+        raise ValueError(f"document exceeds {MAX_DOCUMENT_BYTES} bytes")
     boundary = "----FaseelaTelegramUploadBoundary"
     fields = [("chat_id", chat_id)]
     if caption:
@@ -142,7 +148,7 @@ def send_document(token: str, chat_id: str, path: Path, caption: str = "") -> No
         headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
         method="POST",
     )
-    with urlopen(request, timeout=120) as response:
+    with urlopen(request, timeout=45) as response:
         _api_result(response)
 
 
@@ -153,11 +159,29 @@ def redact(data: bytes) -> bytes:
 
 
 def make_logs_archive(log_dir: Path, destination: Path) -> bool:
-    files = sorted(p for p in log_dir.rglob("*") if p.is_file())
-    if not files:
+    # Only archive bounded text logs. QEMU artifacts may contain large disk
+    # images and binary traces; those remain downloadable from GitHub Actions.
+    candidates = sorted(
+        p for p in log_dir.rglob("*")
+        if p.is_file() and not p.is_symlink() and p.suffix.lower() in LOG_SUFFIXES
+    )
+    selected: list[Path] = []
+    total_bytes = 0
+    for path in candidates:
+        try:
+            size = path.stat().st_size
+        except OSError:
+            continue
+        if size <= 0 or size > MAX_LOG_FILE_BYTES:
+            continue
+        if len(selected) >= MAX_LOG_FILES or total_bytes + size > MAX_LOG_ARCHIVE_INPUT_BYTES:
+            break
+        selected.append(path)
+        total_bytes += size
+    if not selected:
         return False
     with tarfile.open(destination, "w:gz") as archive:
-        for path in files:
+        for path in selected:
             try:
                 data = redact(path.read_bytes())
                 info = archive.gettarinfo(str(path), arcname=str(path.relative_to(log_dir)))
@@ -185,8 +209,11 @@ def deliver_files(token: str, chat_id: str, environ: Mapping[str, str]) -> None:
     run_url = f"{server}/{repository}/actions/runs/{run_id}" if repository and run_id else ""
     report_value = environ.get("TELEGRAM_REPORT_PATH", "").strip()
     report = Path(report_value) if report_value else None
-    if report and report.is_file() and report.stat().st_size <= MAX_DOCUMENT_BYTES:
-        _try_send_document(token, chat_id, report, "تقرير التشغيل الكامل")
+    if report and report.is_file():
+        if report.stat().st_size <= MAX_DOCUMENT_BYTES:
+            _try_send_document(token, chat_id, report, "تقرير التشغيل الكامل")
+        else:
+            print("::warning::Telegram report exceeds the document size limit; see GitHub Actions artifacts.")
     logs_value = environ.get("TELEGRAM_LOGS_DIR", "").strip()
     logs = Path(logs_value) if logs_value else None
     if logs and logs.is_dir():
