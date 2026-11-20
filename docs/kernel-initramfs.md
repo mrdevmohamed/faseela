@@ -114,7 +114,7 @@ The initramfs resolves `root=/dev/...`, `root=UUID=...` and `root=LABEL=...`
 through BusyBox `findfs`; `PARTUUID=`/`PARTLABEL=` work only if that `findfs`
 can resolve them, so prefer `UUID=`. It honors `rootfstype`, `rootflags`,
 `ro`/`rw` (default `ro`), `rootdelay` (seconds to wait, default 30) and
-`rootwait`, and `init=`. `break` / `break=postmount` open a shell before or
+`rootwait`. `break` / `break=postmount` open a shell before or
 after mounting root. It then moves `/dev`, `/proc` and `/sys` and switches to
 `/usr/lib/systemd/systemd` (PID 1).
 
