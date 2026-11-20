@@ -106,7 +106,7 @@ def main() -> int:
     assert '"-d", "int,guest_errors,cpu_reset"' in harness_source
     assert '"-no-reboot"' not in harness_source
     assert 'screendump {screenshot}' in harness_source
-    assert 'disk-serial-monitor.sock' in harness_source or 'serial_socket.stem + \'-monitor.sock\'' in harness_source
+    assert "monitor_socket_path" in harness_source
     assert 'default=120' in harness_source
     run_one = harness_source[harness_source.index("def run_one"):harness_source.index("def parse_args")]
     assert "wait_for_exit" not in run_one
