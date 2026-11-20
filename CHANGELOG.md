@@ -2,6 +2,8 @@
 
 ## Unreleased — installing faseela, real hardware, a GUI that moves
 
+- **Changed** the installed-disk QEMU acceptance test (`scripts/qemu-installed-boot-test.py`) now says *why* a disk that dies right after power-on (run 44726434304: BIOS, all four ISOs, serial log empty, QEMU exit 0 within 2 s) fails. KVM hides a guest triple fault, so on such an early death the disk is booted again under TCG and the fault's registers (`EIP`, `CS`, `Code=`) are printed in the job log; the installer's own `grub-install` lines are printed too, BIOS and UEFI are both run even when the first fails, and in QEMU-test mode `faseela-install` logs the GRUB version, the size of `core.img`/`boot.img`, the MBR boot code and the root filesystem features. **Not a fix for the reset itself**: the installed disk uses the `grub` package faseela builds (2.14), while the live ISO is made by the runner's own `grub-mkrescue`, so the next run decides whether faseela's i386-pc build is the culprit.
+
 - **Changed** stage 5 now applies all vendor systemd presets to the completed offline root once before creating the SquashFS image. Package hooks no longer control service enablement, preserving administrator state after installation. Installed-disk GRUB entries pass `init=/usr/lib/systemd/systemd` so SAQ explicitly selects systemd as PID 1.
 
 
