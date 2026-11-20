@@ -877,7 +877,7 @@ jobs:
     # skipped (outputs=core), but a failure of either still blocks the release.
     if: ${{ !cancelled() && (startsWith(github.ref, 'refs/tags/v') || inputs.release) && needs.core.result == 'success' && contains(fromJSON('["success","skipped"]'), needs.build.result) && contains(fromJSON('["success","skipped"]'), needs.boot-test.result) }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 60
     permissions:
       contents: write
     steps:
