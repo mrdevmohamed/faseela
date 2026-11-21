@@ -147,7 +147,7 @@ for p in $ORDER; do
         if [[ -n ${failed[$d]:-} ]]; then depfail="$d"; break; fi
         if [[ -f $OUT/$d.nawa.tar.zst ]]; then
             echo "-- dependency $d: installing the published archive"
-            nawa install --yes --force --allow-unsigned "$OUT/$d.nawa.tar.zst" \
+            nawa install --yes --allow-unsigned "$OUT/$d.nawa.tar.zst" \
                 || missing+=("$d")
         else
             missing+=("$d")
@@ -165,14 +165,14 @@ for p in $ORDER; do
     ok=0
     if (( ${#missing[@]} )) && [[ ! -d /var/lib/nawa/local/$p ]]; then
         # `install` builds the package AND the dependencies nobody has built yet
-        nawa install --build --yes --force --allow-unsigned --isolation "$ISOLATION" "$p" && ok=1
+        nawa install --build --yes --allow-unsigned --isolation "$ISOLATION" "$p" && ok=1
     else
-        # NOT `nawa build --install`: it verifies the archive it just built and
-        # has no --allow-unsigned, but a fresh archive is unsigned until the
-        # publish step signs it. Once the build root trusts the repository key
-        # (dist/nawa.pub) that would be refused, so build and install separately.
-        nawa build --isolation "$ISOLATION" "$p" \
-            && nawa install --yes --force --allow-unsigned "$OUT/$id.nawa.tar.zst" && ok=1
+        # Do not import a just-built target into the shared build root yet:
+        # its runtime requirements are not necessarily part of its build
+        # closure. A later target installs this archive through the dependency
+        # loop above, after nawa deps has ordered its full run closure.
+        # This keeps runtime-only services out of unrelated builds.
+        nawa build --isolation "$ISOLATION" "$p" && ok=1
     fi
     if (( ok )) && [[ ! -f $OUT/$id.nawa.tar.zst ]]; then
         echo "-- nawa succeeded but left no $id.nawa.tar.zst in $OUT"
