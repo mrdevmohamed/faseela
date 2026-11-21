@@ -26,20 +26,23 @@ mk() { # name version rel
         "$1" "$2" "${3:+rel = $3 # comment}" > "$WORK/repo/recipes/extra/$1/recipe.toml"
 }
 mk libz 1.3 1; mk libpng 1.6 2; mk app 2.0 ""; mk bad 1.0 1; mk needs-bad 1.0 1; mk solo 3.1 1
+mk service 1.0 1; mk provider 1.0 1; mk consumer 1.0 1
 mkdir -p "$WORK/repo/profiles"
 
 # topological order and dependencies of the fake tree
-printf '%s\n' libz libpng app bad needs-bad solo > "$WORK/order"
+printf '%s\n' libz libpng app bad needs-bad solo service provider consumer > "$WORK/order"
 cat > "$WORK/deps" <<'D'
 libpng: libz
 app: libpng libz
 needs-bad: bad
+consumer: service provider
 D
 
 # ---- stub nawa ---------------------------------------------------------------
 cat > "$WORK/nawa" <<'STUB'
 #!/usr/bin/env bash
 W="$(dirname "$0")"
+[[ " $* " != *" --force "* ]] || { echo "--force is forbidden in package build imports" >&2; exit 2; }
 while [[ $# -gt 0 && $1 == --* ]]; do shift 2; done   # global flags all take a value
 cmd="$1"; shift
 id_of() { awk -v n="$1" '/^version/{gsub(/[" ]/,"",$0); sub(/version=/,"",$0); v=$0}
@@ -62,7 +65,7 @@ case "$cmd" in
     [[ -e $W/trusted && " $* " == *" --install "* ]] && { echo "unsigned but a trusted key is configured" >&2; exit 1; }
     tree "$name"
     grep -qxF "$name" "$W/fail" 2>/dev/null && exit 1
-    touch "$W/out/$(id_of "$name").nawa.tar.zst"; echo "$name" >> "$W/installed" ;;
+    touch "$W/out/$(id_of "$name").nawa.tar.zst" ;;
   install)
     t="${@: -1}"
     [[ -e $W/trusted && " $* " != *" --allow-unsigned "* ]] && { echo "unsigned but a trusted key is configured" >&2; exit 1; }
@@ -141,14 +144,17 @@ check "dependency archives were produced too" \
     "[[ -f $WORK/out/libz-1.3-1.nawa.tar.zst && -f $WORK/out/libpng-1.6-2.nawa.tar.zst ]]"
 
 # 6b --------------------------------------------------------------------------
-echo "== TEST: with a trusted key in the build root, fresh (unsigned) archives still install"
+echo "== TEST: newly built packages are not imported before their runtime closure"
 reset; touch "$WORK/trusted"
-touch "$WORK/out/libz-1.3-1.nawa.tar.zst" "$WORK/out/libpng-1.6-2.nawa.tar.zst"
-run "app"; rc=$?
-check "exit 0 (build + install of the fresh archive, --allow-unsigned)" "[[ $rc -eq 0 && -f $WORK/out/app-2.0-1.nawa.tar.zst ]]"
+run "provider consumer"; rc=$?
+check "exit 0" "[[ $rc -eq 0 ]]"
+check "provider archive remains in OUT after its build" "[[ -f $WORK/out/provider-1.0-1.nawa.tar.zst ]]"
+check "runtime service is imported before provider" "[[ $(grep -n 'install-archive service-' $WORK/calls | cut -d: -f1) -lt $(grep -n 'install-archive provider-' $WORK/calls | cut -d: -f1) ]]"
+check "provider is imported before consumer build" "[[ $(grep -n 'install-archive provider-' $WORK/calls | cut -d: -f1) -lt $(grep -n 'build consumer' $WORK/calls | cut -d: -f1) ]]"
+check "new package was not self-imported immediately after its build" "[[ $(grep -n 'build provider' $WORK/calls | cut -d: -f1) -lt $(grep -n 'install-archive provider-' $WORK/calls | cut -d: -f1) ]]"
 reset; touch "$WORK/trusted"
 run "app"; rc=$?
-check "exit 0 for a package whose dependencies are built too (install --build)" "[[ $rc -eq 0 ]] && grep -qx 'install-build app' $WORK/calls"
+check "install --build fallback still works" "[[ $rc -eq 0 ]] && grep -qx 'install-build app' $WORK/calls"
 
 # 7 ---------------------------------------------------------------------------
 echo "== TEST: unknown package name is rejected before anything is built"
