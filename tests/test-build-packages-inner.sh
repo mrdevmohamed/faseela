@@ -147,6 +147,7 @@ check "dependency archives were produced too" \
 echo "== TEST: newly built packages are not imported before their runtime closure"
 reset; touch "$WORK/trusted"
 run "provider consumer"; rc=$?
+echo "DEBUG build import calls:"; cat "$WORK/calls"
 check "exit 0" "[[ $rc -eq 0 ]]"
 check "provider archive remains in OUT after its build" "[[ -f $WORK/out/provider-1.0-1.nawa.tar.zst ]]"
 check "runtime service is imported before provider" "[[ $(grep -n 'install-archive service-' $WORK/calls | cut -d: -f1) -lt $(grep -n 'install-archive provider-' $WORK/calls | cut -d: -f1) ]]"
