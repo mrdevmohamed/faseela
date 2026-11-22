@@ -118,6 +118,22 @@ install_recipes_snapshot() {
     else
         echo "final-root: WARNING no $src/recipes — the final root ships no recipe tree" >&2
     fi
+    # The installed system upgrades from the same schema-v5 repository the image
+    # was built from (nawa's built-in default is the legacy `stable` endpoint).
+    local pkg_repo="${FLAVOR_REPO:-}"
+    # a directory repository only exists on the build host: never write that into the image
+    case "$pkg_repo" in http://*|https://*) ;; *) pkg_repo="" ;; esac
+    if [ -z "$pkg_repo" ] && [ -r "$src/bootstrap/package-repo.sh" ]; then
+        pkg_repo="$(. "$src/bootstrap/package-repo.sh" && printf '%s' "$FASEELA_PKG_REPO")"
+    fi
+    if [ -n "$pkg_repo" ]; then
+        mkdir -p "$FINAL_ROOT/etc/nawa"
+        printf '# Written by the image build. Package repository: signed schema-v5 index.\nrepo = "%s"\n' \
+            "$pkg_repo" > "$FINAL_ROOT/etc/nawa/nawa.toml"
+        echo "== final-root: package repository $pkg_repo (/etc/nawa/nawa.toml)"
+    else
+        echo "final-root: WARNING no package repository configured (bootstrap/package-repo.sh missing)" >&2
+    fi
     if [ -s "$src/dist/nawa.pub" ]; then
         install -Dm644 "$src/dist/nawa.pub" "$FINAL_ROOT/etc/nawa/trusted-keys/nawa.pub"
         echo "== final-root: trusted the repository key (dist/nawa.pub)"

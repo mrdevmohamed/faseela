@@ -4,7 +4,7 @@
     check-flavor-packages.py ASSETS_FILE FLAVOR [FLAVOR...]
 
 ASSETS_FILE lists the file names of the package repository (one per line, e.g.
-`gh release view stable --json assets --jq '.assets[].name'`). For each flavor
+`scripts/index-assets.py index.toml names`). For each flavor
 (flavors.toml + recipes/, as fetched by bootstrap/fetch-recipes.sh) the packages
 whose archive `<name>-<version>-<rel>.nawa.tar.zst` is not listed are printed,
 and the exit status is 1. The ISO workflow runs this before its multi-hour core

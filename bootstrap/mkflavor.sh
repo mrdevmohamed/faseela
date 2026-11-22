@@ -15,7 +15,8 @@
 #   bootstrap/mkrootfs.sh TARGET/sysroot-FLAVOR out-rootfs.tar.zst
 #
 # --repo   the package repository (http(s) URL or directory with index.toml);
-#          default: nawa's built-in one (faseela-repo, release `stable`)
+#          default: the signed schema-v5 index (faseela-repo, release `stable-v5`,
+#          see bootstrap/package-repo.sh; FASEELA_PKG_REPO overrides it)
 # --from   repo (default): a package the repository lacks is an ERROR listing
 #          what is missing — the fix is to run the package workflow
 #          (faseela-repo: packages.yml, packages `flavor:FLAVOR`), not to
@@ -25,6 +26,8 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 REPO="$(dirname "$HERE")"
+# shellcheck source=bootstrap/package-repo.sh
+. "$HERE/package-repo.sh"
 FLAVOR_REPO="" FROM="repo"
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -37,6 +40,8 @@ while [[ $# -gt 0 ]]; do
 done
 TARGET="${1:?usage: mkflavor.sh [--repo URL|DIR] [--from repo|auto] TARGET FLAVOR}"
 FLAVOR="${2:?usage: mkflavor.sh [--repo URL|DIR] [--from repo|auto] TARGET FLAVOR}"
+# Never fall back to nawa's built-in endpoint: it is the legacy `stable` repository.
+FLAVOR_REPO="${FLAVOR_REPO:-$FASEELA_PKG_REPO}"
 case "$FROM" in repo|auto) ;; *) echo "mkflavor: --from must be repo or auto" >&2; exit 2 ;; esac
 [[ $FLAVOR =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || { echo "mkflavor: bad flavor name '$FLAVOR'" >&2; exit 2; }
 
@@ -52,7 +57,7 @@ python3 -I "$REPO/scripts/flavor.py" --flavors "$REPO/flavors.toml" resolve "$FL
     --recipes "$REPO/recipes" > "$TARGET/faseela-flavor.order"
 python3 -I "$REPO/scripts/flavor.py" --flavors "$REPO/flavors.toml" services "$FLAVOR" \
     > "$TARGET/faseela-flavor.services"
-echo "== flavor $FLAVOR: $(wc -l < "$TARGET/faseela-flavor.order") packages, $(wc -l < "$TARGET/faseela-flavor.services") service actions from ${FLAVOR_REPO:-the default repository} (--from $FROM)"
+echo "== flavor $FLAVOR: $(wc -l < "$TARGET/faseela-flavor.order") packages, $(wc -l < "$TARGET/faseela-flavor.services") service actions from $FLAVOR_REPO (--from $FROM)"
 
 bash "$HERE/sync-repo.sh" "$TARGET"
 bash "$HERE/ensure-chroot-mounts.sh" "$TARGET"

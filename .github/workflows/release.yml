@@ -95,7 +95,7 @@ on:
         type: boolean
         default: false
       pkg_repo:
-        description: "Package repository the flavors are installed from (http(s) URL; empty = faseela-repo release `stable`)"
+        description: "Package repository the flavors are installed from (http(s) URL; empty = the signed schema-v5 index, faseela-repo release `stable-v5`)"
         type: string
         default: ""
       flavor_from:
@@ -222,9 +222,12 @@ jobs:
           fi
           variants="$(python3 -c 'import json,os; print(" ".join(v["variant"] for v in json.loads(os.environ["MATRIX"])["include"]))')"
           [[ -n "$variants" ]] || { echo "outputs=core: no flavors to check"; exit 0; }
-          gh release view stable --repo "${GITHUB_REPOSITORY_OWNER}/faseela-repo" --json assets \
-            --jq '.assets[].name' > assets.txt \
-            || { echo "::warning::no package repository yet (faseela-repo release 'stable'): run its 'Build packages' workflow first"; exit 0; }
+          # The schema-v5 release holds the signed index and immutable storage
+          # assets; the archives that exist are the ones the index lists.
+          gh release download stable-v5 --repo "${GITHUB_REPOSITORY_OWNER}/faseela-repo" \
+            --pattern index.toml --dir v5-index --clobber \
+            || { echo "::warning::no schema-v5 package repository yet (faseela-repo release 'stable-v5'): build the packages and run its 'Publish schema-v5 packages' workflow first"; exit 0; }
+          python3 -I scripts/index-assets.py v5-index/index.toml names > assets.txt
           if ! python3 -I scripts/check-flavor-packages.py assets.txt $variants | tee -a "$GITHUB_STEP_SUMMARY"; then
             echo "::warning::the package repository lacks packages of a flavor: run faseela-repo > Build packages > packages: flavor:<name> before the flavor jobs start"
           fi
@@ -253,11 +256,19 @@ jobs:
               print(f"{ids[n]}.nawa.tar.zst")
           PY
           mkdir -p closure-archives
-          args=(); while read -r a; do args+=(-p "$a"); done < patterns.txt
-          if ! gh release download stable --repo "${GITHUB_REPOSITORY_OWNER}/faseela-repo" \
-               --dir closure-archives --clobber "${args[@]}" 2>&1 | tail -3; then
-            echo "::warning::could not download the bootstrap packages: closure not checked"; exit 0
+          if ! gh release download stable-v5 --repo "${GITHUB_REPOSITORY_OWNER}/faseela-repo" \
+               --pattern index.toml --dir v5-index --clobber 2>&1 | tail -3; then
+            echo "::warning::no schema-v5 package repository yet: closure not checked"; exit 0
           fi
+          # the archives live in the packages-v5-NNNN storage releases named by the index
+          mapfile -t wanted < patterns.txt
+          if ! python3 -I scripts/index-assets.py v5-index/index.toml urls "${wanted[@]}" > closure-urls.tsv; then
+            echo "::warning::the schema-v5 index lacks bootstrap packages: closure not checked"; exit 0
+          fi
+          while IFS=$'\t' read -r name url; do
+            curl -fsSL --retry 3 -o "closure-archives/$name" "$url" \
+              || { echo "::warning::could not download $name: closure not checked"; exit 0; }
+          done < closure-urls.tsv
           python3 -I scripts/check-closure.py closure-archives bootstrap | tee -a "$GITHUB_STEP_SUMMARY"
 
   core:

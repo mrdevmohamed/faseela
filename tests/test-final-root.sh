@@ -62,6 +62,17 @@ check "finalize installs the snapshot"  "DISTRO_SRC=$DS finalize_final_root"
 check "recipes copied to the final root" "[[ -s $F/usr/share/nawa/recipes/base/hello/recipe.toml ]]"
 check "snapshot rev recorded"           "grep -q '^snapshot-[0-9a-f]\{12\}\$' $F/var/lib/nawa/recipes.rev"
 check "repository key trusted"          "[[ -s $F/etc/nawa/trusted-keys/nawa.pub ]]"
+# the image upgrades from the schema-v5 repository it was built from
+check "no repo configured without package-repo.sh" "[[ ! -e $F/etc/nawa/nawa.toml ]]"
+mkdir -p "$DS/bootstrap"; cp "$(dirname "$0")/../bootstrap/package-repo.sh" "$DS/bootstrap/"
+DISTRO_SRC=$DS finalize_final_root >/dev/null
+check "default repo is the stable-v5 index" "grep -qx 'repo = \"https://github.com/mrdevmohamed/faseela-repo/releases/download/stable-v5\"' $F/etc/nawa/nawa.toml"
+check "never the legacy stable endpoint"  "! grep -Eq 'download/stable(-v3)?\"' $F/etc/nawa/nawa.toml"
+FLAVOR_REPO=https://mirror.example/v5 DISTRO_SRC=$DS finalize_final_root >/dev/null
+check "the repo the flavor was built from wins" "grep -qx 'repo = \"https://mirror.example/v5\"' $F/etc/nawa/nawa.toml"
+FLAVOR_REPO=/build/host/dir DISTRO_SRC=$DS finalize_final_root >/dev/null
+check "a host directory is never written into the image" "! grep -q /build/host $F/etc/nawa/nawa.toml"
+rm -rf "$DS/bootstrap"
 rm -rf "$DS/dist"; rm -rf "$F/etc/nawa"
 check "missing key warns, does not fail" "DISTRO_SRC=$DS finalize_final_root"
 check "no key is trusted without dist/nawa.pub" "[[ ! -e $F/etc/nawa/trusted-keys/nawa.pub ]]"
