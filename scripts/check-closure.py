@@ -4,7 +4,7 @@
     check-closure.py ARCHIVE_DIR FLAVOR
 
 ARCHIVE_DIR holds the published `<name>-<version>-<rel>.nawa.tar.zst` archives
-(e.g. `gh release download stable -p '*.nawa.tar.zst'`). The packages of FLAVOR
+(downloaded from the URLs of the schema-v5 index, see scripts/index-assets.py). The packages of FLAVOR
 (flavors.toml + recipes/) are unpacked into one tree, and every ELF file's
 DT_NEEDED entry must be provided by some file of that tree: exactly the
 "binary needs a library that is not in the root" test of bootstrap/final-root.sh,

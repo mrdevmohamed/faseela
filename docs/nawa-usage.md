@@ -108,7 +108,7 @@ recipes      = "recipes"                            # env: NAWA_RECIPES
 builddir     = "build"                              # env: NAWA_BUILDDIR
 profiles     = "profiles"                           # env: NAWA_PROFILES
 jobs         = 8                                    # env: NAWA_JOBS
-repo         = "https://github.com/mrdevmohamed/faseela-repo/releases/download/stable-v3"
+repo         = "https://github.com/mrdevmohamed/faseela-repo/releases/download/stable-v5"
                                                     # env: NAWA_REPO — "" switches it off
 install_mode = "auto"                               # env: NAWA_INSTALL_MODE
 ```
@@ -145,11 +145,18 @@ Remote repositories must be authenticated: add the repository's public key with
 `nawa trust <key.pub>` (or pass `--allow-unsigned` and accept the risk). Until a
 key is trusted, the default repository is skipped and packages are built.
 
-The active Faseela package repository uses the signed schema-v3 endpoint:
-`https://github.com/mrdevmohamed/faseela-repo/releases/download/stable-v3`.
-The old `stable` endpoint is retained for pre-v3 Nawa installations and is
-not the endpoint for new installs. An existing installation that cannot read
-schema v3 must first install the signed Nawa archive from the
+Images built by Faseela install from, and upgrade from, the signed
+**schema-v5** repository:
+`https://github.com/mrdevmohamed/faseela-repo/releases/download/stable-v5`.
+The image build writes that URL into `/etc/nawa/nawa.toml`
+(`bootstrap/package-repo.sh` is the single place that names it; set
+`FASEELA_PKG_REPO` or pass `--repo` to build from another repository). The
+`stable` and `stable-v3` endpoints belong to older Nawa clients and are not
+used by new images; nawa's own built-in default is still `stable`, which is why
+the image configures the repository explicitly. `stable-v5` appears only after
+faseela-repo's *Publish schema-v5 packages* workflow has been authorized with a
+complete signed package set. An existing installation that cannot read
+schema v3 or newer must first install the signed Nawa archive from the
 [`nawa-transition` release](https://github.com/mrdevmohamed/faseela-repo/releases/tag/nawa-transition):
 
 ```sh
@@ -158,7 +165,7 @@ sudo nawa install ./nawa-1.0.0-10.nawa.tar.zst
 
 Download the matching `.sig` sidecar beside the archive. If the local
 `/etc/nawa/nawa.toml` was customized and kept by configuration protection,
-change its `repo` value to the `stable-v3` URL manually.
+change its `repo` value to the `stable-v5` URL manually.
 
 ### Confirmations, colors, suggestions
 

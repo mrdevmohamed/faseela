@@ -113,6 +113,8 @@ jobs:
         run: bash tests/test-mkflavor.sh
       - name: check-flavor-packages.py tests
         run: bash tests/test-check-flavor-packages.sh
+      - name: schema-v5 package repository (index reader, default endpoint) tests
+        run: bash tests/test-index-assets.sh
       - name: automatic release flavor discovery tests
         run: bash tests/test-plan-flavors.sh
       - name: check-closure.py tests
