@@ -21,6 +21,36 @@ final_root_enabled || { echo "mkflavor-inner: FINAL_ROOT is not set" >&2; exit 1
 [[ -s $ORDER ]] || { echo "mkflavor-inner: $ORDER is missing or empty" >&2; exit 1; }
 [[ -f $SERVICES ]] || { echo "mkflavor-inner: $SERVICES is missing" >&2; exit 1; }
 
+# The seed rootfs is the PREVIOUS release's, so its nawa can predate the
+# schema-v5 recipes ([relations] tables and their source marker) and the v5
+# index, and refuses both. Install the nawa pinned by recipes/base/nawa first,
+# compiled with the seed's own cargo exactly as stage2-inner.sh does.
+# FLAVOR_BUILD_NAWA=0 skips it (tests drive this script with a stub nawa).
+install_pinned_nawa() {
+    [[ ${FLAVOR_BUILD_NAWA:-1} == 0 ]] && return 0
+    local src="$FASEELA/nawa" stamp="${FLAVOR_NAWA_STAMP:-/var/lib/faseela-nawa.pinned}" want
+    [[ -f $src/Cargo.toml && -f $src/Cargo.lock ]] || return 0
+    want=$(cat "$src/.pinned-sha256" 2>/dev/null || true)
+    if [[ -n $want && -f $stamp && "$(cat "$stamp")" == "$want" ]]; then
+        echo "== flavor: nawa already at the pinned source"
+        return 0
+    fi
+    echo "== flavor: building the pinned nawa (the seed's may not read schema v5)"
+    (
+        export PATH="${FLAVOR_CARGO_DIR:+$FLAVOR_CARGO_DIR:}/opt/cargo/bin:$PATH"
+        command -v cargo >/dev/null 2>&1 \
+            || { echo "mkflavor-inner: no cargo in the seed: cannot build the pinned nawa" >&2; exit 1; }
+        cd "$src"
+        cargo fetch --locked
+        cargo build --release --offline --locked
+        install -Dm755 target/release/nawa "$NAWA_BIN"
+    )
+    "$NAWA_BIN" --version
+    [[ -n $want ]] && { mkdir -p "$(dirname "$stamp")"; printf '%s\n' "$want" > "$stamp"; }
+    return 0
+}
+install_pinned_nawa
+
 repo=()
 [[ -n ${FLAVOR_REPO:-} ]] && repo=(--repo "$FLAVOR_REPO")
 
