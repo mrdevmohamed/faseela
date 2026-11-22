@@ -52,7 +52,7 @@ printf 'KEY\n' > "$W/key.pub"
 printf 'alpha\nbeta\ngamma\n' > "$W/order"
 
 run() {   # $1 = order file, $2 = package the stub refuses ("" = none)
-    env -i PATH="$PATH" ${RUN_ENV:-} STUB_LOG="$STUB_LOG" STUB_FAIL="${2:-}" HOME="$W" \
+    env -i PATH="$PATH" FLAVOR_BUILD_NAWA=0 ${RUN_ENV:-} STUB_LOG="$STUB_LOG" STUB_FAIL="${2:-}" HOME="$W" \
         FINAL_ROOT="$FINAL" NAWA_BIN="$W/nawa" FLAVOR_SYSTEMCTL="$W/systemctl" FASEELA="$REPO" \
         FLAVOR_ORDER="$1" FLAVOR_SERVICES="$W/services" FLAVOR_KEY="$W/key.pub" FLAVOR_REPO="https://repo.example/stable" FLAVOR_FROM="${3:-repo}" \
         bash "$REPO/bootstrap/mkflavor-inner.sh"
@@ -109,5 +109,38 @@ run "$W/order" > "$W/out4.log" 2>&1 || { cat "$W/out4.log"; fail "service policy
 grep -q "^systemctl $FINAL disable getty@tty1.service$" "$STUB_LOG" || fail "getty disable action not executed"
 grep -q "^systemctl $FINAL disable lightdm.service$" "$STUB_LOG" || fail "LightDM disable action not executed"
 grep -q "^systemctl $FINAL enable cosmic-greeter.service$" "$STUB_LOG" || fail "COSMIC greeter enable action not executed"
+
+# The seed's nawa may predate schema v5: the pinned nawa is compiled with the
+# seed's cargo and installed BEFORE anything is installed from the repository,
+# and an unchanged pin is not rebuilt.
+mkdir -p "$W/fasl/nawa" "$W/bin"
+: > "$W/fasl/nawa/Cargo.toml"; : > "$W/fasl/nawa/Cargo.lock"; printf 'PINSHA\n' > "$W/fasl/nawa/.pinned-sha256"
+mkdir -p "$W/fasl/bootstrap"; cp "$REPO/bootstrap/final-root.sh" "$REPO/bootstrap/package-repo.sh" "$W/fasl/bootstrap/"
+cat > "$W/bin/cargo" <<'STUB'
+#!/usr/bin/env bash
+echo "cargo $*" >> "$STUB_LOG"
+if [[ $1 == build ]]; then
+    mkdir -p target/release
+    printf '#!/bin/sh\necho "nawa pinned"\n' > target/release/nawa; chmod +x target/release/nawa
+fi
+STUB
+chmod +x "$W/bin/cargo"
+pinned() {
+    env -i PATH="$PATH" FLAVOR_CARGO_DIR="$W/bin" STUB_LOG="$STUB_LOG" STUB_FAIL="" HOME="$W" FINAL_ROOT="$FINAL" \
+        NAWA_BIN="$W/nawa-installed" FLAVOR_NAWA_STAMP="$W/nawa.stamp" FLAVOR_SYSTEMCTL="$W/systemctl" \
+        FASEELA="$W/fasl" FLAVOR_ORDER="$W/order" FLAVOR_SERVICES="$W/services" FLAVOR_KEY="$W/key.pub" \
+        FLAVOR_REPO="https://repo.example/stable-v5" FLAVOR_FROM=repo \
+        bash "$REPO/bootstrap/mkflavor-inner.sh"
+}
+: > "$STUB_LOG"; rm -rf "$FINAL"; mkdir -p "$FINAL"
+# the stub nawa must run as the installed binary AFTER the cargo build replaced it
+if pinned > "$W/pin.log" 2>&1; then :; else grep -q 'nawa pinned' "$W/pin.log" || { cat "$W/pin.log"; fail "pinned nawa was not built and installed"; }; fi
+grep -q '^cargo build --release --offline --locked' "$STUB_LOG" || fail "pinned nawa was not compiled"
+[[ -x $W/nawa-installed ]] || fail "pinned nawa was not installed"
+[[ "$(cat "$W/nawa.stamp")" == PINSHA ]] || fail "pin stamp not written"
+: > "$STUB_LOG"; rm -rf "$FINAL"; mkdir -p "$FINAL"
+pinned > "$W/pin2.log" 2>&1 || true
+grep -q '^cargo build' "$STUB_LOG" && fail "an unchanged pin was rebuilt"
+grep -q 'already at the pinned source' "$W/pin2.log" || fail "no skip message for an unchanged pin"
 
 echo "test-mkflavor: ok"
