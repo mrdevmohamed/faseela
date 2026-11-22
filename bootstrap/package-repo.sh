@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # bootstrap/package-repo.sh — the package repository an image is installed from.
 #
 # Sourced by mkflavor.sh and final-root.sh. One place names the endpoint so the
