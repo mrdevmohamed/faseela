@@ -6,6 +6,8 @@
 #   /boot/vmlinuz-<ver>      the target root's kernel
 #   /boot/initramfs.img      built by bootstrap/initramfs.sh (static busybox)
 #   /live/rootfs.squashfs    the entire target root, compressed
+#   /live/build-id           the id of this build (also inside the initramfs): /init only
+#                            accepts media of the same build, never a stray older ISO
 #   /boot/grub/grub.cfg      live menu (BIOS+UEFI via grub-mkrescue)
 #   /boot/grub/loopback.cfg  the same menu for booting the ISO as a FILE (Ventoy, GRUB loopback)
 #
@@ -70,7 +72,25 @@ KVER="$(basename "$KERNEL")"
 [[ -x $ROOT/usr/lib/systemd/systemd ]] || { echo "mkiso: $ROOT/usr/lib/systemd/systemd missing (install systemd)" >&2; exit 1; }
 [[ -d $ROOT/usr/lib/systemd/system-preset ]] || { echo "mkiso: $ROOT/usr/lib/systemd/system-preset missing (install systemd-units)" >&2; exit 1; }
 
+# Build id: written into the initramfs (/build-id) and the image (/live/build-id) so /init
+# only mounts the squashfs of the SAME build as the kernel and modules that booted. Without
+# it a second faseela ISO on another disk (or a stale one on the Ventoy stick) can be
+# picked up by the media scan and the boot stalls right after switch_root.
+# FASEELA_BUILD_ID pins it; with SOURCE_DATE_EPOCH it is reproducible; else unique per run.
+if [[ -n ${FASEELA_BUILD_ID:-} ]]; then
+    BUILD_ID="$FASEELA_BUILD_ID"
+elif [[ -n ${SOURCE_DATE_EPOCH:-} ]]; then
+    BUILD_ID="${KVER#vmlinuz-}-$(date -u -d "@$SOURCE_DATE_EPOCH" +%Y%m%dT%H%M%SZ)"
+else
+    BUILD_ID="${KVER#vmlinuz-}-$(date -u +%Y%m%dT%H%M%SZ)-$(od -An -N4 -tx1 /dev/urandom | tr -d ' \n')"
+fi
+[[ $BUILD_ID =~ ^[A-Za-z0-9._-]+$ ]] || {
+    echo "mkiso: build id '$BUILD_ID' may only contain letters, digits, '.', '_' and '-'" >&2
+    exit 2
+}
+
 echo "== stage4: kernel      = $KVER"
+echo "== stage4: build id    = $BUILD_ID"
 echo "== stage4: compression = $SQUASH_COMP"
 
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/mkiso.XXXXXX")"
@@ -80,7 +100,8 @@ mkdir -p "$ISO/boot/grub" "$ISO/live"
 
 # 1) initramfs (static busybox + /init + storage modules)
 echo "== stage4: building initramfs"
-"$INITRAMFS_BIN" --root "$ROOT" --out "$ISO/boot/initramfs.img" --jobs "$JOBS"
+"$INITRAMFS_BIN" --root "$ROOT" --out "$ISO/boot/initramfs.img" --jobs "$JOBS" --build-id "$BUILD_ID"
+printf '%s\n' "$BUILD_ID" > "$ISO/live/build-id"
 
 # 2) squashfs of the whole target root; the repo/build scratch and the
 #    duplicate kernel image stay out of the image (build3 is stage3's
@@ -242,7 +263,7 @@ iso_dir_has() {   # iso_dir_has <iso-dir> <name>
     # the check fails closed — an unreadable image is never shipped)
     xorriso -indev "$OUT_ISO" -ls "$1" | grep -q -- "$2"
 }
-for member in "/boot/$KVER" /boot/initramfs.img /boot/grub/grub.cfg /live/rootfs.squashfs; do
+for member in "/boot/$KVER" /boot/initramfs.img /boot/grub/grub.cfg /live/rootfs.squashfs /live/build-id; do
     if ! iso_dir_has "$(dirname "$member")" "$(basename "$member")"; then
         echo "mkiso: ISO validation FAILED: '$member' is not in $OUT_ISO" >&2
         echo "mkiso: the image is not bootable as built — refusing to ship it" >&2
