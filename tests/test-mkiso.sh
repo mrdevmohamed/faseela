@@ -74,7 +74,7 @@ KVER="vmlinuz-6.1.0-fake"
 
 XORRISO_LS="$W/ls.txt"; export XORRISO_LS
 good_ls() {   # the listing of a correctly built image
-    printf '/boot/%s\n/boot/initramfs.img\n/boot/grub/grub.cfg\n/live/rootfs.squashfs\n' "$KVER" > "$XORRISO_LS"
+    printf '/boot/%s\n/boot/initramfs.img\n/boot/grub/grub.cfg\n/live/rootfs.squashfs\n/live/build-id\n' "$KVER" > "$XORRISO_LS"
 }
 
 RUN_MKISO() {  # RUN_MKISO [VAR=value ...] -> exit code; output in last.out/last.err
@@ -119,6 +119,11 @@ check "C1 exit 0"                               "[[ $RC -eq 0 ]]"
 check "C2 structure OK reported"                "OUT | grep -q 'ISO structure OK'"
 check "C3 ISO produced"                         "[[ -s $W/out/my.iso ]]"
 check "C4 initramfs got --root and --out"       "grep -q 'initramfs --root .* --out' $STUB_LOG"
+# the same build id goes into the initramfs and onto the image (/init compares them)
+check "C4a initramfs got a --build-id"          "grep -Eq 'initramfs .* --build-id [A-Za-z0-9._-]+\$' $STUB_LOG"
+check "C4b /live/build-id is on the image"      "[[ -f $CAPTURE/live/build-id ]]"
+check "C4c both carry the SAME id"              "[[ \"\$(cat $CAPTURE/live/build-id)\" == \"\$(sed -n 's/.* --build-id //p' $STUB_LOG)\" ]]"
+check "C4d the id is reported"                  "OUT | grep -q 'build id    = '"
 check "C5 mksquashfs got the compression"       "grep -q 'mksquashfs .* -comp xz' $STUB_LOG"
 check "C5a vendor presets target the final root" "grep -Fq 'systemctl --root=$ROOT preset-all' $STUB_LOG"
 check "C5b vendor presets run before squashfs"   "[[ \$(grep -n '^systemctl ' $STUB_LOG | cut -d: -f1) -lt \$(grep -n '^mksquashfs ' $STUB_LOG | cut -d: -f1) ]]"
@@ -129,6 +134,18 @@ check "C8 SQUASH_COMP propagates to mksquashfs" "grep -q 'mksquashfs .* -comp zs
 # the live image must carry the disk installer (nothing else ships it)
 check "C8a installer is in the image root"      "[[ -x $ROOT/usr/sbin/faseela-install ]] && cmp -s $REPO/bootstrap/install.sh $ROOT/usr/sbin/faseela-install"
 check "C8b mkiso reports the installer"         "OUT | grep -q 'faseela-install'"
+
+# ---- C1. build id: pinned, reproducible, unique, validated ---------------------
+RC=$(RUN_MKISO FASEELA_BUILD_ID=pinned-1)
+check "C8c FASEELA_BUILD_ID pins the id"        "[[ $RC -eq 0 ]] && grep -q -- '--build-id pinned-1\$' $STUB_LOG && [[ \"\$(cat $CAPTURE/live/build-id)\" == pinned-1 ]]"
+RC=$(RUN_MKISO "FASEELA_BUILD_ID=bad id")
+check "C8d an id with a space is refused (exit 2)" "[[ $RC -eq 2 ]] && ERR | grep -q 'build id' && ! grep -q mksquashfs $STUB_LOG"
+RC=$(RUN_MKISO SOURCE_DATE_EPOCH=1700000000); a="$(cat "$CAPTURE/live/build-id" 2>/dev/null)"
+RC=$(RUN_MKISO SOURCE_DATE_EPOCH=1700000000); b="$(cat "$CAPTURE/live/build-id" 2>/dev/null)"
+check "C8e SOURCE_DATE_EPOCH makes the id reproducible" "[[ -n '$a' && '$a' == '$b' && '$a' == *20231114T221320Z ]]"
+RC=$(RUN_MKISO); c="$(cat "$CAPTURE/live/build-id" 2>/dev/null)"
+RC=$(RUN_MKISO); d="$(cat "$CAPTURE/live/build-id" 2>/dev/null)"
+check "C8f without it every build gets its own id"      "[[ -n '$c' && -n '$d' && '$c' != '$d' ]]"
 
 # ---- C2. compression options ---------------------------------------------------
 good_ls
@@ -153,6 +170,10 @@ printf '/boot/%s\n/boot/initramfs.img\n/boot/grub/grub.cfg\n' "$KVER" > "$XORRIS
 RC=$(RUN_MKISO)
 check "D5 squashfs missing from image fails"    "[[ $RC -eq 1 ]]"
 check "D6 message names the squashfs"           "ERR | grep -q \"validation FAILED: '/live/rootfs.squashfs'\""
+
+printf '/boot/%s\n/boot/initramfs.img\n/boot/grub/grub.cfg\n/live/rootfs.squashfs\n' "$KVER" > "$XORRISO_LS"
+RC=$(RUN_MKISO)
+check "D6a build-id missing from image fails"   "[[ $RC -eq 1 ]] && ERR | grep -q \"validation FAILED: '/live/build-id'\""
 
 good_ls
 printf '#!/bin/sh\nexit 7\n' > "$BIN/xorriso-crash"; chmod +x "$BIN/xorriso-crash"

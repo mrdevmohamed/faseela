@@ -46,6 +46,16 @@ the medium two ways, on every pass of its 15-second wait:
    `/media/iso-host` in the live system, and `faseela-install` therefore never offers the
    stick as an install target.
 
+**Only media of the same build are used.** `mkiso.sh` stamps one build id into the
+initramfs (`/build-id`) and into the image (`/live/build-id`). The kernel and its modules come
+from the ISO that Ventoy or GRUB booted, so `/init` mounts only a squashfs whose
+`/live/build-id` matches; any other faseela ISO it meets while scanning (an older download in
+`/home`, a stale copy on the stick, an ISO from before this check) is skipped with a
+`initramfs: skipping ... another build` line. Before this, the first ISO the scan found won,
+and a different build's squashfs under the booted kernel left the boot stalled right after
+`switch_root -> systemd`. Pin the id with `FASEELA_BUILD_ID`; with `SOURCE_DATE_EPOCH` it is
+reproducible, otherwise every build gets its own.
+
 The ISO also carries `/boot/grub/loopback.cfg` (the standard hook for booting an ISO from
 GRUB's `loopback`), and `grub.cfg` adds `iso-scan/filename=${iso_path}` when Ventoy sets
 `iso_path` (GRUB2 mode). On the same Ventoy stick, from a GRUB prompt:

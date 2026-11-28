@@ -26,6 +26,11 @@ check "A7 an ISO file is loop-mounted"               "grep -q 'mount -t iso9660 
 check "A8 the host partition is kept for the loop"   "grep -q 'mount --move /iso-host /newroot/media/iso-host' $W/init"
 check "A9 /iso-host exists in the image tree"        "grep -q '\"\$TREE/iso-host\"' $INITRAMFS"
 check "A10 the live user is made on live boots only" "[[ \$(grep -c '^make_live_user /newroot' $W/init) -eq 1 ]] && awk '/disk boot from/{d=NR} /^make_live_user \/newroot/{m=NR} END{exit !(m>d)}' $W/init"
+check "A11 --build-id is parsed and /build-id is written" "grep -q -- '--build-id) BUILD_ID=' $INITRAMFS && grep -q '\"\$TREE/build-id\"' $INITRAMFS"
+check "A12 both media paths go through is_live_media"    "[[ \$(grep -c 'is_live_media \"' $W/init) -ge 2 ]] && grep -q '/cdrom/live/build-id' $W/init"
+# (initramfs.sh cannot run here: it reads recipes/boot/busybox, which only exists once the
+# recipes are fetched — so the id validation is checked on its text)
+check "A13 a --build-id with odd characters is refused"  "grep -q '\\\$BUILD_ID =~ \\^\\[A-Za-z0-9._-\\]+\\\$' $INITRAMFS && grep -q 'may only contain' $INITRAMFS"
 
 # ---- B. make_live_user ----------------------------------------------------------
 R="$W/root"; mkdir -p "$R/etc/skel" "$R/home"
@@ -77,5 +82,26 @@ check "D6 test mode keeps root locked and skips passwords" \
     "grep -Fq 'root remains locked; skipping interactive password setup' $INSTALL"
 check "D7 ordinary installs still ask for the root password" \
     "grep -Fq '/usr/bin/passwd root' $INSTALL"
+
+# ---- E. media of another build is skipped ---------------------------------------
+# is_live_media (from /init) against a fake /cdrom and a fake /build-id: the kernel and
+# modules that booted belong to ONE build, so only that build's squashfs may be mounted
+mkdir -p "$W/cdrom/live"; : > "$W/cdrom/live/rootfs.squashfs"
+sed -n '/^mybuild=""/,/^}/p' "$W/init" \
+    | sed "s|/cdrom/live/build-id|$W/cdrom/live/build-id|g; s|\[ -f /build-id \]|[ -f $W/bid ]|; s|< /build-id|< $W/bid|" > "$W/media.sh"
+sed -i "1i SQUASH=$W/cdrom/live/rootfs.squashfs" "$W/media.sh"
+check "E1 the extracted check is valid sh"            "sh -n $W/media.sh && grep -q '^is_live_media()' $W/media.sh"
+echo build-A > "$W/bid"; echo build-A > "$W/cdrom/live/build-id"
+check "E2 same build: accepted"                       "sh -c '. $W/media.sh; is_live_media /dev/x'"
+echo build-B > "$W/cdrom/live/build-id"
+check "E3 other build: refused"                       "! sh -c '. $W/media.sh; is_live_media /dev/x'"
+check "E4 the refusal names both builds, once"        "out=\$(sh -c '. $W/media.sh; is_live_media /dev/x; is_live_media /dev/x'); [[ \$(echo \"\$out\" | grep -c skipping) -eq 1 ]] && echo \"\$out\" | grep -q 'build-B' && echo \"\$out\" | grep -q 'build-A'"
+check "E5 another device is reported separately"      "[[ \$(sh -c '. $W/media.sh; is_live_media /dev/x; is_live_media /dev/y' | grep -c skipping) -eq 2 ]]"
+rm -f "$W/cdrom/live/build-id"
+check "E6 an old ISO without a build id: refused"     "! sh -c '. $W/media.sh; is_live_media /dev/x'"
+rm -f "$W/bid"
+check "E7 initramfs without /build-id: any image ok"  "sh -c '. $W/media.sh; is_live_media /dev/x'"
+echo build-A > "$W/bid"; rm -f "$W/cdrom/live/rootfs.squashfs"
+check "E8 no squashfs: refused whatever the id"       "! sh -c '. $W/media.sh; is_live_media /dev/x'"
 
 echo; echo "  PASS: $PASS   FAIL: $FAIL"; [[ $FAIL -eq 0 ]]

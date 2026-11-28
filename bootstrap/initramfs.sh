@@ -9,6 +9,10 @@
 #                         target root (flat, for the insmod fallback), so the
 #                         kernel can reach the CD/USB and mount the live image
 #                         regardless of defconfig module-vs-builtin choices
+#   /build-id             (with --build-id) the id mkiso.sh also writes to the ISO as
+#                         /live/build-id; /init only accepts a medium of the SAME build,
+#                         so the squashfs always matches the kernel and modules that
+#                         booted (a different ISO found on another disk is skipped)
 #   /lib/modules/$KVER/   the SAME modules with their full dependency tree
 #                         (resolved from the target root's modules.dep) plus
 #                         modules.dep itself, so /init can use busybox
@@ -21,7 +25,7 @@
 #
 # Usage:
 #   sudo ./initramfs.sh --root /mnt/faseela --out out/initramfs.img
-#     [--src busybox-1.37.0.tar.bz2] [--jobs 4]
+#     [--src busybox-1.37.0.tar.bz2] [--jobs 4] [--build-id ID]
 #
 # Source lookup order: --src, $NAWA_SRCCACHE, <repo>/srccache, download.
 set -euo pipefail
@@ -36,23 +40,27 @@ ROOT=""
 OUT=""
 SRC=""
 JOBS="${NAWA_JOBS:-4}"
+BUILD_ID=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --root| --out| --src| --jobs)
+        --root| --out| --src| --jobs| --build-id)
             [[ $# -ge 2 ]] || { echo "initramfs: $1 needs a value" >&2; exit 1; }
             case "$1" in
-                --root) ROOT="$2" ;;
-                --out)  OUT="$2"  ;;
-                --src)  SRC="$2"  ;;
-                --jobs) JOBS="$2" ;;
+                --root)     ROOT="$2"     ;;
+                --out)      OUT="$2"      ;;
+                --src)      SRC="$2"      ;;
+                --jobs)     JOBS="$2"     ;;
+                --build-id) BUILD_ID="$2" ;;
             esac
             shift 2 ;;
         *) echo "initramfs: unknown option $1" >&2; exit 1 ;;
     esac
 done
 
-[[ -n $ROOT ]] || { echo "usage: initramfs.sh --root /mnt/faseela --out initramfs.img"; exit 1; }
+[[ -n $ROOT ]] || { echo "usage: initramfs.sh --root /mnt/faseela --out initramfs.img [--build-id ID]"; exit 1; }
+[[ -z $BUILD_ID || $BUILD_ID =~ ^[A-Za-z0-9._-]+$ ]] \
+    || { echo "initramfs: --build-id may only contain letters, digits, '.', '_' and '-'" >&2; exit 1; }
 [[ -d $ROOT ]] || { echo "initramfs: target root $ROOT missing" >&2; exit 1; }
 OUT="${OUT:-initramfs.img}"
 
@@ -129,6 +137,10 @@ TREE="$WORK/tree"
 mkdir -p "$TREE/bin" "$TREE/modules" "$TREE/dev" "$TREE/proc" "$TREE/sys" \
          "$TREE/tmp" "$TREE/run" "$TREE/cdrom" "$TREE/iso-host" "$TREE/ro" "$TREE/rw" "$TREE/newroot"
 install -m755 "$BBDIR/busybox" "$TREE/bin/busybox"
+if [[ -n $BUILD_ID ]]; then
+    printf '%s\n' "$BUILD_ID" > "$TREE/build-id"
+    echo "initramfs: build id $BUILD_ID"
+fi
 for applet in sh cat echo mount umount mkdir mknod switch_root insmod modprobe mdev \
               sleep seq ls blkid findfs grep sed cp rm ln dmesg sync uname reboot poweroff \
               chown chmod losetup tail; do
@@ -290,6 +302,32 @@ echo "initramfs: waiting for boot media"
 #      `findiso=`) on the kernel command line names the file; without it, the
 #      *.iso files up to three directories deep are tried, faseela's first.
 SQUASH=/cdrom/live/rootfs.squashfs
+
+# Build id: mkiso.sh stamps the same id into this initramfs (/build-id) and into the
+# medium (/live/build-id). The kernel and its modules come from the ISO that GRUB or
+# Ventoy booted, so the squashfs must come from that very build: another faseela ISO
+# found on some other disk (an older download in /home, say) carries other modules and
+# the boot stalls right after switch_root. A medium of another build is skipped, with a
+# message (once per device/file). Without /build-id (initramfs.sh run by hand) nothing
+# is compared and any live image is accepted, as before.
+mybuild=""
+[ -f /build-id ] && read -r mybuild < /build-id
+skipped=" "
+# is_live_media <label>: /cdrom holds the live image of THIS build
+is_live_media() {
+    [ -f "$SQUASH" ] || return 1
+    [ -z "$mybuild" ] && return 0
+    theirs=""
+    [ -f /cdrom/live/build-id ] && read -r theirs < /cdrom/live/build-id
+    [ "$theirs" = "$mybuild" ] && return 0
+    case "$skipped" in
+        *" $1 "*) ;;
+        *) skipped="$skipped$1 "
+           echo "initramfs: skipping $1 - another build (${theirs:-no build id}), this boot is $mybuild" ;;
+    esac
+    return 1
+}
+
 isohint=""
 for arg in $(cat /proc/cmdline); do
     case "$arg" in
@@ -298,10 +336,11 @@ for arg in $(cat /proc/cmdline); do
     esac
 done
 
-# try_iso <file>: loop-mount an ISO image at /cdrom, success only when it holds the live image
+# try_iso <file>: loop-mount an ISO image at /cdrom, success only when it holds the live
+# image of this build
 try_iso() {
     mount -t iso9660 -o ro,loop "$1" /cdrom 2>/dev/null || return 1
-    [ -f "$SQUASH" ] && return 0
+    is_live_media "$1" && return 0
     umount /cdrom 2>/dev/null
     return 1
 }
@@ -330,7 +369,7 @@ for i in $(seq 1 15); do
         for fs in iso9660 ""; do
             if [ -n "$fs" ]; then mount -t "$fs" -o ro "$dev" /cdrom 2>/dev/null || continue
             else mount -o ro "$dev" /cdrom 2>/dev/null || continue; fi
-            if [ -f "$SQUASH" ]; then found="$dev"; break 3; fi
+            if is_live_media "$dev"; then found="$dev"; break 3; fi
             umount /cdrom 2>/dev/null
         done
     done
@@ -342,7 +381,7 @@ for i in $(seq 1 15); do
     sleep 1
 done
 if [ -z "$found" ]; then
-    echo "initramfs: no boot media with /live/rootfs.squashfs found"
+    echo "initramfs: no boot media with this build's /live/rootfs.squashfs found"
     echo "initramfs: block devices seen:"; cat /proc/partitions
     exec sh
 fi
